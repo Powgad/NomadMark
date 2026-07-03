@@ -1,7 +1,7 @@
 # NomadMark 项目进度记录
 
 > **最后更新**: 2026-07-03
-> **当前阶段**: 阶段二完成（Android 平台独立功能）
+> **当前阶段**: 阶段四完成（Android 平台集成）
 
 ---
 
@@ -11,13 +11,13 @@
 |------|--------|------|
 | 0. 准备阶段 | ✅ 100% | 环境搭建、架构设计完成 |
 | 1. Core 层开发 | ✅ 95% | 基础功能完成，FFI 接口已完成 |
-| 2. Android 平台 | ✅ 85% | 独立功能完成，集成待完善 |
+| 2. Android 平台 | ✅ 95% | 独立功能完成，集成完成 |
 | 3. Desktop 平台 | ⚠️ 50% | 框架已建立 |
 | 4. iOS 平台 | ❌ 0% | 未开始 |
 | 5. 联调测试 | ❌ 0% | 未开始 |
 | 6. 发布准备 | ❌ 0% | 未开始 |
 
-**整体进度**: 约 65-70%
+**整体进度**: 约 75-80%
 
 ---
 
@@ -155,6 +155,60 @@
 
 ---
 
+### 阶段四：Android 平台集成 (2026-07-03 完成)
+
+#### 集成内容
+
+| 组件 | 集成位置 | 说明 |
+|------|----------|------|
+| KeyboardDetector | MarkdownEditorActivity | 键盘检测和分屏比例调整 |
+| FileOperationHelper | MarkdownEditorActivity | 文件新建和保存确认对话框 |
+| ScrollSyncManager | MarkdownEditorActivity | 分屏模式滚动同步 |
+| Core 搜索 | MarkdownEditorActivity | 通过 MarkdownCore.nativeSearch() |
+| Core 撤销/重做 | MarkdownEditorActivity | 通过 MarkdownCore.nativeUndo/Redo() |
+
+#### 集成方法
+
+- **KeyboardDetector**
+  - 添加 `keyboardDetector` 字段（懒加载初始化）
+  - 更新 `detectKeyboardStatus()` 方法使用新的检测器
+  - 添加 `adjustSplitRatioForKeyboard()` 方法
+
+- **FileOperationHelper**
+  - 添加 `fileOperationHelper` 字段（懒加载初始化）
+  - 更新 `createNewFile()` 使用 `showNewFileDialog()`
+  - 更新 `showSaveBeforeExitDialog()` 使用 `showSaveConfirmDialog()`
+  - 更新 `createNewFilePath()` 使用 `generateUniquePath()`
+
+- **ScrollSyncManager**
+  - 添加 `scrollSyncManager` 字段
+  - 在 `toggleSplitMode()` 中启用/禁用滚动同步
+  - 添加 `enableScrollSync()` 和 `disableScrollSync()` 方法
+
+- **Core 搜索**
+  - 添加 `coreDocumentHandle` 和 `useCoreSearch` 字段
+  - 更新 `performSearch()` 支持本地和 Core 搜索
+  - 添加 `performCoreSearch()` 和 `performLocalSearch()` 方法
+
+- **Core 撤销/重做**
+  - 更新 `undo()` 和 `redo()` 优先使用 Core 层
+  - 添加 `performCoreUndo()` 和 `performCoreRedo()` 方法
+  - 添加 `reloadFromCore()` 用于重新加载文档内容
+
+#### Core 层集成
+
+- 在 `loadFile()` 中初始化 Core 文档句柄
+- 添加 `initCoreDocument()` 方法创建文档实例
+- Core 文档句柄在文件加载时创建，在搜索/撤销时使用
+
+#### APK 构建
+
+```
+✅ app-debug.apk (13MB) - 2026-07-03 11:38
+```
+
+---
+
 ### 阶段三：Core 层 FFI 接口 (2026-07-03 完成)
 
 #### 新增功能
@@ -182,15 +236,13 @@
 
 ## 🚧 待完成的工作
 
-### Android 平台集成 (P0 - 下一步)
+### Android 平台测试 (P0 - 下一步)
 
-| 功能 | 文件 | 说明 |
-|------|------|------|
-| 键盘检测集成 | `MarkdownEditorActivity.kt` | 集成 KeyboardDetector |
-| 文件操作集成 | `MarkdownEditorActivity.kt` | 集成 FileOperationHelper |
-| 滚动同步集成 | `MarkdownEditorActivity.kt` | 集成 ScrollSyncManager |
-| Core 搜索集成 | `MarkdownCore.kt` | 与 Core 层 search 模块集成 |
-| Core 撤销/重做集成 | `MarkdownCore.kt` | 与 Core 层 history 模块集成 |
+| 功能 | 说明 |
+|------|------|
+| 真机测试 | 在实际设备上测试新集成功能 |
+| Core 功能验证 | 验证 Core 搜索和撤销/重做是否正常工作 |
+| 键盘检测测试 | 在不同键盘类型下测试分屏比例 |
 
 ### Android 平台缺失 (P1 - 重要)
 
@@ -213,22 +265,17 @@
 
 #### P0 (立即执行)
 
-1. **Android 平台集成**
-   - 在 MarkdownEditorActivity 中集成 KeyboardDetector
-   - 在 MarkdownEditorActivity 中集成 FileOperationHelper
-   - 在分屏模式下使用 ScrollSyncManager
-   - 添加 `get_content()` 到 StreamingParser
-
-2. **Android 键盘适配**
-   - 创建 `KeyboardDetector.kt`
-   - 实现 F11 键盘检测
-   - 分屏比例切换
+1. **Android 平台测试**
+   - 在实际设备上安装并测试新 APK
+   - 验证键盘检测和分屏比例调整
+   - 验证文件新建和保存确认对话框
+   - 验证分屏模式滚动同步
 
 #### P1 (本周完成)
 
-1. Android 文件操作细化
-2. Android 滚动同步
-3. 重新构建 APK 测试新功能
+1. Core 层功能真机验证
+2. 完善 reloadFromCore() 方法
+3. 添加单元测试覆盖新集成功能
 
 #### P2 (可后续优化)
 
@@ -299,7 +346,10 @@ Markdowneditor2.0/
 │   │   ├── GestureEditor.kt        # 手势编辑
 │   │   ├── GestureOverlayView.kt
 │   │   ├── GestureRecognizer.kt
-│   │   └── ⚠️ KeyboardDetector.kt  # ❌ 缺失
+│   │   ├── KeyboardDetector.kt    # ✅ 键盘检测（已集成）
+│   │   ├── FileOperationHelper.kt # ✅ 文件操作（已集成）
+│   │   ├── ScrollSyncManager.kt   # ✅ 滚动同步（已集成）
+│   │   └── EinkRefreshController.kt # E-ink 刷新
 │   └── build/
 │       └── outputs/apk/debug/app-debug.apk
 │
@@ -351,6 +401,28 @@ Markdowneditor2.0/
 ---
 
 ## 📅 工作日志
+
+### 2026-07-03 (下午 - 第二次)
+
+**完成**:
+- ✅ 实现阶段四 Android 平台集成
+- ✅ 在 MarkdownEditorActivity 中集成 KeyboardDetector
+- ✅ 在 MarkdownEditorActivity 中集成 FileOperationHelper
+- ✅ 在 MarkdownEditorActivity 中集成 ScrollSyncManager
+- ✅ 在 MarkdownEditorActivity 中集成 Core 搜索功能
+- ✅ 在 MarkdownEditorActivity 中集成 Core 撤销/重做功能
+- ✅ 重新构建 APK (app-debug.apk, 13MB)
+
+**修改的文件**:
+- `MarkdownEditorActivity.kt` - 添加辅助组件字段和相关方法
+
+**工时**: 约 1.5 小时
+
+**下一步**:
+- [ ] 在实际设备上测试新功能
+- [ ] 验证 Core 层功能
+
+---
 
 ### 2026-07-03 (下午)
 

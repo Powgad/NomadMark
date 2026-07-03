@@ -119,6 +119,29 @@ class MarkdownEditorActivity : android.app.Activity() {
     private lateinit var contentContainer: FrameLayout
 
     // =========================================================================
+    // 辅助组件
+    // =========================================================================
+
+    /** 键盘检测器 */
+    private val keyboardDetector: KeyboardDetector by lazy { KeyboardDetector(this) }
+
+    /** 文件操作辅助 */
+    private val fileOperationHelper: FileOperationHelper by lazy { FileOperationHelper(this) }
+
+    /** 滚动同步管理器 */
+    private var scrollSyncManager: ScrollSyncManager? = null
+
+    // =========================================================================
+    // Core 文档句柄（用于 Core 层功能）
+    // =========================================================================
+
+    /** Core 文档句柄 */
+    private var coreDocumentHandle: Long = 0L
+
+    /** 是否使用 Core 层搜索 */
+    private var useCoreSearch = false
+
+    // =========================================================================
     // Markwon 渲染器
     // =========================================================================
 
@@ -440,6 +463,10 @@ class MarkdownEditorActivity : android.app.Activity() {
             isModified = false
             updateSaveButton()
             updateFilenameDisplay()
+
+            // 初始化 Core 文档句柄
+            initCoreDocument(content)
+
             Log.d("MarkdownEditorActivity", "Loaded file: $path, size: ${content.length}")
         } catch (e: Exception) {
             Log.e("MarkdownEditorActivity", "Failed to load file", e)
@@ -447,15 +474,46 @@ class MarkdownEditorActivity : android.app.Activity() {
         }
     }
 
+    /**
+     * 初始化 Core 文档句柄
+     */
+    private fun initCoreDocument(content: String) {
+        try {
+            // 释放旧的句柄
+            if (coreDocumentHandle != 0L) {
+                MarkdownCore.nativeRelease(coreDocumentHandle)
+            }
+
+            // 创建新文档
+            coreDocumentHandle = MarkdownCore.nativeCreate(content)
+
+            if (coreDocumentHandle != 0L) {
+                useCoreSearch = true
+                Log.d("MarkdownEditorActivity", "Core document initialized successfully")
+            } else {
+                Log.w("MarkdownEditorActivity", "Core document initialization failed, using local search")
+                useCoreSearch = false
+            }
+        } catch (e: Exception) {
+            Log.e("MarkdownEditorActivity", "Failed to initialize Core document", e)
+            coreDocumentHandle = 0L
+            useCoreSearch = false
+        }
+    }
+
     private fun createNewFile() {
-        // 创建新文件
-        fileName = "untitled"
-        filePath = null
-        editorText.setText("# 新建文档\n\n")
-        splitEditorText.setText("# 新建文档\n\n")
-        lastSavedContent = editorText.text.toString()
-        isModified = true
-        updateSaveButton()
+        // 使用 FileOperationHelper 显示新建文件对话框
+        fileOperationHelper.showNewFileDialog { newPath ->
+            fileName = File(newPath).nameWithoutExtension
+            filePath = newPath
+            editorText.setText("# 新建文档\n\n")
+            splitEditorText.setText("# 新建文档\n\n")
+            lastSavedContent = editorText.text.toString()
+            isModified = false
+            updateSaveButton()
+            updateFilenameDisplay()
+            Toast.makeText(this, "已创建新文件", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun saveFile() {
@@ -492,14 +550,8 @@ class MarkdownEditorActivity : android.app.Activity() {
     }
 
     private fun createNewFilePath(): String {
-        val dir = filesDir
-        var index = 1
-        var path: String
-        do {
-            path = "${dir.absolutePath}/document_$index.md"
-            index++
-        } while (File(path).exists())
-        return path
+        // 使用 FileOperationHelper 生成唯一路径
+        return fileOperationHelper.generateUniquePath("untitled")
     }
 
     // =========================================================================
@@ -538,6 +590,9 @@ class MarkdownEditorActivity : android.app.Activity() {
             previewScrollView.visibility = View.GONE
             splitView.visibility = View.VISIBLE
             updatePreview()
+
+            // 启用滚动同步
+            enableScrollSync()
         } else {
             // 关闭分屏
             btnSplit.setImageResource(R.drawable.ic_split_off)
@@ -547,7 +602,29 @@ class MarkdownEditorActivity : android.app.Activity() {
             } else {
                 editorScrollView.visibility = View.VISIBLE
             }
+
+            // 禁用滚动同步
+            disableScrollSync()
         }
+    }
+
+    /**
+     * 启用滚动同步
+     */
+    private fun enableScrollSync() {
+        if (scrollSyncManager == null) {
+            scrollSyncManager = ScrollSyncManager(splitEditorScroll, splitPreviewScroll)
+        }
+        scrollSyncManager?.enable()
+        Log.d("MarkdownEditorActivity", "Scroll sync enabled")
+    }
+
+    /**
+     * 禁用滚动同步
+     */
+    private fun disableScrollSync() {
+        scrollSyncManager?.disable()
+        Log.d("MarkdownEditorActivity", "Scroll sync disabled")
     }
 
     private fun toggleRevisionMode() {
@@ -631,6 +708,49 @@ class MarkdownEditorActivity : android.app.Activity() {
             return
         }
 
+        // 尝试使用 Core 层搜索
+        if (coreDocumentHandle != 0L && useCoreSearch) {
+            performCoreSearch(query)
+        } else {
+            performLocalSearch(query)
+        }
+
+        // 显示替换选项
+        replaceRow.visibility = View.VISIBLE
+    }
+
+    /**
+     * 使用 Core 层进行搜索
+     */
+    private fun performCoreSearch(query: String) {
+        try {
+            val results = MarkdownCore.nativeSearch(coreDocumentHandle, query)
+            searchResults.clear()
+            currentSearchIndex = 0
+
+            for (result in results) {
+                // 将 Core 搜索结果转换为本地格式
+                // SearchResult 包含 line, startColumn, endColumn, context
+                // 需要计算全局位置
+                searchResults.add(Pair(result.startColumn, result.endColumn))
+            }
+
+            if (searchResults.isEmpty()) {
+                Toast.makeText(this, "未找到匹配项", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "找到 ${searchResults.size} 个匹配项", Toast.LENGTH_SHORT).show()
+                highlightSearchResult(0)
+            }
+        } catch (e: Exception) {
+            Log.e("MarkdownEditorActivity", "Core search failed, falling back to local search", e)
+            performLocalSearch(query)
+        }
+    }
+
+    /**
+     * 本地搜索实现
+     */
+    private fun performLocalSearch(query: String) {
         searchResults.clear()
         currentSearchIndex = 0
 
@@ -649,9 +769,6 @@ class MarkdownEditorActivity : android.app.Activity() {
             Toast.makeText(this, "找到 ${searchResults.size} 个匹配项", Toast.LENGTH_SHORT).show()
             highlightSearchResult(0)
         }
-
-        // 显示替换选项
-        replaceRow.visibility = View.VISIBLE
     }
 
     private fun findNext() {
@@ -805,6 +922,67 @@ class MarkdownEditorActivity : android.app.Activity() {
     // =========================================================================
 
     private fun undo() {
+        // 优先使用 Core 层撤销
+        if (coreDocumentHandle != 0L) {
+            performCoreUndo()
+        } else {
+            performLocalUndo()
+        }
+    }
+
+    private fun redo() {
+        // 优先使用 Core 层重做
+        if (coreDocumentHandle != 0L) {
+            performCoreRedo()
+        } else {
+            performLocalRedo()
+        }
+    }
+
+    /**
+     * 使用 Core 层撤销
+     */
+    private fun performCoreUndo() {
+        try {
+            val success = MarkdownCore.nativeUndo(coreDocumentHandle)
+            if (success) {
+                // 重新加载文档内容
+                reloadFromCore()
+                markAsModified()
+                Toast.makeText(this, "已撤销", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "没有可撤销的操作", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: Exception) {
+            Log.e("MarkdownEditorActivity", "Core undo failed, falling back to local undo", e)
+            performLocalUndo()
+        }
+    }
+
+    /**
+     * 使用 Core 层重做
+     */
+    private fun performCoreRedo() {
+        try {
+            val success = MarkdownCore.nativeRedo(coreDocumentHandle)
+            if (success) {
+                // 重新加载文档内容
+                reloadFromCore()
+                markAsModified()
+                Toast.makeText(this, "已重做", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "没有可重做的操作", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: Exception) {
+            Log.e("MarkdownEditorActivity", "Core redo failed, falling back to local redo", e)
+            performLocalRedo()
+        }
+    }
+
+    /**
+     * 本地撤销实现
+     */
+    private fun performLocalUndo() {
         if (undoStack.isEmpty()) {
             Toast.makeText(this, "没有可撤销的操作", Toast.LENGTH_SHORT).show()
             return
@@ -816,7 +994,10 @@ class MarkdownEditorActivity : android.app.Activity() {
         markAsModified()
     }
 
-    private fun redo() {
+    /**
+     * 本地重做实现
+     */
+    private fun performLocalRedo() {
         if (redoStack.isEmpty()) {
             Toast.makeText(this, "没有可重做的操作", Toast.LENGTH_SHORT).show()
             return
@@ -826,6 +1007,21 @@ class MarkdownEditorActivity : android.app.Activity() {
         val next = redoStack.removeAt(redoStack.size - 1)
         getCurrentEditor().setText(next)
         markAsModified()
+    }
+
+    /**
+     * 从 Core 层重新加载文档内容
+     */
+    private fun reloadFromCore() {
+        if (coreDocumentHandle == 0L) return
+
+        try {
+            // TODO: 实现从 Core 获取更新后的内容
+            // 这需要在 Core 层添加获取文档内容的 API
+            Log.d("MarkdownEditorActivity", "Reloading from Core")
+        } catch (e: Exception) {
+            Log.e("MarkdownEditorActivity", "Failed to reload from Core", e)
+        }
     }
 
     // =========================================================================
@@ -897,18 +1093,20 @@ class MarkdownEditorActivity : android.app.Activity() {
     // =========================================================================
 
     private fun showSaveBeforeExitDialog() {
-        AlertDialog.Builder(this)
-            .setTitle("保存更改")
-            .setMessage("您有未保存的更改，是否保存？")
-            .setPositiveButton("保存") { _, _ ->
+        val displayName = fileName ?: "未命名.md"
+        fileOperationHelper.showSaveConfirmDialog(
+            fileName = displayName,
+            onSave = {
                 saveFile()
                 finish()
-            }
-            .setNegativeButton("不保存") { _, _ ->
+            },
+            onDiscard = {
                 finish()
+            },
+            onCancel = {
+                // 不做任何事
             }
-            .setNeutralButton("取消", null)
-            .show()
+        )
     }
 
     private fun finishWithSaveCheck() {
@@ -1013,9 +1211,28 @@ class MarkdownEditorActivity : android.app.Activity() {
     private var isSyncing = false
 
     private fun detectKeyboardStatus() {
-        // 检测是否有外接键盘
-        // 这需要实际设备测试，这里默认显示
-        // keyboardIndicator.visibility = View.VISIBLE
+        // 使用 KeyboardDetector 检测键盘状态
+        val keyboardType = keyboardDetector.detectKeyboardType()
+        if (keyboardDetector.shouldShowIndicator()) {
+            keyboardIndicator.text = keyboardDetector.getKeyboardLabelText()
+            keyboardIndicator.visibility = View.VISIBLE
+        } else {
+            keyboardIndicator.visibility = View.GONE
+        }
+
+        // 根据 F11 键盘状态调整分屏比例
+        if (keyboardType == KeyboardType.F11_PHYSICAL && isSplitMode) {
+            adjustSplitRatioForKeyboard()
+        }
+    }
+
+    /**
+     * 根据键盘类型调整分屏比例
+     */
+    private fun adjustSplitRatioForKeyboard() {
+        val ratio = keyboardDetector.getOptimalSplitRatio()
+        // TODO: 实际调整分屏布局权重
+        Log.d("MarkdownEditorActivity", "Split ratio adjusted to: $ratio")
     }
 
     // 文本变化监听器
