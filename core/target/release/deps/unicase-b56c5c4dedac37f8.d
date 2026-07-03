@@ -1,0 +1,10 @@
+C:\Users\Administrator\Desktop\Markdowneditor2.0\core\target\release\deps\unicase-b56c5c4dedac37f8.d: C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\unicase-2.9.0\src\lib.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\unicase-2.9.0\src\ascii.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\unicase-2.9.0\src\unicode\mod.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\unicase-2.9.0\src\unicode\map.rs
+
+C:\Users\Administrator\Desktop\Markdowneditor2.0\core\target\release\deps\libunicase-b56c5c4dedac37f8.rlib: C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\unicase-2.9.0\src\lib.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\unicase-2.9.0\src\ascii.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\unicase-2.9.0\src\unicode\mod.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\unicase-2.9.0\src\unicode\map.rs
+
+C:\Users\Administrator\Desktop\Markdowneditor2.0\core\target\release\deps\libunicase-b56c5c4dedac37f8.rmeta: C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\unicase-2.9.0\src\lib.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\unicase-2.9.0\src\ascii.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\unicase-2.9.0\src\unicode\mod.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\unicase-2.9.0\src\unicode\map.rs
+
+C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\unicase-2.9.0\src\lib.rs:
+C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\unicase-2.9.0\src\ascii.rs:
+C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\unicase-2.9.0\src\unicode\mod.rs:
+C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\unicase-2.9.0\src\unicode\map.rs:

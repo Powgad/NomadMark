@@ -1,0 +1,10 @@
+C:\Users\Administrator\Desktop\Markdowneditor2.0\core\target\aarch64-linux-android\release\deps\ppv_lite86-f025c168a3a48daa.d: C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\ppv-lite86-0.2.21\src\lib.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\ppv-lite86-0.2.21\src\soft.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\ppv-lite86-0.2.21\src\types.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\ppv-lite86-0.2.21\src\generic.rs
+
+C:\Users\Administrator\Desktop\Markdowneditor2.0\core\target\aarch64-linux-android\release\deps\libppv_lite86-f025c168a3a48daa.rlib: C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\ppv-lite86-0.2.21\src\lib.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\ppv-lite86-0.2.21\src\soft.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\ppv-lite86-0.2.21\src\types.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\ppv-lite86-0.2.21\src\generic.rs
+
+C:\Users\Administrator\Desktop\Markdowneditor2.0\core\target\aarch64-linux-android\release\deps\libppv_lite86-f025c168a3a48daa.rmeta: C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\ppv-lite86-0.2.21\src\lib.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\ppv-lite86-0.2.21\src\soft.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\ppv-lite86-0.2.21\src\types.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\ppv-lite86-0.2.21\src\generic.rs
+
+C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\ppv-lite86-0.2.21\src\lib.rs:
+C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\ppv-lite86-0.2.21\src\soft.rs:
+C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\ppv-lite86-0.2.21\src\types.rs:
+C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\ppv-lite86-0.2.21\src\generic.rs:

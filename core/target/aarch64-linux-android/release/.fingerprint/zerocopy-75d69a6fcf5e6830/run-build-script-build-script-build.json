@@ -1,0 +1,1 @@
+{"rustc":1842507548689473721,"features":"","declared_features":"","target":0,"profile":0,"path":0,"deps":[[79267046858109197,"build_script_build",false,12346340050995128539]],"local":[{"RerunIfChanged":{"output":"aarch64-linux-android\\release\\build\\zerocopy-75d69a6fcf5e6830\\output","paths":["build.rs","Cargo.toml"]}}],"rustflags":[],"config":0,"compile_kind":0}

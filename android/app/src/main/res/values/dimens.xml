@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 工具栏高度 -->
+    <dimen name="toolbar_height">56dp</dimen>
+    <dimen name="bottom_toolbar_height">48dp</dimen>
+    <dimen name="keyboard_indicator_height">40dp</dimen>
+
+    <!-- 按钮大小 -->
+    <dimen name="toolbar_button_size">48dp</dimen>
+    <dimen name="toolbar_button_padding">8dp</dimen>
+
+    <!-- 间距 -->
+    <dimen name="margin_small">4dp</dimen>
+    <dimen name="margin_medium">8dp</dimen>
+    <dimen name="margin_large">16dp</dimen>
+
+    <!-- 文字大小 -->
+    <dimen name="text_size_small">12sp</dimen>
+    <dimen name="text_size_normal">14sp</dimen>
+    <dimen name="text_size_medium">16sp</dimen>
+    <dimen name="text_size_large">18sp</dimen>
+    <dimen name="text_size_xlarge">24sp</dimen>
+</resources>

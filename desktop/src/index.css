@@ -1,0 +1,96 @@
+/**
+ * NomadMark Desktop - Global Styles
+ */
+
+/* Variables */
+:root {
+  --color-bg: #FFFFFF;
+  --color-bg-secondary: #F5F5F5;
+  --color-border: #DDDDDD;
+  --color-text: #333333;
+  --color-text-secondary: #666666;
+  --color-accent: #0066CC;
+  --color-toolbar-bg: #F5F5F5;
+  --color-divider: #CCCCCC;
+
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 24px;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+
+  --font-size-sm: 12px;
+  --font-size-md: 14px;
+  --font-size-lg: 16px;
+  --font-size-xl: 18px;
+
+  --toolbar-height: 48px;
+  --quickbar-height: 56px;
+  --keyboard-indicator-height: 24px;
+}
+
+/* Reset */
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Noto Sans CJK', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Button styles */
+button {
+  font-family: inherit;
+  -webkit-font-smoothing: inherit;
+  -moz-osx-font-smoothing: inherit;
+}
+
+button:active {
+  transform: scale(0.98);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Canvas optimization */
+canvas {
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+  touch-action: none;
+}
+
+/* Utility classes */
+.hidden {
+  display: none !important;
+}
+
+.visible {
+  display: block !important;
+}
+
+/* Animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.15s ease-in-out;
+}

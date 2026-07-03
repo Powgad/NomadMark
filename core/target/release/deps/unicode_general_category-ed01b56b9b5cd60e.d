@@ -1,0 +1,12 @@
+C:\Users\Administrator\Desktop\Markdowneditor2.0\core\target\release\deps\unicode_general_category-ed01b56b9b5cd60e.d: C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\unicode-general-category-0.6.0\src\lib.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\unicode-general-category-0.6.0\src\category.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\unicode-general-category-0.6.0\src\tables.rs C:\Users\Administrator\Desktop\Markdowneditor2.0\core\target\release\build\unicode-general-category-3bfb0fd2cca30caa\out/category.rs
+
+C:\Users\Administrator\Desktop\Markdowneditor2.0\core\target\release\deps\libunicode_general_category-ed01b56b9b5cd60e.rlib: C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\unicode-general-category-0.6.0\src\lib.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\unicode-general-category-0.6.0\src\category.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\unicode-general-category-0.6.0\src\tables.rs C:\Users\Administrator\Desktop\Markdowneditor2.0\core\target\release\build\unicode-general-category-3bfb0fd2cca30caa\out/category.rs
+
+C:\Users\Administrator\Desktop\Markdowneditor2.0\core\target\release\deps\libunicode_general_category-ed01b56b9b5cd60e.rmeta: C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\unicode-general-category-0.6.0\src\lib.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\unicode-general-category-0.6.0\src\category.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\unicode-general-category-0.6.0\src\tables.rs C:\Users\Administrator\Desktop\Markdowneditor2.0\core\target\release\build\unicode-general-category-3bfb0fd2cca30caa\out/category.rs
+
+C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\unicode-general-category-0.6.0\src\lib.rs:
+C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\unicode-general-category-0.6.0\src\category.rs:
+C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\unicode-general-category-0.6.0\src\tables.rs:
+C:\Users\Administrator\Desktop\Markdowneditor2.0\core\target\release\build\unicode-general-category-3bfb0fd2cca30caa\out/category.rs:
+
+# env-dep:OUT_DIR=C:\\Users\\Administrator\\Desktop\\Markdowneditor2.0\\core\\target\\release\\build\\unicode-general-category-3bfb0fd2cca30caa\\out

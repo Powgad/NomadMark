@@ -1,0 +1,10 @@
+C:\Users\Administrator\Desktop\Markdown文档编辑器的详细设计文档2.0\core\target\aarch64-linux-android\release\deps\log-ab458bebc1cc8c56.d: C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\log-0.4.33\src\lib.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\log-0.4.33\src\macros.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\log-0.4.33\src\serde.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\log-0.4.33\src\__private_api.rs
+
+C:\Users\Administrator\Desktop\Markdown文档编辑器的详细设计文档2.0\core\target\aarch64-linux-android\release\deps\liblog-ab458bebc1cc8c56.rlib: C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\log-0.4.33\src\lib.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\log-0.4.33\src\macros.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\log-0.4.33\src\serde.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\log-0.4.33\src\__private_api.rs
+
+C:\Users\Administrator\Desktop\Markdown文档编辑器的详细设计文档2.0\core\target\aarch64-linux-android\release\deps\liblog-ab458bebc1cc8c56.rmeta: C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\log-0.4.33\src\lib.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\log-0.4.33\src\macros.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\log-0.4.33\src\serde.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\log-0.4.33\src\__private_api.rs
+
+C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\log-0.4.33\src\lib.rs:
+C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\log-0.4.33\src\macros.rs:
+C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\log-0.4.33\src\serde.rs:
+C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\log-0.4.33\src\__private_api.rs:

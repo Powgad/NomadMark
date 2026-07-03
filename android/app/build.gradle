@@ -1,0 +1,108 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.editor.nomadmark'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.editor.nomadmark"
+        minSdk 28  // Supernote A6 X2 Nomad compatibility
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.0"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a'
+        }
+    }
+
+    configurations {
+        all {
+            resolutionStrategy {
+                // 强制使用单一版本的 annotations
+                force 'org.jetbrains:annotations:23.0.0'
+            }
+            // 排除 annotations-java5
+            exclude group: 'org.jetbrains', module: 'annotations-java5'
+        }
+    }
+
+    signingConfigs {
+        release {
+            storeFile file("ratta.jks")
+            storePassword '34537701'
+            keyAlias 'ratta'
+            keyPassword '34537701'
+        }
+
+        debug {
+            storeFile file("ratta.jks")
+            storePassword '34537701'
+            keyAlias 'ratta'
+            keyPassword '34537701'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+        debug {
+            minifyEnabled false
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    sourceSets {
+        main {
+            jniLibs.srcDirs = ['src/main/jniLibs']
+        }
+    }
+}
+
+dependencies {
+    // Rust Core (prebuilt .so files)
+    implementation fileTree(dir: 'src/main/jniLibs', include: ['*.so'])
+
+    // AndroidX
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
+
+    // Material Design
+    implementation 'com.google.android.material:material:1.11.0'
+
+    // Coroutines
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+
+    // Markwon - Markdown rendering engine with full feature support
+    def markwonVersion = '4.6.2'
+    implementation "io.noties.markwon:core:$markwonVersion"
+    implementation "io.noties.markwon:ext-strikethrough:$markwonVersion"
+    implementation "io.noties.markwon:ext-tables:$markwonVersion"
+    implementation "io.noties.markwon:ext-tasklist:$markwonVersion"
+    implementation "io.noties.markwon:image:$markwonVersion"
+
+    // 代码语法高亮 - 暂时禁用（Prism4j 语言包需要额外配置）
+    // TODO: 后续可添加 syntax-highlight 和 prism4j 支持
+
+    // Testing
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
+}

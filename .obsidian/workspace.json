@@ -1,0 +1,192 @@
+{
+  "main": {
+    "id": "5a8e3b298eb65adc",
+    "type": "split",
+    "children": [
+      {
+        "id": "ee7f6f11f45db2be",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "adf42432c3f02729",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "DEVELOPMENT_ROADMAP.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "DEVELOPMENT_ROADMAP"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "40ab5899dbf6eec8",
+    "type": "split",
+    "children": [
+      {
+        "id": "b58ca251d70c09b4",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "10420c2688d9571b",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "文件列表"
+            }
+          },
+          {
+            "id": "11ec46f51cc436d3",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "搜索"
+            }
+          },
+          {
+            "id": "393a143afbe15ca9",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "书签"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "3c4ca6a7394f3ff2",
+    "type": "split",
+    "children": [
+      {
+        "id": "5e420b6dbc06299f",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "ea010e29ee6622d4",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "DEVELOPMENT_ROADMAP.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "DEVELOPMENT_ROADMAP 的反向链接列表"
+            }
+          },
+          {
+            "id": "a167df86184f4ba9",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "DEVELOPMENT_ROADMAP.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "DEVELOPMENT_ROADMAP 的出链列表"
+            }
+          },
+          {
+            "id": "09905fff49d9d86d",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "标签"
+            }
+          },
+          {
+            "id": "fd918c6c44570a82",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "添加笔记属性"
+            }
+          },
+          {
+            "id": "f9ee257399cd9ed7",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "DEVELOPMENT_ROADMAP.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "DEVELOPMENT_ROADMAP 的大纲"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:打开快速切换": false,
+      "graph:查看关系图谱": false,
+      "canvas:新建白板": false,
+      "daily-notes:打开/创建今天的日记": false,
+      "templates:插入模板": false,
+      "command-palette:打开命令面板": false,
+      "bases:新建数据库": false
+    }
+  },
+  "active": "adf42432c3f02729",
+  "lastOpenFiles": [
+    "DEVELOPMENT_ROADMAP.md",
+    "DEVELOPMENT_ROADMAP.md.tmp.27564.bf4e0031fa7d",
+    "DEVELOPMENT_ROADMAP.md.tmp.27564.0f4ed07ee186"
+  ]
+}

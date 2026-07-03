@@ -1,0 +1,48 @@
+[package]
+name = "nomadmark-desktop"
+version = "0.1.0"
+edition = "2021"
+authors = ["NomadMark Team"]
+description = "NomadMark Desktop - Cross-platform Markdown Editor"
+license = "MIT"
+repository = "https://github.com/nomadmark/nomadmark"
+
+[build-dependencies]
+tauri-build = { version = "1.5", features = [] }
+
+[dependencies]
+# Tauri framework
+tauri = { version = "1.6", features = ["shell-open"] }
+
+# Local core dependency (path to shared Rust core)
+markdown_core = { path = "../../core" }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+
+# Error handling
+thiserror = "1.0"
+
+# File watching
+notify = "6.1"
+
+[features]
+# This feature is used for production builds or when a dev server is not specified
+default = ["custom-protocol"]
+
+# Feature for fully bundling the app (no external dev server)
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+
+# Optimize for smaller binary size on desktop
+opt-size = true
