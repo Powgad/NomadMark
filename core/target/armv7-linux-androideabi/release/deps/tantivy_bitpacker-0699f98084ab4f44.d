@@ -1,9 +1,0 @@
-C:\Users\Administrator\Desktop\Markdowneditor2.0\core\target\armv7-linux-androideabi\release\deps\tantivy_bitpacker-0699f98084ab4f44.d: C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\tantivy-bitpacker-0.3.0\src\lib.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\tantivy-bitpacker-0.3.0\src\bitpacker.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\tantivy-bitpacker-0.3.0\src\blocked_bitpacker.rs
-
-C:\Users\Administrator\Desktop\Markdowneditor2.0\core\target\armv7-linux-androideabi\release\deps\libtantivy_bitpacker-0699f98084ab4f44.rlib: C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\tantivy-bitpacker-0.3.0\src\lib.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\tantivy-bitpacker-0.3.0\src\bitpacker.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\tantivy-bitpacker-0.3.0\src\blocked_bitpacker.rs
-
-C:\Users\Administrator\Desktop\Markdowneditor2.0\core\target\armv7-linux-androideabi\release\deps\libtantivy_bitpacker-0699f98084ab4f44.rmeta: C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\tantivy-bitpacker-0.3.0\src\lib.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\tantivy-bitpacker-0.3.0\src\bitpacker.rs C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\tantivy-bitpacker-0.3.0\src\blocked_bitpacker.rs
-
-C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\tantivy-bitpacker-0.3.0\src\lib.rs:
-C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\tantivy-bitpacker-0.3.0\src\bitpacker.rs:
-C:\Users\Administrator\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\tantivy-bitpacker-0.3.0\src\blocked_bitpacker.rs:
