@@ -86,3 +86,14 @@ echo "2. Sync Gradle files"
 echo "3. Build APK: ./gradlew assembleDebug"
 echo "4. Install on Supernote A6 X2 Nomad"
 echo ""
+
+# Clean unused build artifacts (保留 release .so 供调试)
+echo "======================================"
+echo "Cleaning unused build artifacts..."
+echo "======================================"
+cd "$CORE_DIR"
+# 只删除 debug 构建产物，保留 release
+rm -rf target/debug
+rm -rf target/*-debug-*
+echo "✅ Cleaned debug artifacts (release kept for reference)"
+echo ""
