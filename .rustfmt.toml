@@ -1,0 +1,32 @@
+# Rustfmt configuration for NomadMark
+# https://rust-lang.github.io/rustfmt/
+
+edition = "2021"
+max_width = 100
+hard_tabs = true
+tab_spaces = 4
+
+# Import grouping
+imports_granularity = "Crate"
+group_imports = "StdExternalCrate"
+reorder_imports = true
+
+# Code style
+use_field_init_shorthand = true
+use_try_shorthand = true
+format_code_in_doc_comments = true
+format_strings = true
+
+# Comments
+wrap_comments = true
+comment_width = 80
+normalize_comments = true
+
+# Chain formatting
+chain_width = 60
+single_line_if_else_max_width = 50
+
+# Other
+merge_derives = true
+remove_nested_parens = true
+struct_lit_single_line = false

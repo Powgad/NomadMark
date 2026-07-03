@@ -1,0 +1,238 @@
+# NomadMark Android Build
+#
+# Android 平台构建工作流
+# 触发条件: push 到 main/develop 分支，或手动触发
+
+name: Android Build
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'core/**'
+      - 'platforms/android/**'
+      - '.github/workflows/android-build.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'core/**'
+      - 'platforms/android/**'
+  workflow_dispatch:
+    inputs:
+      build_apk:
+        description: '构建 APK'
+        required: false
+        default: 'true'
+      build_aab:
+        description: '构建 AAB (Play Store)'
+        required: false
+        default: 'false'
+
+env:
+  ANDROID_NDK_VERSION: 26.1.10909303
+  RUST_ANDROID_VERSION: 0.77.0
+
+jobs:
+  # ============================================================================
+  # Core 层交叉编译 (Android 全架构)
+  # ============================================================================
+  core-cross-compile:
+    name: Core Cross-Compile (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-linux-android
+            abi: arm64-v8a
+            ndk: arm64
+          - target: armv7-linux-androideabi
+            abi: armeabi-v7a
+            ndk: arm
+          - target: x86_64-linux-android
+            abi: x86_64
+            ndk: x64
+
+    steps:
+      - name: 📥 Checkout 代码
+        uses: actions/checkout@v4
+
+      - name: 🦀 安装 Rust 工具链
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+
+      - name: 📦 安装 Cargo-NDK
+        run: cargo install cargo-ndk
+
+      - name: 🔨 构建 Core 库 (${{ matrix.target }})
+        run: |
+          cd core
+          cargo ndk --target ${{ matrix.target }} --android-platform 21 build --release
+
+      - name: 📤 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-${{ matrix.abi }}
+          path: |
+            core/target/${{ matrix.target }}//release/libmarkdown_core.so
+          retention-days: 7
+
+  # ============================================================================
+  # Android APK 构建
+  # ============================================================================
+  build-apk:
+    name: Build APK
+    runs-on: ubuntu-latest
+    needs: core-cross-compile
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.build_apk != 'false'
+
+    steps:
+      - name: 📥 Checkout 代码
+        uses: actions/checkout@v4
+
+      - name: ☕ 设置 JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: 📦 下载 Core 构建产物
+        uses: actions/download-artifact@v4
+        with:
+          pattern: core-*
+          path: platforms/android/app/src/main/jniLibs/
+          merge-multiple: true
+
+      - name: 📋 整理 JNI 库结构
+        run: |
+          # 重命名 artifact 目录为对应的 ABI 目录
+          cd platforms/android/app/src/main/jniLibs/
+          ls -la
+          # artifacts 下载后的目录格式需要调整
+          mkdir -p arm64-v8a armeabi-v7a x86_64
+          find . -name "libmarkdown_core.so" -exec cp {} arm64-v8a/ \; || true
+
+      - name: 🎫 获取 Gradle 缓存
+        uses: gradle/gradle-build-action@v3
+        with:
+          cache-read-only: true
+
+      - name: 🔨 构建 Debug APK
+        run: |
+          cd platforms/android
+          if [ -f "./gradlew" ]; then
+            chmod +x gradlew
+            ./gradlew assembleDebug
+          else
+            echo "警告: gradlew 不存在，跳过构建"
+          fi
+        continue-on-error: true
+
+      - name: 🔐 配置签名（仅 Release）
+        if: false  # 暂不启用自动签名
+        env:
+          KEY_STORE: ${{ secrets.ANDROID_KEY_STORE }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+        run: |
+          # 签名配置需要额外的设置
+          echo "Release 构建需要手动签名配置"
+
+      - name: 📤 上传 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: |
+            platforms/android/app/build/outputs/apk/debug/*.apk
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: 📊 生成 APK 信息
+        run: |
+          find platforms/android/app/build/outputs/apk -name "*.apk" -exec ls -lh {} \;
+
+  # ============================================================================
+  # Android AAB 构建 (Play Store)
+  # ============================================================================
+  build-aab:
+    name: Build AAB (Play Store)
+    runs-on: ubuntu-latest
+    needs: core-cross-compile
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.build_aab == 'true'
+
+    steps:
+      - name: 📥 Checkout 代码
+        uses: actions/checkout@v4
+
+      - name: ☕ 设置 JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: 📦 下载 Core 构建产物
+        uses: actions/download-artifact@v4
+        with:
+          pattern: core-*
+          path: platforms/android/app/src/main/jniLibs/
+          merge-multiple: true
+
+      - name: 🎫 获取 Gradle 缓存
+        uses: gradle/gradle-build-action@v3
+
+      - name: 🔨 构建 Release Bundle
+        run: |
+          cd platforms/android
+          chmod +x gradlew
+          ./gradlew bundleRelease
+        continue-on-error: true
+
+      - name: 📤 上传 AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-aab
+          path: |
+            platforms/android/app/build/outputs/bundle/release/*.aab
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # ============================================================================
+  # Android Lint 检查
+  # ============================================================================
+  android-lint:
+    name: Android Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout 代码
+        uses: actions/checkout@v4
+
+      - name: ☕ 设置 JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: 🎫 获取 Gradle 缓存
+        uses: gradle/gradle-build-action@v3
+
+      - name: 🔍 运行 Lint
+        run: |
+          cd platforms/android
+          if [ -f "./gradlew" ]; then
+            chmod +x gradlew
+            ./gradlew lint || true
+          fi
+        continue-on-error: true
+
+      - name: 📤 上传 Lint 结果
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-results
+          path: |
+            platforms/android/app/build/reports/lint-*.html
+            platforms/android/app/build/reports/lint-*.xml
+          retention-days: 7
+          if-no-files-found: ignore

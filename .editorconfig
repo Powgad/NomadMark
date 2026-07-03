@@ -1,0 +1,61 @@
+# EditorConfig for NomadMark Project
+# https://editorconfig.org
+
+root = true
+
+# Default settings for all files
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Kotlin/Java
+[*.{kt,kts,java}]
+indent_style = space
+indent_size = 4
+max_line_length = 120
+continuation_indent_size = 4
+
+# Rust/TOML
+[*.{rs,toml}]
+indent_style = tab
+indent_size = 4
+max_line_length = 100
+
+# TypeScript/JavaScript/JSON/HTML/CSS
+[*.{tsx,ts,jsx,js,json,html,css,scss}]
+indent_style = space
+indent_size = 2
+
+# Markdown
+[*.md]
+indent_style = space
+indent_size = 2
+trim_trailing_whitespace = false  # Allow trailing spaces for line breaks
+
+# YAML
+[*.{yml,yaml}]
+indent_style = space
+indent_size = 2
+
+# Gradle
+[*.gradle]
+indent_style = space
+indent_size = 4
+
+# Shell scripts
+[*.{sh,bash}]
+indent_style = space
+indent_size = 2
+end_of_line = lf
+
+# Batch files (Windows)
+[*.{bat,cmd}]
+indent_style = space
+indent_size = 2
+end_of_line = crlf
+
+# Makefiles
+[Makefile]
+indent_style = tab

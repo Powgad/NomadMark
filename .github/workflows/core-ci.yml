@@ -1,0 +1,137 @@
+# NomadMark Core CI
+#
+# 持续集成工作流 - 验证 Core 层的编译和测试
+# 触发条件: push 到 main/develop 分支，或 Pull Request
+
+name: Core CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ============================================================================
+  # 核心库构建和测试
+  # ============================================================================
+  core-build-and-test:
+    name: Core Build & Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        rust: [stable]
+        include:
+          # Linux 上测试 nightly 版本
+          - os: ubuntu-latest
+            rust: nightly
+            allow-fail: true
+
+    steps:
+      - name: 📥 Checkout 代码
+        uses: actions/checkout@v4
+
+      - name: 🦀 安装 Rust 工具链
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: rustfmt, clippy
+
+      - name: 💾 配置 Rust 缓存
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            core
+
+      - name: 🔍 检查代码格式
+        run: cargo fmt -- --check
+        working-directory: ${{ github.workspace }}
+
+      - name: 🔬 运行 Clippy Lint
+        run: |
+          cargo clippy --workspace --all-targets -- -D warnings \
+            -A clippy::missing-errors-doc \
+            -A clippy::missing-panics-doc
+        continue-on-error: ${{ matrix.allow-fail == true }}
+
+      - name: 🔨 构建 Core 库
+        run: cargo build --workspace --all-targets
+
+      - name: 🧪 运行单元测试
+        run: cargo test --workspace --all-targets --verbose
+        env:
+          RUSTFLAGS: "-D warnings"
+
+      - name: 📊 生成测试覆盖率
+        if: matrix.os == 'ubuntu-latest' && matrix.rust == 'stable'
+        run: |
+          cargo install cargo-tarpaulin
+          cargo tarpaulin --workspace --all-targets --verbose --out Xml
+        continue-on-error: true
+
+      - name: 📤 上传覆盖率报告
+        if: matrix.os == 'ubuntu-latest' && matrix.rust == 'stable'
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./cobertura.xml
+          fail_ci_if_error: false
+        continue-on-error: true
+
+  # ============================================================================
+  # 安全审计
+  # ============================================================================
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: 📥 Checkout 代码
+        uses: actions/checkout@v4
+
+      - name: 🦀 安装 Rust 工具链
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: 🔒 运行 Cargo Audit
+        uses: rustsec/audit-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      - name: 🔍 运行 Cargo Check
+        run: cargo check --workspace
+        continue-on-error: true
+
+  # ============================================================================
+  # 依赖检查
+  # ============================================================================
+  dependency-check:
+    name: Dependency Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout 代码
+        uses: actions/checkout@v4
+
+      - name: 🦀 安装 Rust 工具链
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: 📦 检查依赖版本
+        run: |
+          cargo install cargo-outdated
+          cargo outdated --workspace --exit-code 1
+        continue-on-error: true
+
+      - name: 🔍 检查未使用的依赖
+        run: |
+          cargo install cargo-udeps
+          cargo +nightly udeps --workspace
+        continue-on-error: true

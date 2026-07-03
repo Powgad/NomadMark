@@ -15,7 +15,8 @@ tauri-build = { version = "1.5", features = [] }
 tauri = { version = "1.6", features = ["shell-open"] }
 
 # Local core dependency (path to shared Rust core)
-markdown_core = { path = "../../core" }
+# Updated after moving to platforms/ directory
+markdown_core = { path = "../../../core" }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -37,12 +38,4 @@ default = ["custom-protocol"]
 # Feature for fully bundling the app (no external dev server)
 custom-protocol = ["tauri/custom-protocol"]
 
-[profile.release]
-opt-level = 3
-lto = true
-codegen-units = 1
-strip = true
-panic = "abort"
-
-# Optimize for smaller binary size on desktop
-opt-size = true
+# Profile 配置现在由 workspace 统一管理
