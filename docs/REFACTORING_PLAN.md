@@ -344,6 +344,102 @@ Week 2:
 
 ## 实施步骤
 
+### 阶段零：重构前准备（⭐ 新增）
+
+**目标**: 确保重构安全可回滚，建立现状基准
+
+#### 0.1 创建备份分支
+
+```bash
+# 创建重构前的备份分支
+git branch backup-before-refactor-$(date +%Y%m%d)
+
+# 确认分支创建成功
+git branch | grep backup
+```
+
+#### 0.2 现状快照
+
+记录当前项目状态，用于回滚对比：
+
+```bash
+#!/bin/bash
+# scripts/snapshot-pre-refactor.sh
+
+SNAPSHOT_DIR="pre-refactor-snapshot-$(date +%Y%m%d)"
+mkdir -p "$SNAPSHOT_DIR"
+
+# 记录目录结构
+tree -L 3 -I 'target|node_modules|.git' > "$SNAPSHOT_DIR/directory-structure.txt"
+
+# 记录 Cargo 依赖
+cd core && cargo tree > "../$SNAPSHOT_DIR/cargo-deps.txt" && cd ..
+
+# 记录 npm 依赖（如果存在）
+if [ -f "desktop/package.json" ]; then
+    cd desktop && npm list --depth=0 > "../$SNAPSHOT_DIR/npm-deps.txt" && cd ..
+fi
+
+# 记录 Gradle 配置
+cp android/build.gradle "$SNAPSHOT_DIR/"
+cp android/app/build.gradle "$SNAPSHOT_DIR/"
+
+# 记录 Git 状态
+git status > "$SNAPSHOT_DIR/git-status.txt"
+git log --oneline -10 > "$SNAPSHOT_DIR/git-recent-commits.txt"
+
+echo "✅ 快照已保存到: $SNAPSHOT_DIR"
+```
+
+#### 0.3 功能验证
+
+确保当前版本可正常构建和运行：
+
+```bash
+# 验证 Core 构建
+cd core && cargo build --release && cargo test && cd ..
+
+# 验证 Android 构建（如果有环境）
+cd android && ./gradlew assembleDebug && cd ..
+
+# 验证 Desktop 构建（如果有环境）
+cd desktop && npm run tauri:build && cd ..
+
+echo "✅ 当前版本构建验证通过"
+```
+
+#### 0.4 依赖清单
+
+记录所有关键依赖的版本：
+
+```bash
+# 创建依赖清单
+cat > PRE_REFACTOR_DEPENDENCIES.md << 'EOF'
+# 重构前依赖清单
+
+## Rust Core
+- pulldown-cmark: $(grep pulldown-cmark core/Cargo.toml)
+- rustybuzz: $(grep rustybuzz core/Cargo.toml)
+- tantivy: $(grep tantivy core/Cargo.toml)
+
+## Android
+- Gradle: $(grep gradle android/build.gradle | head -1)
+- compileSdk: $(grep compileSdk android/app/build.gradle)
+- targetSdk: $(grep targetSdk android/app/build.gradle)
+
+## Desktop
+- Node.js: $(node --version)
+- npm: $(npm --version)
+- Tauri: $(grep tauri desktop/src-tauri/Cargo.toml)
+
+## 构建工具
+- Rust: $(rustc --version)
+- Cargo: $(cargo --version)
+EOF
+```
+
+---
+
 ### 阶段一：建立 Cargo Workspace
 
 **目标**: 创建 Workspace 根配置，建立统一依赖管理
@@ -1432,6 +1528,152 @@ winget install just.command
 # https://github.com/casey/just/releases
 ```
 
+##### D.1.4 根目录剩余文件处理
+
+**问题**: 根目录仍有大量文档和脚本文件未处理，影响项目整洁度。
+
+**当前状态**：
+```
+根目录剩余文件：
+├── build-android.sh / .bat     # 构建脚本
+├── 14 个 MD 文档                # 技术文档
+└── ratta-android-apk-check.md   # 临时文档
+```
+
+**改进方案**: 在阶段二增加根目录完全清理步骤：
+
+```bash
+# 阶段 2.6：根目录完全清理
+
+# 1. 移动构建脚本
+git mv build-android.sh scripts/build/
+git mv build-android.bat scripts/build/
+
+# 2. 移动技术文档到 docs/ 对应子目录
+git mv DEPLOYMENT_GUIDE.md docs/guides/deployment.md
+git mv IMPLEMENTATION_GUIDE.md docs/guides/implementation.md
+git mv TESTING_CHECKLIST.md docs/guides/testing.md
+git mv MISSING_FEATURES_ANALYSIS.md docs/guides/missing-features.md
+
+# 3. 移动报告文档
+git mv PROJECT_PROGRESS.md docs/reports/progress.md
+git mv MARKDOWN_RENDERING_STATUS.md docs/reports/markdown-status.md
+git mv ratta-android-apk-check.md docs/reports/ratta-android-check.md
+
+# 4. 移动架构文档（已在 2.3 处理，这里确认）
+git mv PROJECT_STRUCTURE.md docs/architecture/structure.md
+git mv "《架构设计书 v2.0》.md" docs/architecture/design-v2.md
+git mv "详细设计文档.md" docs/architecture/detailed-design.md
+git mv "《UI交互文档》.md" docs/features/ui-interactions.md
+
+# 5. 移动路线图文档
+git mv DEVELOPMENT_ROADMAP.md docs/roadmap/roadmap.md
+git mv ROADMAP_ANALYSIS.md docs/roadmap/analysis.md
+
+# 6. 移动功能文档
+git mv MARKDOWN_RENDERING_FEATURES.md docs/features/markdown-rendering.md
+
+# 7. 处理 SKILL.md（项目技能说明，可移至 docs/ 或保留在根目录）
+git mv SKILL.md docs/skills.md  # 或保留在根目录作为项目入口
+```
+
+##### D.1.5 Git 配置文件更新
+
+**问题**: 重构后目录结构变化，`.gitignore` 需要更新，且缺少 `.gitattributes`。
+
+**改进方案**: 在阶段二最后更新 Git 配置。
+
+**更新 `.gitignore`**：
+
+```bash
+# .gitignore 更新内容
+
+# ========== 平台特定 ==========
+# Android
+platforms/android/.gradle/
+platforms/android/.idea/
+platforms/android/.vscode/
+platforms/android/captures/
+platforms/android/app/build/
+platforms/android/local.properties
+platforms/android/*.iml
+
+# Desktop (Tauri)
+platforms/desktop/src-tauri/target/
+platforms/desktop/node_modules/
+platforms/desktop/dist/
+platforms/desktop/dist-ssr/
+platforms/desktop/.tauri/
+
+# iOS
+platforms/ios/Pods/
+platforms/ios/*.xcworkspace
+platforms/ios/DerivedData/
+
+# ========== 统一构建输出 ==========
+build/
+target/
+*.apk
+*.aab
+*.ipa
+*.dmg
+*.exe
+
+# ========== 但保留重要文件 ==========
+!platforms/android/app/src/main/jniLibs/*.so
+
+# ========== 开发工具 ==========
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ========== 系统文件 ==========
+.DS_Store
+Thumbs.db
+desktop.ini
+```
+
+**创建 `.gitattributes`**：
+
+```bash
+# .gitattributes - 统一行尾符和文件处理
+
+# 默认文本文件使用 LF 换行符
+* text=auto eol=lf
+
+# Windows 批处理文件使用 CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Shell 脚本使用 LF
+*.sh text eol=lf
+
+# Markdown 文件使用 LF
+*.md text eol=lf
+
+# 二进制文件
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.so binary
+*.a binary
+*.dll binary
+*.exe binary
+*.apk binary
+*.ipa binary
+
+# Android APK
+*.apk binary diff
+
+# 特殊处理：确保某些文件不会被行尾符转换
+git-lfs-filter-process(1) binary
+```
+
 ---
 
 #### D.2 中优先级改进 🟡
@@ -1546,6 +1788,152 @@ jni = "0.21"  # ✅
 jni = { workspace = true, optional = true }
 ```
 
+##### D.2.4 项目配置文件完善
+
+**问题**: 缺少统一的项目配置文件，影响代码质量和团队协作。
+
+**改进方案**: 在阶段六补充完整的项目配置文件。
+
+**创建/更新 `.editorconfig`**：
+
+```ini
+# .editorconfig - 项目根目录
+root = true
+
+# ========== 默认设置 ==========
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# ========== Kotlin/Java ==========
+[*.{kt,kts,java}]
+indent_style = space
+indent_size = 4
+continuation_indent_size = 4
+max_line_length = 120
+
+# ========== Rust ==========
+[*.{rs,toml}]
+indent_style = tab
+indent_size = 4
+max_line_length = 100
+
+# ========== TypeScript/JavaScript/JSON ==========
+[*.{tsx,ts,jsx,js,json}]
+indent_style = space
+indent_size = 2
+
+# ========== Markdown ==========
+[*.md]
+indent_style = space
+indent_size = 2
+trim_trailing_whitespace = false  # Markdown 允许行尾空格
+
+# ========== Shell 脚本 ==========
+[*.{sh,bash}]
+indent_style = space
+indent_size = 2
+end_of_line = lf
+
+# ========== YAML ==========
+[*.{yml,yaml}]
+indent_style = space
+indent_size = 2
+
+# ========== Gradle ==========
+[*.gradle]
+indent_style = space
+indent_size = 4
+```
+
+**创建 `CODEOWNERS`**：
+
+```
+# .github/CODEOWNERS - 代码所有者配置
+
+# ========== 核心代码 ==========
+# 所有 Core 相关变更需要核心团队审核
+core/ @nomadmark/core-team
+
+# ========== 平台代码 ==========
+# Android 平台
+platforms/android/ @nomadmark/android-team
+
+# Desktop 平台
+platforms/desktop/ @nomadmark/desktop-team
+
+# iOS 平台（开发中）
+platforms/ios/ @nomadmark/ios-team
+
+# ========== 构建和 CI ==========
+# CI/CD 配置变更需要维护者审核
+.github/ @nomadmark/maintainers
+scripts/ @nomadmark/maintainers
+
+# ========== 文档 ==========
+# 文档变更任何人都可以审核
+docs/ @nomadmark/docs-team @nomadmark/maintainers
+*.md @nomadmark/docs-team
+
+# ========== 紧急修复 ==========
+# 安全相关需要所有维护者审核
+SECURITY.md @nomadmark/maintainers
+```
+
+**创建/更新 `.rustfmt.toml`**：
+
+```toml
+# .rustfmt.toml - Rust 格式化配置
+
+edition = "2021"
+max_width = 100
+hard_tabs = true
+tab_spaces = 4
+
+# 导入分组
+imports_granularity = "Crate"
+group_imports = "StdExternalCrate"
+reorder_imports = true
+
+# 代码风格
+use_field_init_shorthand = true
+use_try_shorthand = true
+format_code_in_doc_comments = true
+format_strings = true
+
+# 注释
+wrap_comments = true
+comment_width = 80
+normalize_comments = true
+
+# 链式调用
+chain_width = 60
+single_line_if_else_max_width = 50
+
+# 其他
+merge_derives = true
+remove_nested_parens = true
+struct_lit_single_line = false
+```
+
+**创建/更新 `.clippy.toml`**：
+
+```toml
+# .clippy.toml - Clippy 配置
+
+# 允许的复杂度阈值
+cognitive-complexity-threshold = 30
+type-complexity-threshold = 250
+
+# 文档要求
+missing-docs-in-private-items = false  # 私有项不需要文档
+
+# 性能相关
+too-many-arguments-threshold = 7
+```
+
 ---
 
 #### D.3 低优先级改进 🟢
@@ -1615,6 +2003,318 @@ on:
 ### Core 开发者
 - [Core FFI API](api/core-ffi.md)
 - [架构设计 v2.0](architecture/design-v2.md)
+```
+
+##### D.3.3 发布流程完善
+
+**问题**: 阶段五提到 `release.yml`，但缺少完整的发布流程说明。
+
+**改进方案**: 补充详细的发布流程文档。
+
+**创建 `docs/guides/release-process.md`**：
+
+```markdown
+# 发布流程指南
+
+## 版本管理
+
+### 语义化版本
+
+- **格式**: `MAJOR.MINOR.PATCH`
+  - MAJOR: 破坏性变更
+  - MINOR: 新功能，向后兼容
+  - PATCH: Bug 修复
+
+### 版本号示例
+
+- `0.1.0` - 初始发布
+- `0.2.0` - 添加搜索功能
+- `0.2.1` - 修复搜索 bug
+- `1.0.0` - 稳定版本，API 稳定
+
+## 发布前检查清单
+
+- [ ] 所有测试通过
+- [ ] 更新 CHANGELOG.md
+- [ ] 更新版本号（所有平台）
+- [ ] 运行完整测试套件
+- [ ] 检查依赖安全性
+- [ ] 在发布分支上测试
+
+## 发布步骤
+
+### 1. 准备发布
+
+\`\`\`bash
+# 创建发布分支
+git checkout -b release/v0.2.0
+
+# 更新版本号
+# core/Cargo.toml
+# platforms/desktop/src-tauri/Cargo.toml
+# platforms/android/app/build.gradle
+
+# 更新 CHANGELOG.md
+\`\`\`
+
+### 2. 构建所有平台
+
+\`\`\`bash
+# 构建所有平台
+./scripts/build/build-all.sh
+
+# 运行测试
+cargo test --workspace
+cd platforms/android && ./gradlew test
+cd platforms/desktop && npm test
+\`\`\`
+
+### 3. 创建 GitHub Release
+
+\`\`\`bash
+# 合并到主分支
+git checkout main
+git merge release/v0.2.0
+
+# 创建标签
+git tag -a v0.2.0 -m "Release v0.2.0"
+
+# 推送标签
+git push origin main --tags
+\`\`\`
+
+然后在 GitHub 创建 Release：
+- 上传构建产物
+- 使用 CHANGELOG.md 内容作为 Release Notes
+- 检查自动构建的产物
+
+### 4. 平台发布
+
+**Android**:
+- 上传到 Google Play Console
+- 或发布 F-Droid 版本
+- 更新 GitHub Release 中的 APK
+
+**Desktop**:
+- 发布到 GitHub Releases
+- Windows: 代码签名
+- macOS: 公证和分发
+- Linux: AppImage
+
+**iOS** (开发中):
+- 上传到 App Store Connect
+
+## 紧急发布流程
+
+对于关键 bug 修复：
+
+1. 在主分支直接修复
+2. 创建补丁版本（如 0.2.1）
+3. 跳过常规测试流程，只运行回归测试
+4. 快速发布
+
+## 回滚策略
+
+如果发布出现问题：
+
+1. 从 GitHub 删除 Release
+2. 创建回滚标签（如 v0.2.0-rollback）
+3. 重新构建上一版本
+4. 重新发布
+```
+
+**更新 `scripts/release/tag.sh`**：
+
+```bash
+#!/bin/bash
+# scripts/release/tag.sh
+
+set -e
+
+VERSION=$1
+
+if [ -z "$VERSION" ]; then
+    echo "Usage: $0 <version>"
+    echo "Example: $0 0.2.0"
+    exit 1
+fi
+
+echo "🏷️  准备发布 v$VERSION"
+
+# 更新 Core 版本
+sed -i "s/^version = .*/version = \"$VERSION\"/" core/Cargo.toml
+
+# 更新 Desktop 版本
+sed -i "s/\"version\": .*/\"version\": \"$VERSION\"/" desktop/package.json
+sed -i "s/^version = .*/version = \"$VERSION\"/" desktop/src-tauri/Cargo.toml
+
+# 更新 Android 版本
+# versionCode 需要递增
+sed -i "s/versionName .*/versionName \"$VERSION\"/" platforms/android/app/build.gradle
+
+# 提交版本更改
+git add -A
+git commit -m "chore: bump version to $VERSION"
+
+# 创建标签
+git tag -a "v$VERSION" -m "Release v$VERSION"
+
+echo "✅ 版本 $VERSION 已标记"
+echo "📝 请更新 CHANGELOG.md 后推送: git push --tags"
+```
+
+##### D.3.4 安全策略配置
+
+**问题**: 缺少安全漏洞报告流程和依赖审计机制。
+
+**改进方案**: 创建安全策略文档和依赖审计流程。
+
+**创建 `SECURITY.md`**：
+
+```markdown
+# 安全策略
+
+## 报告安全漏洞
+
+如果您发现安全漏洞，请**不要**公开创建 Issue。
+
+### 报告流程
+
+1. **发送邮件** 至 security@nomadmark.com
+2. 使用邮件主题: `[Security] 漏洞描述`
+3. 包含以下信息:
+   - 漏洞描述
+   - 影响范围
+   - 复现步骤
+   - 建议的修复方案
+
+### 响应时间
+
+- **确认收到**: 48 小时内
+- **详细评估**: 7 天内
+- **修复时间**: 视严重程度而定
+
+## 安全最佳实践
+
+### 开发者
+
+- 使用强密码和双因素认证
+- 定期更新依赖
+- 不在代码中硬编码密钥
+- 使用环境变量存储敏感信息
+
+### 用户
+
+- 保持应用更新
+- 只从官方来源下载
+- 验证下载文件的签名
+
+## 已知安全问题
+
+当前没有已知的安全漏洞。历史安全问题将在修复后在此记录。
+
+## 致谢
+
+感谢所有负责任地报告安全问题的研究人员。
+```
+
+**创建 `scripts/audit.sh`**：
+
+```bash
+#!/bin/bash
+# scripts/audit.sh - 依赖审计脚本
+
+set -e
+
+echo "🔒 开始安全审计..."
+
+# 1. Rust 依赖审计
+echo "📦 检查 Rust 依赖..."
+if command -v cargo-audit &> /dev/null; then
+    cd core
+    cargo audit
+    cd ..
+else
+    echo "⚠️  cargo-audit 未安装，跳过 Rust 审计"
+    echo "   安装: cargo install cargo-audit"
+fi
+
+# 2. npm 依赖审计
+echo "📦 检查 npm 依赖..."
+if [ -f "desktop/package.json" ]; then
+    cd desktop
+    npm audit
+    cd ..
+fi
+
+# 3. 检查敏感信息
+echo "🔍 检查敏感信息泄露..."
+SECRETS_PATTERN="(password|secret|api_key|token|private_key)"
+if grep -ri "$SECRETS_PATTERN" --include="*.rs" --include="*.kt" --include="*.ts" core/ platforms/ 2>/dev/null; then
+    echo "⚠️  发现可能的敏感信息，请检查"
+fi
+
+# 4. 检查许可证兼容性
+echo "📄 检查许可证..."
+cd core
+if command -v cargo-deny &> /dev/null; then
+    cargo deny check licenses
+else
+    echo "⚠️  cargo-deny 未安装，跳过许可证检查"
+    echo "   安装: cargo install cargo-deny"
+fi
+cd ..
+
+echo "✅ 安全审计完成"
+```
+
+**创建 `deny.toml`（许可证配置）**：
+
+```toml
+# deny.toml - Rust 依赖许可证配置
+
+[licenses]
+# 许可证白名单
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016"
+]
+
+# 需要澄清的许可证
+clarify = [
+    "GPL-3.0",
+    "GPL-2.0"
+]
+
+# 拒绝的许可证
+deny = [
+    "GPL-3.0",
+    "AGPL-3.0"
+]
+
+[bans]
+# 禁止重复的多个版本
+multiple-versions = "warn"
+
+# 禁止特定 crate
+deny = [
+    # 有安全问题的 crate
+    { name = "openssl-sys", version = "<0.9.60" },
+]
+
+[sources]
+# 只允许官方源
+allow = [
+    "https://github.com/rust-lang/crates.io-index"
+]
+
+# 禁止 Git 依赖（除非明确允许）
+allow-git = false
 ```
 
 ---
