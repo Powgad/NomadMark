@@ -263,4 +263,9 @@ coverage/
 # =============================================================================
 # Claude / AI tools
 # =============================================================================
-.claude/
+# 忽略大部分 .claude 内容，但保留 skills 文档
+.claude/*
+!.claude/skills/
+!.claude/skills/*.md
+!.claude/SKILLS.md
+!.claude/settings.json
