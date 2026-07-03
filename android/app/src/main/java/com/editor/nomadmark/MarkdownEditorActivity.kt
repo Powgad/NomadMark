@@ -132,14 +132,17 @@ class MarkdownEditorActivity : android.app.Activity() {
     private var scrollSyncManager: ScrollSyncManager? = null
 
     // =========================================================================
-    // Core 文档句柄（用于 Core 层功能）
+    // Core 文档集成（暂时禁用）
     // =========================================================================
-
-    /** Core 文档句柄 */
-    private var coreDocumentHandle: Long = 0L
-
-    /** 是否使用 Core 层搜索 */
-    private var useCoreSearch = false
+    // Core 层 JNI 接口尚未完全实现，暂时使用本地实现
+    // 待实现以下函数后可重新启用：
+    // - Java_com_editor_MarkdownCore_nativeSearch (需返回 Java 数组)
+    // - 文档内容获取 API
+    //
+    // /** Core 文档句柄 */
+    // private var coreDocumentHandle: Long = 0L
+    // /** 是否使用 Core 层搜索 */
+    // private var useCoreSearch = false
 
     // =========================================================================
     // Markwon 渲染器
@@ -464,40 +467,12 @@ class MarkdownEditorActivity : android.app.Activity() {
             updateSaveButton()
             updateFilenameDisplay()
 
-            // 初始化 Core 文档句柄
-            initCoreDocument(content)
-
+            // 暂时禁用 Core 文档集成，因为 JNI 接口未完全实现
+            // 如需启用，需先完善 core/src/bridge/jni.rs 中的 nativeSearch 等函数
             Log.d("MarkdownEditorActivity", "Loaded file: $path, size: ${content.length}")
         } catch (e: Exception) {
             Log.e("MarkdownEditorActivity", "Failed to load file", e)
             Toast.makeText(this, "加载文件失败: ${e.message}", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    /**
-     * 初始化 Core 文档句柄
-     */
-    private fun initCoreDocument(content: String) {
-        try {
-            // 释放旧的句柄
-            if (coreDocumentHandle != 0L) {
-                MarkdownCore.nativeRelease(coreDocumentHandle)
-            }
-
-            // 创建新文档
-            coreDocumentHandle = MarkdownCore.nativeCreate(content)
-
-            if (coreDocumentHandle != 0L) {
-                useCoreSearch = true
-                Log.d("MarkdownEditorActivity", "Core document initialized successfully")
-            } else {
-                Log.w("MarkdownEditorActivity", "Core document initialization failed, using local search")
-                useCoreSearch = false
-            }
-        } catch (e: Exception) {
-            Log.e("MarkdownEditorActivity", "Failed to initialize Core document", e)
-            coreDocumentHandle = 0L
-            useCoreSearch = false
         }
     }
 
@@ -708,43 +683,11 @@ class MarkdownEditorActivity : android.app.Activity() {
             return
         }
 
-        // 尝试使用 Core 层搜索
-        if (coreDocumentHandle != 0L && useCoreSearch) {
-            performCoreSearch(query)
-        } else {
-            performLocalSearch(query)
-        }
+        // 使用本地搜索实现（Core 层 JNI 接口未完全实现）
+        performLocalSearch(query)
 
         // 显示替换选项
         replaceRow.visibility = View.VISIBLE
-    }
-
-    /**
-     * 使用 Core 层进行搜索
-     */
-    private fun performCoreSearch(query: String) {
-        try {
-            val results = MarkdownCore.nativeSearch(coreDocumentHandle, query)
-            searchResults.clear()
-            currentSearchIndex = 0
-
-            for (result in results) {
-                // 将 Core 搜索结果转换为本地格式
-                // SearchResult 包含 line, startColumn, endColumn, context
-                // 需要计算全局位置
-                searchResults.add(Pair(result.startColumn, result.endColumn))
-            }
-
-            if (searchResults.isEmpty()) {
-                Toast.makeText(this, "未找到匹配项", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(this, "找到 ${searchResults.size} 个匹配项", Toast.LENGTH_SHORT).show()
-                highlightSearchResult(0)
-            }
-        } catch (e: Exception) {
-            Log.e("MarkdownEditorActivity", "Core search failed, falling back to local search", e)
-            performLocalSearch(query)
-        }
     }
 
     /**
@@ -922,61 +865,13 @@ class MarkdownEditorActivity : android.app.Activity() {
     // =========================================================================
 
     private fun undo() {
-        // 优先使用 Core 层撤销
-        if (coreDocumentHandle != 0L) {
-            performCoreUndo()
-        } else {
-            performLocalUndo()
-        }
+        // 使用本地撤销实现（Core 层 JNI 接口未完全实现）
+        performLocalUndo()
     }
 
     private fun redo() {
-        // 优先使用 Core 层重做
-        if (coreDocumentHandle != 0L) {
-            performCoreRedo()
-        } else {
-            performLocalRedo()
-        }
-    }
-
-    /**
-     * 使用 Core 层撤销
-     */
-    private fun performCoreUndo() {
-        try {
-            val success = MarkdownCore.nativeUndo(coreDocumentHandle)
-            if (success) {
-                // 重新加载文档内容
-                reloadFromCore()
-                markAsModified()
-                Toast.makeText(this, "已撤销", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(this, "没有可撤销的操作", Toast.LENGTH_SHORT).show()
-            }
-        } catch (e: Exception) {
-            Log.e("MarkdownEditorActivity", "Core undo failed, falling back to local undo", e)
-            performLocalUndo()
-        }
-    }
-
-    /**
-     * 使用 Core 层重做
-     */
-    private fun performCoreRedo() {
-        try {
-            val success = MarkdownCore.nativeRedo(coreDocumentHandle)
-            if (success) {
-                // 重新加载文档内容
-                reloadFromCore()
-                markAsModified()
-                Toast.makeText(this, "已重做", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(this, "没有可重做的操作", Toast.LENGTH_SHORT).show()
-            }
-        } catch (e: Exception) {
-            Log.e("MarkdownEditorActivity", "Core redo failed, falling back to local redo", e)
-            performLocalRedo()
-        }
+        // 使用本地重做实现（Core 层 JNI 接口未完全实现）
+        performLocalRedo()
     }
 
     /**
@@ -1007,21 +902,6 @@ class MarkdownEditorActivity : android.app.Activity() {
         val next = redoStack.removeAt(redoStack.size - 1)
         getCurrentEditor().setText(next)
         markAsModified()
-    }
-
-    /**
-     * 从 Core 层重新加载文档内容
-     */
-    private fun reloadFromCore() {
-        if (coreDocumentHandle == 0L) return
-
-        try {
-            // TODO: 实现从 Core 获取更新后的内容
-            // 这需要在 Core 层添加获取文档内容的 API
-            Log.d("MarkdownEditorActivity", "Reloading from Core")
-        } catch (e: Exception) {
-            Log.e("MarkdownEditorActivity", "Failed to reload from Core", e)
-        }
     }
 
     // =========================================================================
