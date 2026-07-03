@@ -217,7 +217,11 @@ DerivedData/
 # IDE / Editor
 # =============================================================================
 .idea/
-.vscode/
+# 忽略 .vscode 内容，但保留工作区配置
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
 *.swp
 *.swo
 *~

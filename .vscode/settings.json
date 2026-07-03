@@ -1,0 +1,22 @@
+{
+  // 隐藏编译产物和临时文件
+  "files.exclude": {
+    "**/target": true,
+    "**/target/**": true,
+    "**/*.so": true,
+    "**/build": true,
+    "**/build/**": true,
+    "**/.gradle": true,
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/.cache": true,
+    "**/*.apk": true,
+    "**/*.aab": true
+  },
+  // 隐藏 IDE 生成文件
+  "files.watcherExclude": {
+    "**/target/**": true,
+    "**/build/**": true,
+    "**/node_modules/**": true
+  }
+}
