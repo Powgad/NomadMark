@@ -9,9 +9,11 @@ REM 4. ANDROID_NDK_HOME environment variable set
 
 setlocal enabledelayedexpansion
 
-set PROJECT_ROOT=%~dp0
+REM Script is in scripts\build\, so project root is two levels up
+set SCRIPT_DIR=%~dp0
+set PROJECT_ROOT=%SCRIPT_DIR%..\
 set CORE_DIR=%PROJECT_ROOT%core
-set JNI_LIBS=%PROJECT_ROOT%android\app\src\main\jniLibs
+set JNI_LIBS=%PROJECT_ROOT%platforms\android\app\src\main\jniLibs
 
 echo ======================================
 echo NomadMark Android Build Script

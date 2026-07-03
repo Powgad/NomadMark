@@ -1,11 +1,10 @@
 [package]
 name = "markdown_core"
-version = "0.1.0"
-edition = "2021"
-authors = ["NomadMark Team"]
-description = "Shared Core for NomadMark - Cross-platform Markdown Editor"
-license = "MIT"
-repository = "https://github.com/nomadmark/nomadmark"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [lib]
 crate-type = ["cdylib", "staticlib"]
@@ -13,51 +12,37 @@ name = "markdown_core"
 
 [dependencies]
 # Markdown parsing
-pulldown-cmark = "0.9"
+pulldown-cmark.workspace = true
 
 # Text shaping & font handling
-rustybuzz = "0.7"
-font-types = "0.1"
+rustybuzz.workspace = true
+font-types.workspace = true
 
 # Caching
-lru = "0.11"
+lru.workspace = true
 
 # Concurrency
-rayon = "1.7"
+rayon.workspace = true
 
 # Full-text search
-tantivy = "0.19"
+tantivy.workspace = true
 
 # Regular expressions (optional, for search module)
-regex = { version = "1", optional = true }
+regex = { workspace = true, optional = true }
 
 # Error handling
-thiserror = "1.0"
+thiserror.workspace = true
 
 # Memory management
-memmap2 = "0.9"
+memmap2.workspace = true
 
 # FFI
-libc = "0.2"
+libc.workspace = true
 
 [target.'cfg(target_os = "android")'.dependencies]
-jni = { version = "0.21", features = ["invocation"], optional = true }
+jni = { workspace = true, optional = true }
 
 [features]
 android = ["jni"]
 jni = ["dep:jni"]
 regex-search = ["regex"]
-
-[profile.release]
-opt-level = 3          # Maximum optimization
-lto = true            # Link-time optimization
-codegen-units = 1      # Single compilation unit for better optimization
-strip = false         # Don't strip symbols (needed for JNI)
-panic = "abort"       # Reduce binary size
-
-[profile.dev]
-opt-level = 0
-
-# Optimize dependencies even in debug mode
-[profile.dev.package."*"]
-opt-level = 3

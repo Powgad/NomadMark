@@ -9,9 +9,11 @@
 
 set -e
 
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Script is in scripts/build/, so project root is two levels up
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 CORE_DIR="$PROJECT_ROOT/core"
-JNI_LIBS="$PROJECT_ROOT/android/app/src/main/jniLibs"
+JNI_LIBS="$PROJECT_ROOT/platforms/android/app/src/main/jniLibs"
 
 echo "======================================"
 echo "NomadMark Android Build Script"

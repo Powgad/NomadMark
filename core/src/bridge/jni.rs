@@ -61,10 +61,10 @@ extern "C" {
 // JNI Functions - MarkdownCore
 // =============================================================================
 
-/// JNI: Java_com_editor_MarkdownCore_nativeCreate
+/// JNI: Java_com_editor_nomadmark_MarkdownCore_nativeCreate
 #[cfg(feature = "jni")]
 #[no_mangle]
-pub extern "C" fn Java_com_editor_MarkdownCore_nativeCreate(
+pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeCreate(
     mut env: JNIEnv,
     _class: jobject,
     content: jstring,
@@ -89,10 +89,10 @@ pub extern "C" fn Java_com_editor_MarkdownCore_nativeCreate(
     }
 }
 
-/// JNI: Java_com_editor_MarkdownCore_nativeCreateFromPath
+/// JNI: Java_com_editor_nomadmark_MarkdownCore_nativeCreateFromPath
 #[cfg(feature = "jni")]
 #[no_mangle]
-pub extern "C" fn Java_com_editor_MarkdownCore_nativeCreateFromPath(
+pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeCreateFromPath(
     mut env: JNIEnv,
     _class: jobject,
     path: jstring,
@@ -116,10 +116,10 @@ pub extern "C" fn Java_com_editor_MarkdownCore_nativeCreateFromPath(
     }
 }
 
-/// JNI: Java_com_editor_MarkdownCore_nativeRelease
+/// JNI: Java_com_editor_nomadmark_MarkdownCore_nativeRelease
 #[cfg(feature = "jni")]
 #[no_mangle]
-pub extern "C" fn Java_com_editor_MarkdownCore_nativeRelease(
+pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeRelease(
     _env: JNIEnv,
     _class: jobject,
     handle: jlong,
@@ -131,10 +131,10 @@ pub extern "C" fn Java_com_editor_MarkdownCore_nativeRelease(
     }
 }
 
-/// JNI: Java_com_editor_MarkdownCore_nativeGetProgress
+/// JNI: Java_com_editor_nomadmark_MarkdownCore_nativeGetProgress
 #[cfg(feature = "jni")]
 #[no_mangle]
-pub extern "C" fn Java_com_editor_MarkdownCore_nativeGetProgress(
+pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeGetProgress(
     _env: JNIEnv,
     _class: jobject,
     handle: jlong,
@@ -147,10 +147,10 @@ pub extern "C" fn Java_com_editor_MarkdownCore_nativeGetProgress(
     }
 }
 
-/// JNI: Java_com_editor_MarkdownCore_nativeGetFileSize
+/// JNI: Java_com_editor_nomadmark_MarkdownCore_nativeGetFileSize
 #[cfg(feature = "jni")]
 #[no_mangle]
-pub extern "C" fn Java_com_editor_MarkdownCore_nativeGetFileSize(
+pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeGetFileSize(
     _env: JNIEnv,
     _class: jobject,
     handle: jlong,
@@ -163,10 +163,10 @@ pub extern "C" fn Java_com_editor_MarkdownCore_nativeGetFileSize(
     }
 }
 
-/// JNI: Java_com_editor_MarkdownCore_nativeGetMemoryUsage
+/// JNI: Java_com_editor_nomadmark_MarkdownCore_nativeGetMemoryUsage
 #[cfg(feature = "jni")]
 #[no_mangle]
-pub extern "C" fn Java_com_editor_MarkdownCore_nativeGetMemoryUsage(
+pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeGetMemoryUsage(
     _env: JNIEnv,
     _class: jobject,
     handle: jlong,
@@ -179,10 +179,10 @@ pub extern "C" fn Java_com_editor_MarkdownCore_nativeGetMemoryUsage(
     }
 }
 
-/// JNI: Java_com_editor_MarkdownCore_nativeReleaseToTarget
+/// JNI: Java_com_editor_nomadmark_MarkdownCore_nativeReleaseToTarget
 #[cfg(feature = "jni")]
 #[no_mangle]
-pub extern "C" fn Java_com_editor_MarkdownCore_nativeReleaseToTarget(
+pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeReleaseToTarget(
     _env: JNIEnv,
     _class: jobject,
     handle: jlong,
@@ -199,10 +199,10 @@ pub extern "C" fn Java_com_editor_MarkdownCore_nativeReleaseToTarget(
     }
 }
 
-/// JNI: Java_com_editor_MarkdownCore_nativeUndo
+/// JNI: Java_com_editor_nomadmark_MarkdownCore_nativeUndo
 #[cfg(feature = "jni")]
 #[no_mangle]
-pub extern "C" fn Java_com_editor_MarkdownCore_nativeUndo(
+pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeUndo(
     _env: JNIEnv,
     _class: jobject,
     handle: jlong,
@@ -215,10 +215,10 @@ pub extern "C" fn Java_com_editor_MarkdownCore_nativeUndo(
     }
 }
 
-/// JNI: Java_com_editor_MarkdownCore_nativeRedo
+/// JNI: Java_com_editor_nomadmark_MarkdownCore_nativeRedo
 #[cfg(feature = "jni")]
 #[no_mangle]
-pub extern "C" fn Java_com_editor_MarkdownCore_nativeRedo(
+pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeRedo(
     _env: JNIEnv,
     _class: jobject,
     handle: jlong,
@@ -231,10 +231,10 @@ pub extern "C" fn Java_com_editor_MarkdownCore_nativeRedo(
     }
 }
 
-/// JNI: Java_com_editor_MarkdownCore_nativeReleaseBefore
+/// JNI: Java_com_editor_nomadmark_MarkdownCore_nativeReleaseBefore
 #[cfg(feature = "jni")]
 #[no_mangle]
-pub extern "C" fn Java_com_editor_MarkdownCore_nativeReleaseBefore(
+pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeReleaseBefore(
     _env: JNIEnv,
     _class: jobject,
     handle: jlong,
@@ -247,10 +247,10 @@ pub extern "C" fn Java_com_editor_MarkdownCore_nativeReleaseBefore(
     }
 }
 
-/// JNI: Java_com_editor_MarkdownCore_nativeFreeCommands
+/// JNI: Java_com_editor_nomadmark_MarkdownCore_nativeFreeCommands
 #[cfg(feature = "jni")]
 #[no_mangle]
-pub extern "C" fn Java_com_editor_MarkdownCore_nativeFreeCommands(
+pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeFreeCommands(
     _env: JNIEnv,
     _class: jobject,
     ptr: jlong,
@@ -263,10 +263,10 @@ pub extern "C" fn Java_com_editor_MarkdownCore_nativeFreeCommands(
     }
 }
 
-/// JNI: Java_com_editor_MarkdownCore_nativeFreeToc
+/// JNI: Java_com_editor_nomadmark_MarkdownCore_nativeFreeToc
 #[cfg(feature = "jni")]
 #[no_mangle]
-pub extern "C" fn Java_com_editor_MarkdownCore_nativeFreeToc(
+pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeFreeToc(
     _env: JNIEnv,
     _class: jobject,
     ptr: jlong,
@@ -279,10 +279,10 @@ pub extern "C" fn Java_com_editor_MarkdownCore_nativeFreeToc(
     }
 }
 
-/// JNI: Java_com_editor_MarkdownCore_nativeFreeDirtyRects
+/// JNI: Java_com_editor_nomadmark_MarkdownCore_nativeFreeDirtyRects
 #[cfg(feature = "jni")]
 #[no_mangle]
-pub extern "C" fn Java_com_editor_MarkdownCore_nativeFreeDirtyRects(
+pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeFreeDirtyRects(
     _env: JNIEnv,
     _class: jobject,
     ptr: jlong,
@@ -295,11 +295,11 @@ pub extern "C" fn Java_com_editor_MarkdownCore_nativeFreeDirtyRects(
     }
 }
 
-/// JNI: Java_com_editor_MarkdownCore_nativeRenderToCanvas
+/// JNI: Java_com_editor_nomadmark_MarkdownCore_nativeRenderToCanvas
 /// Renders document content to the given area
 #[cfg(feature = "jni")]
 #[no_mangle]
-pub extern "C" fn Java_com_editor_MarkdownCore_nativeRenderToCanvas(
+pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeRenderToCanvas(
     mut env: JNIEnv,
     _class: jobject,
     handle: jlong,
@@ -352,11 +352,11 @@ pub extern "C" fn Java_com_editor_MarkdownCore_nativeRenderToCanvas(
     0
 }
 
-/// JNI: Java_com_editor_MarkdownCore_nativeLoadRange
+/// JNI: Java_com_editor_nomadmark_MarkdownCore_nativeLoadRange
 /// Load and render a specific line range
 #[cfg(feature = "jni")]
 #[no_mangle]
-pub extern "C" fn Java_com_editor_MarkdownCore_nativeLoadRange(
+pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeLoadRange(
     _env: JNIEnv,
     _class: jobject,
     handle: jlong,
@@ -409,11 +409,11 @@ pub extern "C" fn Java_com_editor_MarkdownCore_nativeLoadRange(
     }
 }
 
-/// JNI: Java_com_editor_MarkdownCore_nativeGetToc
+/// JNI: Java_com_editor_nomadmark_MarkdownCore_nativeGetToc
 /// Get table of contents entries
 #[cfg(feature = "jni")]
 #[no_mangle]
-pub extern "C" fn Java_com_editor_MarkdownCore_nativeGetToc(
+pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeGetToc(
     _env: JNIEnv,
     _class: jobject,
     handle: jlong,
@@ -447,11 +447,11 @@ pub extern "C" fn Java_com_editor_MarkdownCore_nativeGetToc(
     }
 }
 
-/// JNI: Java_com_editor_MarkdownCore_nativeSearch
+/// JNI: Java_com_editor_nomadmark_MarkdownCore_nativeSearch
 /// TODO: Implement search
 #[cfg(feature = "jni")]
 #[no_mangle]
-pub extern "C" fn Java_com_editor_MarkdownCore_nativeSearch(
+pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeSearch(
     _env: JNIEnv,
     _class: jobject,
     _handle: jlong,
@@ -461,11 +461,11 @@ pub extern "C" fn Java_com_editor_MarkdownCore_nativeSearch(
     0
 }
 
-/// JNI: Java_com_editor_MarkdownCore_00024NativeRenderCommands_nativeRelease
+/// JNI: Java_com_editor_nomadmark_MarkdownCore_00024NativeRenderCommands_nativeRelease
 /// For NativeRenderCommands
 #[cfg(feature = "jni")]
 #[no_mangle]
-pub extern "C" fn Java_com_editor_MarkdownCore_00024NativeRenderCommands_nativeRelease(
+pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_00024NativeRenderCommands_nativeRelease(
     _env: JNIEnv,
     _class: jobject,
     _ptr: jlong,
@@ -477,11 +477,11 @@ pub extern "C" fn Java_com_editor_MarkdownCore_00024NativeRenderCommands_nativeR
 // JNI Functions - MarkdownEditorView
 // =============================================================================
 
-/// JNI: Java_com_editor_MarkdownEditorView_getCanvasNativePtr
+/// JNI: Java_com_editor_nomadmark_MarkdownEditorView_getCanvasNativePtr
 /// Get native pointer to Canvas for rendering
 #[cfg(feature = "jni")]
 #[no_mangle]
-pub extern "C" fn Java_com_editor_MarkdownEditorView_getCanvasNativePtr(
+pub extern "C" fn Java_com_editor_nomadmark_MarkdownEditorView_getCanvasNativePtr(
     _env: JNIEnv,
     _class: jobject,
     _canvas: jobject,

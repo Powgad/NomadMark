@@ -3,6 +3,30 @@
 # =============================================================================
 
 # =============================================================================
+# Platform Specific
+# =============================================================================
+# Android
+platforms/android/.gradle/
+platforms/android/.idea/
+platforms/android/.vscode/
+platforms/android/captures/
+platforms/android/app/build/
+platforms/android/local.properties
+platforms/android/*.iml
+
+# Desktop (Tauri)
+platforms/desktop/src-tauri/target/
+platforms/desktop/node_modules/
+platforms/desktop/dist/
+platforms/desktop/dist-ssr/
+platforms/desktop/.tauri/
+
+# iOS
+platforms/ios/Pods/
+platforms/ios/*.xcworkspace
+platforms/ios/DerivedData/
+
+# =============================================================================
 # Rust / Core
 # =============================================================================
 /target/
@@ -42,10 +66,11 @@ build/
 # NDK
 obj/
 *.o
-*.so
 
-# JNI Libs (手动放置，忽略构建中间产物)
-!android/app/src/main/jniLibs/
+# 忽略构建中间产物 .so，但保留 jniLibs 中的预编译库
+*.so
+!**/jniLibs/**/*.so
+!platforms/android/app/src/main/jniLibs/**/*.so
 
 # =============================================================================
 # Desktop / Tauri
