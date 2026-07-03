@@ -1310,17 +1310,436 @@ npm run tauri:build
 
 ### C. 常见问题
 
-**Q: Cargo Workspace 如何管理依赖版本？**  
+**Q: Cargo Workspace 如何管理依赖版本？**
 A: 在根 Cargo.toml 的 `[workspace.dependencies]` 中统一定义，成员使用 `xxx.workspace = true` 引用。
 
-**Q: Android 如何自动构建 Rust Core？**  
+**Q: Android 如何自动构建 Rust Core？**
 A: 通过 build.rs 或 Gradle 任务在构建前调用 `cargo build`。
 
-**Q: 如何调试路径问题？**  
+**Q: 如何调试路径问题？**
 A: 使用 `cargo build -vv` 查看详细构建信息，或使用 `print!` 输出路径。
 
 ---
 
-**文档状态**: 📝 待执行  
-**维护者**: NomadMark Team  
+### D. 改进建议与补充
+
+本文档在实施过程中发现的改进建议，按优先级分类。
+
+#### D.1 高优先级改进 🔴
+
+##### D.1.1 根目录图片文件处理
+
+**问题**: 当前根目录有大量设计稿和截图文件（约60个PNG），未明确处理方式。
+
+**改进方案**: 在阶段二增加根目录清理步骤：
+
+```bash
+# 阶段 2.5：根目录清理（插入到文档迁移之后）
+
+# 创建设计稿目录
+mkdir -p docs/assets/designs
+mkdir -p docs/assets/screenshots
+
+# 移动设计稿
+git mv *.png docs/assets/designs/ 2>/dev/null || true
+
+# 移动竖屏布局设计稿
+git mv "Mark down编辑器竖屏页面布局_*.png" docs/assets/designs/
+
+# 确认文件移动正确后，更新文档中的引用路径
+```
+
+##### D.1.2 Android 多架构构建策略
+
+**问题**: 缺少多架构同时编译的具体方案。
+
+**改进方案**: 在阶段四增加 `cargo-ndk` 工具集成：
+
+```bash
+# 安装 cargo-ndk
+cargo install cargo-ndk
+
+# 构建 Android 所有架构
+cargo ndk --target arm64-v8a --platform 28 build --release
+cargo ndk --target armeabi-v7a --platform 28 build --release
+cargo ndk --target x86_64 --platform 28 build --release
+
+# 输出位置
+# target/aarch64-linux-android/release/libmarkdown_core.so
+# target/armv7-linux-androideabi/release/libmarkdown_core.so
+# target/x86_64-linux-android/release/libmarkdown_core.so
+```
+
+对应的 `scripts/build/build-android.sh` 更新：
+
+```bash
+#!/bin/bash
+# 使用 cargo-ndk 构建
+cargo ndk --target arm64-v8a --platform 28 build --release
+cargo ndk --target armeabi-v7a --platform 28 build --release
+
+# 复制到 jniLibs
+mkdir -p platforms/android/app/src/main/jniLibs/arm64-v8a
+mkdir -p platforms/android/app/src/main/jniLibs/armeabi-v7a
+
+cp target/aarch64-linux-android/release/libmarkdown_core.so \
+   platforms/android/app/src/main/jniLibs/arm64-v8a/
+cp target/armv7-linux-androideabi/release/libmarkdown_core.so \
+   platforms/android/app/src/main/jniLibs/armeabi-v7a/
+```
+
+##### D.1.3 Windows 构建脚本兼容性
+
+**问题**: 现有脚本都是 bash 格式，用户在 Windows 上运行困难。
+
+**改进方案**: 提供跨平台构建方案，推荐使用 `just`：
+
+```makefile
+# justfile - 根目录
+
+# 默认任务：显示帮助
+default:
+    @just --list
+
+# 构建 Android
+build-android:
+    cd core && cargo build --release --target aarch64-linux-android
+    cd platforms/android && ./gradlew assembleDebug
+
+# 构建 Desktop
+build-desktop:
+    cd platforms/desktop && npm run tauri:build
+
+# 构建所有
+build-all: build-android build-desktop
+
+# 运行测试
+test:
+    cargo test --workspace
+
+# 代码检查
+lint:
+    cargo clippy --workspace
+    cargo fmt --check
+```
+
+安装命令：
+```powershell
+# Windows (PowerShell)
+winget install just.command
+
+# 或手动下载
+# https://github.com/casey/just/releases
+```
+
+---
+
+#### D.2 中优先级改进 🟡
+
+##### D.2.1 增量迁移策略
+
+**问题**: 一次性大规模迁移风险较高。
+
+**改进方案**: 将阶段二拆分为增量验证步骤：
+
+```
+阶段二修订：重组目录结构（增量式）
+
+2.1 目录迁移（第一波：仅 Android）
+    └── 验证 Android 构建
+
+2.2 目录迁移（第二波：Desktop）
+    └── 验证 Desktop 构建
+
+2.3 文档迁移
+    └── 验证文档链接
+
+2.4 其他目录迁移（resources, tools, scripts）
+    └── 最终验证
+```
+
+##### D.2.2 本地开发环境配置
+
+**问题**: 重构后开发者需要重新配置 IDE 环境。
+
+**改进方案**: 新增配置文件和文档。
+
+**创建 `.vscode/settings.json`**：
+
+```json
+{
+  "rust-analyzer.linkedProjects": [
+    "Cargo.toml",
+    "core/Cargo.toml",
+    "platforms/desktop/src-tauri/Cargo.toml"
+  ],
+  "rust-analyzer.cargo.features": "all",
+  "files.exclude": {
+    "**/.git": true,
+    "**/target": true,
+    "**/node_modules": true
+  }
+}
+```
+
+**创建 `.vscode/extensions.json`**：
+
+```json
+{
+  "recommendations": [
+    "rust-lang.rust-analyzer",
+    "tauri-apps.tauri-vscode",
+    "vadimcn.vscode-lldb",
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode"
+  ]
+}
+```
+
+**新增文档 `docs/guides/setup-dev-env.md`**：
+
+```markdown
+# 开发环境设置指南
+
+## VS Code 配置
+
+1. 安装推荐的扩展（打开项目时会提示）
+2. 确保工作区设置正确
+
+## Android Studio 配置
+
+1. 打开 `platforms/android` 目录
+2. 等待 Gradle 同步完成
+3. 确认 SDK 路径配置正确
+
+## 构建验证
+
+```bash
+# 验证 Core 构建
+cargo build -p markdown_core
+
+# 验证 Android 构建
+cd platforms/android && ./gradlew assembleDebug
+
+# 验证 Desktop 构建
+cd platforms/desktop && npm run tauri:build
+```
+```
+
+##### D.2.3 依赖版本管理修复
+
+**问题**: `workspace.dependencies` 不支持 `optional` 属性。
+
+**修正方案**：更新根 `Cargo.toml` 配置：
+
+```toml
+# 错误写法（会报错）
+[workspace.dependencies]
+jni = { version = "0.21", optional = true }  # ❌
+
+# 正确写法
+[workspace.dependencies]
+jni = "0.21"  # ✅
+
+# 在 core/Cargo.toml 中声明 optional
+[target.'cfg(target_os = "android")'.dependencies]
+jni = { workspace = true, optional = true }
+```
+
+---
+
+#### D.3 低优先级改进 🟢
+
+##### D.3.1 CI/CD 成本优化
+
+**改进方案**: 增加条件触发，避免不必要的构建：
+
+```yaml
+# .github/workflows/build-android.yml
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'core/**'
+      - 'platforms/android/**'
+      - '.github/workflows/build-android.yml'
+  pull_request:
+    paths:
+      - 'core/**'
+      - 'platforms/android/**'
+```
+
+##### D.3.2 文档索引导航
+
+**改进方案**: 创建 `docs/index.md`：
+
+```markdown
+# NomadMark 文档中心
+
+## 📚 快速导航
+
+### 架构文档
+- [项目结构](architecture/structure.md)
+- [架构设计 v2.0](architecture/design-v2.md)
+- [详细设计](architecture/detailed-design.md)
+
+### 开发指南
+- [快速开始](guides/getting-started.md)
+- [实现指南](guides/implementation.md)
+- [部署指南](guides/deployment.md)
+- [测试指南](guides/testing.md)
+
+### API 文档
+- [Core FFI API](api/core-ffi.md)
+- [Android JNI API](api/jni-api.md)
+- [Desktop Tauri API](api/tauri-commands.md)
+
+### 报告
+- [项目进度](reports/progress.md)
+- [验证报告](reports/validation.md)
+
+---
+
+## 🎯 按角色查看
+
+### 新开发者
+1. 阅读 [快速开始](guides/getting-started.md)
+2. 查看 [项目结构](architecture/structure.md)
+3. 参考 [贡献指南](../CONTRIBUTING.md)
+
+### 平台开发者
+- **Android**: [JNI API](api/jni-api.md)
+- **Desktop**: [Tauri API](api/tauri-commands.md)
+- **iOS**: (开发中)
+
+### Core 开发者
+- [Core FFI API](api/core-ffi.md)
+- [架构设计 v2.0](architecture/design-v2.md)
+```
+
+---
+
+#### D.4 补充验证清单
+
+在原有验证清单基础上，增加以下检查项：
+
+```bash
+# 完整验证脚本 (scripts/verify-refactoring.sh)
+
+#!/bin/bash
+set -e
+
+echo "🔍 验证重构结果..."
+
+# 1. Rust 编译验证
+echo "📦 检查 Cargo Workspace..."
+cargo check --workspace
+
+echo "🧪 运行所有测试..."
+cargo test --workspace
+
+echo "🔍 Clippy 检查..."
+cargo clippy --workspace -- -D warnings
+
+# 2. Android 验证
+echo "📱 检查 Android 构建..."
+cd platforms/android
+./gradlew clean assembleDebug
+cd ../..
+
+# 3. Desktop 验证
+echo "💻 检查 Desktop 构建..."
+cd platforms/desktop
+npm ci
+npm run tauri:build
+cd ../..
+
+# 4. 文档链接检查
+echo "📄 检查文档链接..."
+# 可以使用 markdown-link-check 工具
+
+# 5. 文件结构验证
+echo "📂 验证目录结构..."
+required_dirs=(
+    "core"
+    "platforms/android"
+    "platforms/desktop"
+    "docs/architecture"
+    "docs/api"
+    "docs/guides"
+    "scripts/build"
+    "scripts/dev"
+)
+
+for dir in "${required_dirs[@]}"; do
+    if [ ! -d "$dir" ]; then
+        echo "❌ 缺少目录: $dir"
+        exit 1
+    fi
+done
+
+echo "✅ 所有验证通过！"
+```
+
+---
+
+#### D.5 回滚补充
+
+在回滚计划中增加更详细的步骤：
+
+```bash
+# 详细回滚脚本 (scripts/rollback-refactor.sh)
+
+#!/bin/bash
+BACKUP_BRANCH="backup-before-refactor-${USER}-$(date +%Y%m%d)"
+
+echo "🔄 开始回滚重构..."
+
+# 方案选择
+echo "选择回滚方案："
+echo "1. Git 回滚（推荐）"
+echo "2. 恢复备份文件"
+read -p "请选择 (1/2): " choice
+
+if [ "$choice" = "1" ]; then
+    # Git 回滚
+    echo "📝 检查是否有未提交的更改..."
+    if [ -n "$(git status --porcelain)" ]; then
+        echo "⚠️  有未提交的更改，请先处理"
+        git status
+        exit 1
+    fi
+
+    echo "🔄 回滚到重构前的提交..."
+    # 假设重构开始时的提交哈希是 REFACTOR_START
+    git revert REFACTOR_START..HEAD --no-commit
+
+    echo "📝 请检查更改，确认后提交"
+    git status
+
+elif [ "$choice" = "2" ]; then
+    # 恢复备份
+    if [ ! -d "../NomadMark-backup" ]; then
+        echo "❌ 备份目录不存在"
+        exit 1
+    fi
+
+    echo "📂 从备份恢复..."
+    rm -rf core platforms docs resources scripts tools
+    cp -r ../NomadMark-backup/{core,platforms,docs,resources,scripts,tools} .
+
+    echo "📝 恢复根目录文件..."
+    cp ../NomadMark-backup/{Cargo.toml,Cargo.lock,.gitignore,.rustfmt.toml} .
+
+    echo "✅ 恢复完成，请验证构建"
+else
+    echo "❌ 无效选择"
+    exit 1
+fi
+```
+
+---
+
+**文档状态**: 📝 待执行
+**维护者**: NomadMark Team
 **最后更新**: 2026-07-03
