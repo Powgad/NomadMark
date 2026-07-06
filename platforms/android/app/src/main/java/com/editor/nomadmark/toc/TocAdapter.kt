@@ -132,6 +132,7 @@ class TocAdapter(
         // 扁平化显示列表
         flattenToList()
 
+        // 目录结构完全重建，使用 notifyDataSetChanged 是合理的
         notifyDataSetChanged()
     }
 

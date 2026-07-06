@@ -442,6 +442,7 @@ class SearchResultAdapter(
     fun updateResults(newResults: List<SearchResult>) {
         results.clear()
         results.addAll(newResults)
+        // 数据完全替换，使用 notifyDataSetChanged 是合理的
         notifyDataSetChanged()
     }
 
@@ -504,6 +505,7 @@ class SearchResultItemView(context: android.content.Context) : View(context) {
     }
 
     private val textBounds = Rect()
+    private val bgRect = Rect()  // 预分配复用
     private var result: SearchResult? = null
     private var index: Int = 0
     private var isSelected: Boolean = false
@@ -533,7 +535,7 @@ class SearchResultItemView(context: android.content.Context) : View(context) {
 
         // 绘制选中背景
         if (isSelected) {
-            val bgRect = Rect(0, 0, width, height)
+            bgRect.set(0, 0, width, height)  // 复用预分配的 Rect
             canvas.drawRect(bgRect, selectedPaint)
         }
 

@@ -202,6 +202,7 @@
                 android:background="@drawable/search_input_bg"
                 android:padding="8dp"
                 android:singleLine="true"
+                android:inputType="text"
                 android:imeOptions="actionSearch" />
 
             <ImageButton
@@ -259,7 +260,8 @@
                 android:hint="替换为..."
                 android:background="@drawable/search_input_bg"
                 android:padding="8dp"
-                android:singleLine="true" />
+                android:singleLine="true"
+                android:inputType="text" />
 
             <Button
                 android:id="@+id/btn_replace_one"

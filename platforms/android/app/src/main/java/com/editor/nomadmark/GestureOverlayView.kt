@@ -118,6 +118,8 @@ class GestureOverlayView @JvmOverloads constructor(
     // Touch Event Handling
     // =========================================================================
 
+    // 手势识别视图不是可点击视图，不需要 performClick
+    @Suppress("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (!isGestureEnabled) {
             return false  // Pass through to underlying views

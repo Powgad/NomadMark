@@ -742,6 +742,15 @@ class MarkdownEditorActivity : android.app.Activity() {
 
     private fun replaceOne() {
         if (searchResults.isEmpty()) return
+
+        // 确保索引在有效范围内
+        if (currentSearchIndex >= searchResults.size) {
+            currentSearchIndex = 0
+        }
+        if (currentSearchIndex < 0 || searchResults.isEmpty()) {
+            return
+        }
+
         val replaceText = replaceInput.text.toString()
         val (start, end) = searchResults[currentSearchIndex]
 
@@ -753,8 +762,16 @@ class MarkdownEditorActivity : android.app.Activity() {
 
         // 移除当前结果
         searchResults.removeAt(currentSearchIndex)
+
+        // 调整索引指向下一个结果
         if (searchResults.isEmpty()) {
+            currentSearchIndex = 0
             Toast.makeText(this, "已完成替换", Toast.LENGTH_SHORT).show()
+        } else {
+            // 如果移除的是最后一个，指向前一个
+            if (currentSearchIndex >= searchResults.size) {
+                currentSearchIndex = searchResults.size - 1
+            }
         }
     }
 
