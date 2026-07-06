@@ -345,7 +345,7 @@
             android:visibility="gone">
 
             <!-- 预览区 (上方) -->
-            <ScrollView
+            <com.editor.nomadmark.ObservableScrollView
                 android:id="@+id/split_preview_scroll"
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
@@ -360,7 +360,7 @@
                     android:padding="12dp"
                     android:textSize="14sp"
                     android:textColor="#333333" />
-            </ScrollView>
+            </com.editor.nomadmark.ObservableScrollView>
 
             <!-- 分隔线 -->
             <View
@@ -369,7 +369,7 @@
                 android:background="#CCCCCC" />
 
             <!-- 编辑区 (下方) -->
-            <ScrollView
+            <com.editor.nomadmark.ObservableScrollView
                 android:id="@+id/split_editor_scroll"
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
@@ -390,7 +390,7 @@
                     android:inputType="textMultiLine"
                     android:hint="编辑内容..."
                     android:lineSpacingExtra="2dp" />
-            </ScrollView>
+            </com.editor.nomadmark.ObservableScrollView>
         </LinearLayout>
     </FrameLayout>
 

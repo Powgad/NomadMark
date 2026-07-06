@@ -87,9 +87,9 @@ class MarkdownEditorActivity : android.app.Activity() {
     private lateinit var previewScrollView: ScrollView
     private lateinit var previewText: TextView
     private lateinit var splitView: LinearLayout
-    private lateinit var splitPreviewScroll: ScrollView
+    private lateinit var splitPreviewScroll: ObservableScrollView
     private lateinit var splitPreviewText: TextView
-    private lateinit var splitEditorScroll: ScrollView
+    private lateinit var splitEditorScroll: ObservableScrollView
     private lateinit var splitEditorText: EditText
 
     // 底部快捷栏
@@ -544,12 +544,19 @@ class MarkdownEditorActivity : android.app.Activity() {
             btnPreviewToggle.setImageResource(R.drawable.ic_preview_on)
             editorScrollView.visibility = View.GONE
             previewScrollView.visibility = View.VISIBLE
+
+            // 在预览模式下隐藏手势覆盖层
+            gestureOverlay.visibility = View.GONE
+
             updatePreview()
         } else {
             // 切换到编辑模式
             btnPreviewToggle.setImageResource(R.drawable.ic_preview_off)
             editorScrollView.visibility = View.VISIBLE
             previewScrollView.visibility = View.GONE
+
+            // 恢复手势覆盖层可见性
+            gestureOverlay.visibility = View.VISIBLE
         }
 
         // 分屏模式下同步更新
@@ -569,6 +576,9 @@ class MarkdownEditorActivity : android.app.Activity() {
             splitView.visibility = View.VISIBLE
             updatePreview()
 
+            // 在分屏模式下隐藏手势覆盖层，确保滚轮事件能够正确传递
+            gestureOverlay.visibility = View.GONE
+
             // 启用滚动同步
             enableScrollSync()
         } else {
@@ -580,6 +590,9 @@ class MarkdownEditorActivity : android.app.Activity() {
             } else {
                 editorScrollView.visibility = View.VISIBLE
             }
+
+            // 恢复手势覆盖层可见性
+            gestureOverlay.visibility = View.VISIBLE
 
             // 禁用滚动同步
             disableScrollSync()
@@ -614,7 +627,8 @@ class MarkdownEditorActivity : android.app.Activity() {
             editorText.isCursorVisible = false
             splitEditorText.isCursorVisible = false
 
-            // 启用手势识别
+            // 显示并启用手势覆盖层
+            gestureOverlay.visibility = View.VISIBLE
             gestureOverlay.isGestureEnabled = true
 
             // 隐藏软键盘
@@ -629,6 +643,12 @@ class MarkdownEditorActivity : android.app.Activity() {
 
             // 禁用手势识别
             gestureOverlay.isGestureEnabled = false
+
+            // 如果不在分屏或预览模式，保持覆盖层可见但禁用
+            // 如果在分屏或预览模式，保持隐藏状态
+            if (!isSplitMode && !isPreviewMode) {
+                gestureOverlay.visibility = View.VISIBLE
+            }
 
             Toast.makeText(this, "修订模式已关闭", Toast.LENGTH_SHORT).show()
         }

@@ -9,6 +9,9 @@ import android.widget.ScrollView
  * - 编辑区滚动时同步预览区
  * - 预览区滚动时同步编辑区
  * - 计算滚动位置对应关系
+ *
+ * 改进：使用 ObservableScrollView 的 onScrollChanged 回调，
+ * 确保鼠标滚轮事件能够被正确捕获。
  */
 class ScrollSyncManager(
     private val editorScrollView: ScrollView,
@@ -35,21 +38,45 @@ class ScrollSyncManager(
 
     /**
      * 设置监听器
+     * 使用 ObservableScrollView 的 onScrollChanged 回调，确保捕获所有滚动事件
      */
     private fun setupListeners() {
-        editorScrollView.viewTreeObserver?.addOnScrollChangedListener {
-            if (syncEnabled && !isSyncing) {
-                isSyncing = true
-                syncEditorToPreview()
-                isSyncing = false
+        // 尝试将 ScrollView 转换为 ObservableScrollView
+        if (editorScrollView is ObservableScrollView) {
+            editorScrollView.onScrollChangedCallback = { scrollX, scrollY, oldScrollX, oldScrollY ->
+                if (syncEnabled && !isSyncing) {
+                    isSyncing = true
+                    syncEditorToPreview()
+                    isSyncing = false
+                }
+            }
+        } else {
+            // 降级到 viewTreeObserver (可能无法捕获鼠标滚轮事件)
+            editorScrollView.viewTreeObserver?.addOnScrollChangedListener {
+                if (syncEnabled && !isSyncing) {
+                    isSyncing = true
+                    syncEditorToPreview()
+                    isSyncing = false
+                }
             }
         }
 
-        previewScrollView.viewTreeObserver?.addOnScrollChangedListener {
-            if (syncEnabled && !isSyncing) {
-                isSyncing = true
-                syncPreviewToEditor()
-                isSyncing = false
+        if (previewScrollView is ObservableScrollView) {
+            previewScrollView.onScrollChangedCallback = { scrollX, scrollY, oldScrollX, oldScrollY ->
+                if (syncEnabled && !isSyncing) {
+                    isSyncing = true
+                    syncPreviewToEditor()
+                    isSyncing = false
+                }
+            }
+        } else {
+            // 降级到 viewTreeObserver (可能无法捕获鼠标滚轮事件)
+            previewScrollView.viewTreeObserver?.addOnScrollChangedListener {
+                if (syncEnabled && !isSyncing) {
+                    isSyncing = true
+                    syncPreviewToEditor()
+                    isSyncing = false
+                }
             }
         }
     }

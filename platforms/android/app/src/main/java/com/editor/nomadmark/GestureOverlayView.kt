@@ -9,6 +9,8 @@ import android.util.AttributeSet
 import android.util.Log
 import android.view.MotionEvent
 import android.view.View
+import android.view.InputDevice
+import android.view.KeyEvent
 import kotlin.math.abs
 
 /**
@@ -117,6 +119,28 @@ class GestureOverlayView @JvmOverloads constructor(
     // =========================================================================
     // Touch Event Handling
     // =========================================================================
+
+    /**
+     * Handle generic motion events (e.g., mouse wheel events)
+     * This ensures that mouse wheel events are passed through to underlying views
+     * when gesture recognition is disabled.
+     */
+    override fun onGenericMotionEvent(event: MotionEvent): Boolean {
+        // Handle mouse wheel events
+        if (event.source and InputDevice.SOURCE_CLASS_POINTER != 0) {
+            when (event.action) {
+                MotionEvent.ACTION_SCROLL -> {
+                    // Mouse wheel event - pass through to underlying views when gesture is disabled
+                    if (!isGestureEnabled) {
+                        Log.d(TAG, "Passing through mouse wheel event")
+                        return false  // Pass through to underlying views
+                    }
+                }
+            }
+        }
+
+        return super.onGenericMotionEvent(event)
+    }
 
     // 手势识别视图不是可点击视图，不需要 performClick
     @Suppress("ClickableViewAccessibility")
