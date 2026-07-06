@@ -72,6 +72,7 @@ class MarkdownEditorActivity : android.app.Activity() {
     // 搜索栏
     private lateinit var searchBar: LinearLayout
     private lateinit var searchInput: EditText
+    private lateinit var btnSearchConfirm: ImageButton
     private lateinit var btnSearchPrev: ImageButton
     private lateinit var btnSearchNext: ImageButton
     private lateinit var btnSearchClose: ImageButton
@@ -296,6 +297,7 @@ class MarkdownEditorActivity : android.app.Activity() {
         // 搜索栏
         searchBar = findViewById(R.id.search_bar)
         searchInput = findViewById(R.id.search_input)
+        btnSearchConfirm = findViewById(R.id.btn_search_confirm)
         btnSearchPrev = findViewById(R.id.btn_search_prev)
         btnSearchNext = findViewById(R.id.btn_search_next)
         btnSearchClose = findViewById(R.id.btn_search_close)
@@ -405,6 +407,7 @@ class MarkdownEditorActivity : android.app.Activity() {
 
         // 搜索栏
         btnSearchClose.setOnClickListener { toggleSearchBar() }
+        btnSearchConfirm.setOnClickListener { performSearch() }
         searchInput.setOnEditorActionListener { _, _, _ ->
             performSearch()
             true
@@ -646,6 +649,11 @@ class MarkdownEditorActivity : android.app.Activity() {
 
     private fun toggleSearchBar() {
         if (searchBar.visibility == View.VISIBLE) {
+            // 关闭搜索栏时清除所有内容
+            searchInput.text.clear()
+            replaceInput.text.clear()
+            searchResults.clear()
+            currentSearchIndex = 0
             searchBar.visibility = View.GONE
             replaceRow.visibility = View.GONE
         } else {
@@ -747,7 +755,6 @@ class MarkdownEditorActivity : android.app.Activity() {
         searchResults.removeAt(currentSearchIndex)
         if (searchResults.isEmpty()) {
             Toast.makeText(this, "已完成替换", Toast.LENGTH_SHORT).show()
-            searchBar.visibility = View.GONE
         }
     }
 
@@ -762,7 +769,6 @@ class MarkdownEditorActivity : android.app.Activity() {
 
         Toast.makeText(this, "已替换 ${searchResults.size} 处", Toast.LENGTH_SHORT).show()
         searchResults.clear()
-        searchBar.visibility = View.GONE
     }
 
     // =========================================================================

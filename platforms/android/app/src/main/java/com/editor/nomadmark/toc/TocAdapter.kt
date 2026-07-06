@@ -221,8 +221,8 @@ class TocAdapter(
         )
         holder.itemView.setOnClickListener {
             onEntryClick(item.entry)
-            selectedPosition = position
-            notifyDataSetChanged()
+            selectedPosition = holder.adapterPosition
+            notifyItemChanged(selectedPosition)
         }
     }
 
