@@ -81,16 +81,28 @@ class MarkdownEditorActivity : android.app.Activity() {
     private lateinit var btnReplaceOne: Button
     private lateinit var btnReplaceAll: Button
 
-    // 编辑/预览区域
-    private lateinit var editorScrollView: ScrollView
+    // =========================================================================
+    // 新架构：独立层级视图
+    // =========================================================================
+
+    // 层1：编辑层
+    private lateinit var editorLayer: ScrollView
     private lateinit var editorText: EditText
-    private lateinit var previewScrollView: ScrollView
+
+    // 层2：预览层
+    private lateinit var previewLayer: ScrollView
     private lateinit var previewText: TextView
-    private lateinit var splitView: LinearLayout
+
+    // 层3：分屏层
+    private lateinit var splitLayer: LinearLayout
     private lateinit var splitPreviewScroll: ObservableScrollView
     private lateinit var splitPreviewText: TextView
     private lateinit var splitEditorScroll: ObservableScrollView
     private lateinit var splitEditorText: EditText
+
+    // 层4：手势层
+    private lateinit var gestureLayer: GestureOverlayView
+    private lateinit var gestureEditor: GestureEditor
 
     // 底部快捷栏
     private lateinit var toolbarBottom: HorizontalScrollView
@@ -113,11 +125,6 @@ class MarkdownEditorActivity : android.app.Activity() {
 
     // 键盘标识
     private lateinit var keyboardIndicator: TextView
-
-    // 手势识别组件
-    private lateinit var gestureOverlay: GestureOverlayView
-    private lateinit var gestureEditor: GestureEditor
-    private lateinit var contentContainer: FrameLayout
 
     // =========================================================================
     // 辅助组件
@@ -306,16 +313,27 @@ class MarkdownEditorActivity : android.app.Activity() {
         btnReplaceOne = findViewById(R.id.btn_replace_one)
         btnReplaceAll = findViewById(R.id.btn_replace_all)
 
-        // 编辑/预览区域
-        editorScrollView = findViewById(R.id.editor_scroll_view)
+        // =========================================================================
+        // 初始化层级视图
+        // =========================================================================
+
+        // 层1：编辑层
+        editorLayer = findViewById(R.id.editor_layer)
         editorText = findViewById(R.id.editor_text)
-        previewScrollView = findViewById(R.id.preview_scroll_view)
+
+        // 层2：预览层
+        previewLayer = findViewById(R.id.preview_layer)
         previewText = findViewById(R.id.preview_text)
-        splitView = findViewById(R.id.split_view)
+
+        // 层3：分屏层
+        splitLayer = findViewById(R.id.split_layer)
         splitPreviewScroll = findViewById(R.id.split_preview_scroll)
         splitPreviewText = findViewById(R.id.split_preview_text)
         splitEditorScroll = findViewById(R.id.split_editor_scroll)
         splitEditorText = findViewById(R.id.split_editor_text)
+
+        // 层4：手势层
+        gestureLayer = findViewById(R.id.gesture_layer)
 
         // 底部快捷栏
         toolbarBottom = findViewById(R.id.toolbar_bottom)
@@ -339,33 +357,55 @@ class MarkdownEditorActivity : android.app.Activity() {
         // 键盘标识
         keyboardIndicator = findViewById(R.id.keyboard_indicator)
 
-        // 内容容器（用于添加手势覆盖层）
-        contentContainer = findViewById(R.id.content_container)
-
-        // 设置手势覆盖层
-        setupGestureOverlay()
+        // 设置手势层
+        setupGestureLayer()
 
         // 设置等宽字体
         val monoFont = Typeface.MONOSPACE
         editorText.typeface = monoFont
         splitEditorText.typeface = monoFont
+
+        // 初始化光标状态：编辑模式下默认显示光标
+        editorText.isCursorVisible = true
+        splitEditorText.isCursorVisible = true
+
+        // 确保编辑器获得焦点以显示光标
+        editorText.requestFocus()
     }
 
-    private fun setupGestureOverlay() {
-        // 从 XML 中获取手势覆盖层
-        gestureOverlay = findViewById(R.id.gesture_overlay)
-
+    private fun setupGestureLayer() {
         // 创建手势编辑器
         gestureEditor = GestureEditor(null)  // 暂时传 null，后续可以传 MarkdownEditorView
 
         // 设置手势识别回调
-        gestureOverlay.onGestureRecognized = { result ->
+        gestureLayer.onGestureRecognized = { result ->
             when (result.gestureType) {
                 GestureType.DELETE -> {
                     // 删除手势
-                    gestureEditor.deleteTextRange(result.boundingBox, getCurrentEditor())
-                    markAsModified()
-                    Toast.makeText(this, "已删除选中内容", Toast.LENGTH_SHORT).show()
+                    // 在分屏模式下，根据触摸位置判断操作区域
+                    if (currentDisplayMode == DisplayMode.SPLIT) {
+                        val touchY = result.keyPoint.y
+                        val splitHeight = splitLayer.height.toFloat()
+                        val splitRatio = 0.6f  // 预览区占 60%
+                        val dividerY = splitLayer.top + splitHeight * splitRatio
+
+                        if (touchY < dividerY) {
+                            // 上半区（预览区）操作 - 同步到编辑区
+                            Log.d("GestureLayer", "Delete in preview area (top)")
+                            Toast.makeText(this, "预览区删除（已同步）", Toast.LENGTH_SHORT).show()
+                        } else {
+                            // 下半区（编辑区）操作
+                            Log.d("GestureLayer", "Delete in editor area (bottom)")
+                            gestureEditor.deleteTextRange(result.boundingBox, splitEditorText)
+                            markAsModified()
+                            Toast.makeText(this, "已删除选中内容", Toast.LENGTH_SHORT).show()
+                        }
+                    } else {
+                        // 非分屏模式，直接操作当前编辑器
+                        gestureEditor.deleteTextRange(result.boundingBox, getCurrentEditor())
+                        markAsModified()
+                        Toast.makeText(this, "已删除选中内容", Toast.LENGTH_SHORT).show()
+                    }
                 }
                 GestureType.INSERT -> {
                     // 插入手势（暂未实现）
@@ -379,15 +419,15 @@ class MarkdownEditorActivity : android.app.Activity() {
         }
 
         // 设置手势拒绝回调
-        gestureOverlay.onGestureRejected = {
+        gestureLayer.onGestureRejected = {
             // 可以在这里添加震动反馈等
             Log.d("MarkdownEditorActivity", "Gesture not recognized")
         }
 
         // 初始状态为禁用（修订模式开启时启用）
-        gestureOverlay.isGestureEnabled = false
+        gestureLayer.isGestureEnabled = false
 
-        Log.d("MarkdownEditorActivity", "GestureOverlayView setup complete")
+        Log.d("MarkdownEditorActivity", "GestureLayer setup complete")
     }
 
     private fun setupListeners() {
@@ -536,27 +576,194 @@ class MarkdownEditorActivity : android.app.Activity() {
     // 模式切换
     // =========================================================================
 
+    /**
+     * 显示模式枚举
+     * 用于按键循环切换
+     */
+    private enum class DisplayMode {
+        EDIT,    // 编辑模式
+        PREVIEW, // 预览模式
+        SPLIT    // 分屏模式
+    }
+
+    /** 当前显示模式 */
+    private var currentDisplayMode: DisplayMode = DisplayMode.EDIT
+
+    /**
+     * 按键切换显示模式
+     * 在 编辑 ↔ 预览 ↔ 分屏 之间循环切换
+     */
+    private fun cycleDisplayMode() {
+        val nextMode = when (currentDisplayMode) {
+            DisplayMode.EDIT -> DisplayMode.PREVIEW
+            DisplayMode.PREVIEW -> DisplayMode.SPLIT
+            DisplayMode.SPLIT -> DisplayMode.EDIT
+        }
+
+        when (nextMode) {
+            DisplayMode.EDIT -> switchToEditMode()
+            DisplayMode.PREVIEW -> switchToPreviewMode()
+            DisplayMode.SPLIT -> switchToSplitMode()
+        }
+
+        currentDisplayMode = nextMode
+    }
+
+    /**
+     * 切换到编辑模式
+     */
+    private fun switchToEditMode() {
+        // 关闭其他模式标记
+        isPreviewMode = false
+        isSplitMode = false
+
+        // 更新按钮状态
+        btnPreviewToggle.setImageResource(R.drawable.ic_preview_off)
+        btnSplit.setImageResource(R.drawable.ic_split_off)
+
+        // 显示编辑层，隐藏其他层
+        editorLayer.visibility = View.VISIBLE
+        previewLayer.visibility = View.GONE
+        splitLayer.visibility = View.GONE
+
+        // 恢复手势层可见性（根据修订模式状态）
+        if (isRevisionMode) {
+            gestureLayer.visibility = View.VISIBLE
+            gestureLayer.isGestureEnabled = true
+            // 修订模式下隐藏光标
+            editorText.isCursorVisible = false
+        } else {
+            gestureLayer.visibility = View.GONE
+            gestureLayer.isGestureEnabled = false
+            // 编辑模式下显示光标
+            editorText.isCursorVisible = true
+            editorText.requestFocus()
+        }
+
+        // 禁用滚动同步
+        disableScrollSync()
+
+        Toast.makeText(this, "编辑模式", Toast.LENGTH_SHORT).show()
+    }
+
+    /**
+     * 切换到预览模式
+     */
+    private fun switchToPreviewMode() {
+        // 更新模式标记
+        isPreviewMode = true
+        isSplitMode = false
+
+        // 更新按钮状态
+        btnPreviewToggle.setImageResource(R.drawable.ic_preview_on)
+        btnSplit.setImageResource(R.drawable.ic_split_off)
+
+        // 显示预览层，隐藏其他层
+        editorLayer.visibility = View.GONE
+        previewLayer.visibility = View.VISIBLE
+        splitLayer.visibility = View.GONE
+
+        // 预览模式下光标和键盘不可用
+        editorText.isCursorVisible = false
+
+        // 恢复手势层可见性（根据修订模式状态）
+        if (isRevisionMode) {
+            gestureLayer.visibility = View.VISIBLE
+            gestureLayer.isGestureEnabled = true
+        } else {
+            gestureLayer.visibility = View.GONE
+            gestureLayer.isGestureEnabled = false
+        }
+
+        // 禁用滚动同步
+        disableScrollSync()
+
+        updatePreview()
+        Toast.makeText(this, "预览模式", Toast.LENGTH_SHORT).show()
+    }
+
+    /**
+     * 切换到分屏模式
+     */
+    private fun switchToSplitMode() {
+        // 更新模式标记
+        isPreviewMode = false
+        isSplitMode = true
+
+        // 更新按钮状态
+        btnPreviewToggle.setImageResource(R.drawable.ic_preview_off)
+        btnSplit.setImageResource(R.drawable.ic_split_on)
+
+        // 显示分屏层，隐藏其他层
+        editorLayer.visibility = View.GONE
+        previewLayer.visibility = View.GONE
+        splitLayer.visibility = View.VISIBLE
+
+        // 恢复手势层可见性（根据修订模式状态）
+        if (isRevisionMode) {
+            gestureLayer.visibility = View.VISIBLE
+            gestureLayer.isGestureEnabled = true
+            // 修订模式下分屏两区都隐藏光标
+            splitEditorText.isCursorVisible = false
+        } else {
+            gestureLayer.visibility = View.GONE
+            gestureLayer.isGestureEnabled = false
+            // 分屏模式下仅编辑区显示光标
+            splitEditorText.isCursorVisible = true
+            splitEditorText.requestFocus()
+        }
+
+        // 启用滚动同步
+        enableScrollSync()
+
+        updatePreview()
+        Toast.makeText(this, "分屏模式", Toast.LENGTH_SHORT).show()
+    }
+
+    /**
+     * 按键监听 - 处理 F11 等功能键
+     */
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        // F11 键切换显示模式
+        if (keyCode == KeyEvent.KEYCODE_F11) {
+            cycleDisplayMode()
+            return true
+        }
+
+        return super.onKeyDown(keyCode, event)
+    }
+
+    // 保留原有的按钮切换函数（用于 UI 按钮）
     private fun togglePreviewMode() {
         isPreviewMode = !isPreviewMode
 
         if (isPreviewMode) {
             // 切换到预览模式
             btnPreviewToggle.setImageResource(R.drawable.ic_preview_on)
-            editorScrollView.visibility = View.GONE
-            previewScrollView.visibility = View.VISIBLE
+            editorLayer.visibility = View.GONE
+            previewLayer.visibility = View.VISIBLE
 
             // 在预览模式下隐藏手势覆盖层
-            gestureOverlay.visibility = View.GONE
+            gestureLayer.visibility = View.GONE
+
+            // 预览模式下隐藏光标（不支持编辑）
+            editorText.isCursorVisible = false
 
             updatePreview()
         } else {
             // 切换到编辑模式
             btnPreviewToggle.setImageResource(R.drawable.ic_preview_off)
-            editorScrollView.visibility = View.VISIBLE
-            previewScrollView.visibility = View.GONE
+            editorLayer.visibility = View.VISIBLE
+            previewLayer.visibility = View.GONE
 
             // 恢复手势覆盖层可见性
-            gestureOverlay.visibility = View.VISIBLE
+            gestureLayer.visibility = View.VISIBLE
+
+            // 编辑模式下显示光标（支持编辑），除非在修订模式
+            if (!isRevisionMode) {
+                editorText.isCursorVisible = true
+                editorText.requestFocus()
+            }
         }
 
         // 分屏模式下同步更新
@@ -571,28 +778,36 @@ class MarkdownEditorActivity : android.app.Activity() {
         if (isSplitMode) {
             // 开启分屏
             btnSplit.setImageResource(R.drawable.ic_split_on)
-            editorScrollView.visibility = View.GONE
-            previewScrollView.visibility = View.GONE
-            splitView.visibility = View.VISIBLE
+            editorLayer.visibility = View.GONE
+            previewLayer.visibility = View.GONE
+            splitLayer.visibility = View.VISIBLE
             updatePreview()
 
             // 在分屏模式下隐藏手势覆盖层，确保滚轮事件能够正确传递
-            gestureOverlay.visibility = View.GONE
+            gestureLayer.visibility = View.GONE
+
+            // 分屏模式下编辑区域显示光标（支持编辑），除非在修订模式
+            if (!isRevisionMode) {
+                splitEditorText.isCursorVisible = true
+                splitEditorText.requestFocus()
+            } else {
+                splitEditorText.isCursorVisible = false
+            }
 
             // 启用滚动同步
             enableScrollSync()
         } else {
             // 关闭分屏
             btnSplit.setImageResource(R.drawable.ic_split_off)
-            splitView.visibility = View.GONE
+            splitLayer.visibility = View.GONE
             if (isPreviewMode) {
-                previewScrollView.visibility = View.VISIBLE
+                previewLayer.visibility = View.VISIBLE
             } else {
-                editorScrollView.visibility = View.VISIBLE
+                editorLayer.visibility = View.VISIBLE
             }
 
             // 恢复手势覆盖层可见性
-            gestureOverlay.visibility = View.VISIBLE
+            gestureLayer.visibility = View.VISIBLE
 
             // 禁用滚动同步
             disableScrollSync()
@@ -618,18 +833,28 @@ class MarkdownEditorActivity : android.app.Activity() {
         Log.d("MarkdownEditorActivity", "Scroll sync disabled")
     }
 
+    /**
+     * 切换修订模式
+     *
+     * 规则：
+     * - 编辑模式：光标默认显示，开启修订后光标消失 + 手势层启用
+     * - 预览模式：无光标，开启修订后手势层启用
+     * - 分屏模式：编辑区有光标，开启修订后上下两区都支持手势修订
+     */
     private fun toggleRevisionMode() {
         isRevisionMode = !isRevisionMode
 
         if (isRevisionMode) {
-            // 开启修订模式 - 光标消失
+            // 开启修订模式
             btnRevision.alpha = 1.0f
+
+            // 隐藏所有光标
             editorText.isCursorVisible = false
             splitEditorText.isCursorVisible = false
 
-            // 显示并启用手势覆盖层
-            gestureOverlay.visibility = View.VISIBLE
-            gestureOverlay.isGestureEnabled = true
+            // 显示并启用手势层
+            gestureLayer.visibility = View.VISIBLE
+            gestureLayer.isGestureEnabled = true
 
             // 隐藏软键盘
             hideSoftKeyboardFromAll()
@@ -638,16 +863,26 @@ class MarkdownEditorActivity : android.app.Activity() {
         } else {
             // 关闭修订模式
             btnRevision.alpha = 0.5f
-            editorText.isCursorVisible = true
-            splitEditorText.isCursorVisible = true
 
-            // 禁用手势识别
-            gestureOverlay.isGestureEnabled = false
+            // 隐藏手势层
+            gestureLayer.visibility = View.GONE
+            gestureLayer.isGestureEnabled = false
 
-            // 如果不在分屏或预览模式，保持覆盖层可见但禁用
-            // 如果在分屏或预览模式，保持隐藏状态
-            if (!isSplitMode && !isPreviewMode) {
-                gestureOverlay.visibility = View.VISIBLE
+            // 根据当前模式恢复光标和焦点
+            when (currentDisplayMode) {
+                DisplayMode.EDIT -> {
+                    // 编辑模式：恢复光标
+                    editorText.isCursorVisible = true
+                    editorText.requestFocus()
+                }
+                DisplayMode.PREVIEW -> {
+                    // 预览模式：无光标
+                }
+                DisplayMode.SPLIT -> {
+                    // 分屏模式：编辑区恢复光标
+                    splitEditorText.isCursorVisible = true
+                    splitEditorText.requestFocus()
+                }
             }
 
             Toast.makeText(this, "修订模式已关闭", Toast.LENGTH_SHORT).show()
@@ -1057,7 +1292,7 @@ class MarkdownEditorActivity : android.app.Activity() {
     }
 
     private fun getCurrentScrollView(): ScrollView {
-        return if (isSplitMode) splitEditorScroll else editorScrollView
+        return if (isSplitMode) splitEditorScroll else editorLayer
     }
 
     private fun showSoftKeyboard() {

@@ -3,7 +3,7 @@
     <style name="Theme.NomadMark" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="colorPrimary">#000000</item>
         <item name="colorPrimaryDark">#000000</item>
-        <item name="colorAccent">#FFFFFF</item>
+        <item name="colorAccent">#000000</item>
         <item name="android:windowBackground">#FFFFFF</item>
     </style>
 </resources>

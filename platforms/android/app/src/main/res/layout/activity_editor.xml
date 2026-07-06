@@ -1,13 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Markdown Editor Layout
+    Markdown Editor Layout - 重构版本
 
-    基于《UI交互文档》和《详细设计文档》实现
+    新架构：独立层级设计
+    - 编辑层：独立层，包含 EditText，支持光标和键盘编辑
+    - 预览层：独立层，显示渲染后的 Markdown，只读
+    - 分屏层：独立层，上半区预览+下半区编辑
+    - 手势层：覆盖层，修订模式启用手势识别
 
-    包含:
-    - 顶部工具栏
-    - 编辑区/预览区
-    - 底部快捷栏
+    层切换规则：
+    1. 编辑模式：只显示编辑层
+    2. 预览模式：只显示预览层
+    3. 分屏模式：只显示分屏层
+    4. 修订模式：显示对应模式层 + 手势层
 -->
 <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/root_container"
@@ -15,7 +20,7 @@
     android:layout_height="match_parent"
     android:background="#FFFFFF">
 
-    <!-- 顶部工具栏 -->
+    <!-- 顶部工具栏 (始终显示) -->
     <LinearLayout
         android:id="@+id/toolbar_top"
         android:layout_width="match_parent"
@@ -281,118 +286,129 @@
         </LinearLayout>
     </LinearLayout>
 
-    <!-- 主内容区域 -->
-    <FrameLayout
-        android:id="@+id/content_container"
+    <!-- =========================================================================
+         主内容区域 - 独立层级架构
+         ========================================================================= -->
+
+    <!-- 层1：编辑层 (EditorLayer) - 独立层，默认显示 -->
+    <!-- 包含 EditText，支持光标和键盘编辑 -->
+    <ScrollView
+        android:id="@+id/editor_layer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_below="@id/search_bar">
+        android:layout_below="@id/search_bar"
+        android:fillViewport="true"
+        android:background="#FFFFFF">
 
-        <!-- 编辑模式视图 -->
-        <ScrollView
-            android:id="@+id/editor_scroll_view"
+        <EditText
+            android:id="@+id/editor_text"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:fillViewport="true"
-            android:background="#FFFFFF">
+            android:layout_height="wrap_content"
+            android:background="@null"
+            android:padding="16dp"
+            android:textSize="16sp"
+            android:textColor="#000000"
+            android:fontFamily="monospace"
+            android:gravity="top|start"
+            android:inputType="textMultiLine"
+            android:hint="# 开始输入您的 Markdown 内容..."
+            android:lineSpacingExtra="4dp" />
+    </ScrollView>
+
+    <!-- 层2：预览层 (PreviewLayer) - 独立层，默认隐藏 -->
+    <!-- 显示渲染后的 Markdown，只读，无光标 -->
+    <ScrollView
+        android:id="@+id/preview_layer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_below="@id/search_bar"
+        android:fillViewport="true"
+        android:background="#FFFFFF"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/preview_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="16dp"
+            android:textSize="16sp"
+            android:textColor="#000000"
+            android:lineSpacingExtra="4dp"
+            android:focusable="false"
+            android:focusableInTouchMode="false" />
+    </ScrollView>
+
+    <!-- 层3：分屏层 (SplitViewLayer) - 独立层，默认隐藏 -->
+    <!-- 上半区预览 + 下半区编辑，内容同步，仅编辑区有光标 -->
+    <LinearLayout
+        android:id="@+id/split_layer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_below="@id/search_bar"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <!-- 上半区：预览区 -->
+        <com.editor.nomadmark.ObservableScrollView
+            android:id="@+id/split_preview_scroll"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="6"
+            android:background="#FAFAFA"
+            android:fillViewport="true">
+
+            <TextView
+                android:id="@+id/split_preview_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:padding="12dp"
+                android:textSize="14sp"
+                android:textColor="#333333"
+                android:focusable="false"
+                android:focusableInTouchMode="false" />
+        </com.editor.nomadmark.ObservableScrollView>
+
+        <!-- 分隔线 -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#CCCCCC" />
+
+        <!-- 下半区：编辑区 -->
+        <com.editor.nomadmark.ObservableScrollView
+            android:id="@+id/split_editor_scroll"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="4"
+            android:background="#FFFFFF"
+            android:fillViewport="true">
 
             <EditText
-                android:id="@+id/editor_text"
+                android:id="@+id/split_editor_text"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:background="@null"
-                android:padding="16dp"
-                android:textSize="16sp"
+                android:padding="12dp"
+                android:textSize="14sp"
                 android:textColor="#000000"
                 android:fontFamily="monospace"
                 android:gravity="top|start"
                 android:inputType="textMultiLine"
-                android:hint="# 开始输入您的 Markdown 内容..."
-                android:lineSpacingExtra="4dp" />
-        </ScrollView>
+                android:hint="编辑内容..."
+                android:lineSpacingExtra="2dp" />
+        </com.editor.nomadmark.ObservableScrollView>
+    </LinearLayout>
 
-        <!-- 手势覆盖层 (用于修订模式) -->
-        <com.editor.nomadmark.GestureOverlayView
-            android:id="@+id/gesture_overlay"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent" />
-
-        <!-- 预览模式视图 (默认隐藏) -->
-        <ScrollView
-            android:id="@+id/preview_scroll_view"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:fillViewport="true"
-            android:background="#FFFFFF"
-            android:visibility="gone">
-
-            <TextView
-                android:id="@+id/preview_text"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:padding="16dp"
-                android:textSize="16sp"
-                android:textColor="#000000"
-                android:lineSpacingExtra="4dp" />
-        </ScrollView>
-
-        <!-- 分屏视图 (默认隐藏) -->
-        <LinearLayout
-            android:id="@+id/split_view"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:orientation="vertical"
-            android:visibility="gone">
-
-            <!-- 预览区 (上方) -->
-            <com.editor.nomadmark.ObservableScrollView
-                android:id="@+id/split_preview_scroll"
-                android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="6"
-                android:background="#FAFAFA"
-                android:fillViewport="true">
-
-                <TextView
-                    android:id="@+id/split_preview_text"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:padding="12dp"
-                    android:textSize="14sp"
-                    android:textColor="#333333" />
-            </com.editor.nomadmark.ObservableScrollView>
-
-            <!-- 分隔线 -->
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:background="#CCCCCC" />
-
-            <!-- 编辑区 (下方) -->
-            <com.editor.nomadmark.ObservableScrollView
-                android:id="@+id/split_editor_scroll"
-                android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="4"
-                android:background="#FFFFFF"
-                android:fillViewport="true">
-
-                <EditText
-                    android:id="@+id/split_editor_text"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:background="@null"
-                    android:padding="12dp"
-                    android:textSize="14sp"
-                    android:textColor="#000000"
-                    android:fontFamily="monospace"
-                    android:gravity="top|start"
-                    android:inputType="textMultiLine"
-                    android:hint="编辑内容..."
-                    android:lineSpacingExtra="2dp" />
-            </com.editor.nomadmark.ObservableScrollView>
-        </LinearLayout>
-    </FrameLayout>
+    <!-- 层4：手势层 (GestureLayer) - 覆盖层，默认隐藏 -->
+    <!-- 修订模式启用手势识别，根据触摸位置判断操作区域 -->
+    <com.editor.nomadmark.GestureOverlayView
+        android:id="@+id/gesture_layer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_below="@id/search_bar"
+        android:visibility="gone"
+        android:clickable="false"
+        android:focusable="false" />
 
     <!-- 底部快捷栏 (默认隐藏) -->
     <HorizontalScrollView
