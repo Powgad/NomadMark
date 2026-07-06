@@ -880,4 +880,138 @@
 * 两者都可生效，但显示效果取决于渲染器
 * 大多数编辑器：外层生效，内层符号作为普通字符
 
+---
+
+## 10. Android 平台层级架构设计（2026-07-06 更新）
+
+### 10.1 独立层级架构
+
+为解决光标显示和模式切换问题，Android 平台采用独立的层级架构设计。
+
+#### 层级结构
+
+```
+RelativeLayout (根容器)
+├── 顶部工具栏 (toolbar_top)
+├── 搜索栏 (search_bar)
+├── 层1：编辑层 (editor_layer)
+│   └── ScrollView → EditText (支持光标、键盘编辑)
+├── 层2：预览层 (preview_layer)
+│   └── ScrollView → TextView (只读，无光标)
+├── 层3：分屏层 (split_layer)
+│   ├── 上半区：预览区 (ObservableScrollView → TextView)
+│   └── 下半区：编辑区 (ObservableScrollView → EditText)
+├── 层4：手势层 (gesture_layer)
+│   └── GestureOverlayView (修订模式启用手势识别)
+├── 底部快捷栏 (toolbar_bottom)
+├── 目录面板 (toc_panel)
+└── 键盘标识 (keyboard_indicator)
+```
+
+#### 层级特性
+
+| 层级 | 主要组件 | 光标 | 键盘编辑 | 修订模式 |
+|------|----------|------|----------|----------|
+| 编辑层 | EditText | ✅ 默认显示 | ✅ 支持 | ✅ 手势修订 |
+| 预览层 | TextView | ❌ 无 | ❌ 不支持 | ✅ 手势修订 |
+| 分屏层-预览 | TextView | ❌ 无 | ❌ 不支持 | ✅ 手势修订 |
+| 分屏层-编辑 | EditText | ✅ 显示 | ✅ 支持 | ✅ 手势修订 |
+| 手势层 | GestureOverlayView | - | - | ✅ 启用时覆盖 |
+
+### 10.2 显示模式管理
+
+#### DisplayMode 枚举
+
+```kotlin
+enum class DisplayMode {
+    EDIT,    // 编辑模式
+    PREVIEW, // 预览模式
+    SPLIT    // 分屏模式
+}
+```
+
+#### 模式切换逻辑
+
+**F11 键切换**：在 EDIT ↔ PREVIEW ↔ SPLIT 之间循环切换
+
+**修订按钮**：在当前模式下开启/关闭修订功能
+
+**光标控制规则**：
+- 编辑模式：光标默认显示，开启修订后消失
+- 预览模式：无光标，开启修订后支持手势
+- 分屏模式：编辑区有光标，开启修订后上下两区都支持手势
+
+### 10.3 手势层设计
+
+#### 覆盖层属性
+
+```xml
+<com.editor.nomadmark.GestureOverlayView
+    android:id="@+id/gesture_layer"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:visibility="gone"
+    android:clickable="false"
+    android:focusable="false" />
+```
+
+#### 区域判断（分屏模式）
+
+根据触摸 Y 坐标判断操作区域：
+- **上半区**（预览区）：操作同步到编辑内容
+- **下半区**（编辑区）：直接应用操作
+
+```kotlin
+val splitRatio = 0.6f  // 预览区占 60%
+val dividerY = splitLayer.top + splitHeight * splitRatio
+
+if (touchY < dividerY) {
+    // 上半区（预览区）操作
+} else {
+    // 下半区（编辑区）操作
+}
+```
+
+### 10.4 数据同步机制
+
+#### 编辑器同步
+
+- editorText ↔ splitEditorText 双向同步
+- 通过 `syncEditors()` 函数实现
+- 使用 `isSyncing` 标志防止循环同步
+
+#### 预览更新
+
+- 监听文本变化（`textWatcher`）
+- 自动调用 `updatePreview()` 更新预览
+- 支持预览层和分屏层的预览区
+
+### 10.5 主题配置
+
+#### 光标颜色配置
+
+```xml
+<!-- themes.xml -->
+<style name="Theme.NomadMark">
+    <item name="colorAccent">#000000</item>  <!-- 光标颜色（黑色） -->
+    <item name="android:windowBackground">#FFFFFF</item>  <!-- 背景色（白色） -->
+</style>
+```
+
+**注意**：colorAccent 控制光标颜色，需与背景色区分。
+
+### 10.6 实现文件
+
+| 文件 | 功能 |
+|------|------|
+| `activity_editor.xml` | 层级布局定义 |
+| `MarkdownEditorActivity.kt` | 模式切换和光标控制 |
+| `GestureOverlayView.kt` | 手势识别和区域判断 |
+| `ScrollSyncManager.kt` | 分屏滚动同步 |
+| `themes.xml` | 光标颜色配置 |
+
+---
+
+*此文档记录 Android 平台的层级架构设计，2026-07-06 更新*
+
 

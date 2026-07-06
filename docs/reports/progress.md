@@ -478,4 +478,71 @@ Markdowneditor2.0/
 
 ---
 
+---
+
+### 2026-07-06 (上午)
+
+**完成**:
+- ✅ 实现独立层级架构重构
+  - 创建三层独立结构：EditorLayer（编辑层）、PreviewLayer（预览层）、SplitViewLayer（分屏层）
+  - 添加 GestureLayer（手势层）作为覆盖层支持修订模式
+  - 更新 MarkdownEditorActivity.kt 适配新架构
+  - 更新 activity_editor.xml 布局文件
+
+- ✅ 实现按键切换逻辑
+  - 添加 DisplayMode 枚举定义三种显示模式
+  - 实现 F11 键监听，循环切换显示模式
+  - 实现 switchToEditMode/PreviewMode/SplitMode 三个切换函数
+  - 集成修订模式状态到切换逻辑
+
+- ✅ 修订模式集成
+  - 重写 toggleRevisionMode() 函数适配新架构
+  - 根据当前显示模式正确处理光标和手势层
+  - 开启修订：隐藏光标 + 启用手势层
+  - 关闭修订：根据模式恢复光标
+
+- ✅ 分屏手势处理
+  - 实现分屏模式下的区域判断逻辑
+  - 根据触摸 Y 坐标判断上半区（预览）或下半区（编辑）
+  - 下半区操作直接应用到编辑区
+  - 上半区操作显示同步提示
+
+- ✅ 数据同步验证
+  - 验证 editorText ↔ splitEditorText 双向同步
+  - 验证文本变化自动更新预览
+  - 确认分屏模式下内容同步正常
+
+- ✅ 修复光标显示问题
+  - 发现问题：colorAccent 设置为白色导致光标不可见
+  - 修复：将 themes.xml 中 colorAccent 改为黑色
+  - 修复：给 GestureLayer 添加 clickable/focusable 属性防止阻挡触摸事件
+
+**修改的文件**:
+- `platforms/android/app/src/main/java/com/editor/nomadmark/MarkdownEditorActivity.kt` - 层级架构重构和模式切换
+- `platforms/android/app/src/main/java/com/editor/nomadmark/ScrollSyncManager.kt` - 同步更新
+- `platforms/android/app/src/main/res/layout/activity_editor.xml` - 布局重构
+- `platforms/android/app/src/main/res/values/themes.xml` - 光标颜色修复
+
+**测试结果**: ✅ 光标正常显示，编辑模式功能正常
+
+**APK 构建**:
+```
+✅ app-debug.apk (13MB) - 2026-07-06 16:48
+```
+
+**工时**: 约 3 小时
+
+**实现的功能规则**:
+- 编辑模式：光标默认显示，支持键盘编辑
+- 编辑+修订：光标消失，支持手势修订
+- 预览模式：无光标，不支持键盘编辑
+- 预览+修订：支持手势修订
+- 分屏模式：编辑区有光标，支持键盘编辑
+- 分屏+修订：上下两区都支持手势修订
+
+**下一步**:
+- [ ] 推送代码到远程仓库
+- [ ] 在实际设备上测试新功能
+
+---
 *此文档用于跟踪项目进度，每次工作后请更新相关章节*
