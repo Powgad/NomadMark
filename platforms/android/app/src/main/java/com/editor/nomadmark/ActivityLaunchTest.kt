@@ -8,34 +8,34 @@ import android.util.Log
 import java.io.File
 
 /**
- * Utility class to test if MainActivity can be launched from file manager
+ * 测试 MainActivity 是否可以从文件管理器启动的工具类
  */
 object ActivityLaunchTest {
 
     private const val TAG = "ActivityLaunchTest"
 
     /**
-     * Test if the app can properly handle file open intents
+     * 测试应用是否可以正确处理文件打开 Intent
      *
-     * @param context Application context
-     * @param testFile Optional test file path (will create temp .md file if null)
-     * @return Test result with details
+     * @param context 应用上下文
+     * @param testFile 可选的测试文件路径（如果为 null 则创建临时 .md 文件）
+     * @return 包含详细信息的测试结果
      */
     fun testFileOpenLaunch(context: Context, testFile: File? = null): LaunchTestResult {
         val results = mutableMapOf<String, Boolean>()
         val details = mutableListOf<String>()
 
-        // 1. Test basic component existence
+        // 1. 测试基本组件是否存在
         val componentExists = try {
             context.packageManager.getActivityInfo(
                 android.content.ComponentName(context, MainActivity::class.java),
                 0
             )
-            details.add("✓ MainActivity component found in manifest")
+            details.add("✓ MainActivity 组件在 manifest 中找到")
             results["component_exists"] = true
             true
         } catch (e: Exception) {
-            details.add("✗ MainActivity component NOT found: ${e.message}")
+            details.add("✗ MainActivity 组件未找到: ${e.message}")
             results["component_exists"] = false
             false
         }
@@ -44,43 +44,43 @@ object ActivityLaunchTest {
             return LaunchTestResult(success = false, results, details)
         }
 
-        // 2. Test exported flag
+        // 2. 测试 exported 标志
         val isExported = try {
             val info = context.packageManager.getActivityInfo(
                 android.content.ComponentName(context, MainActivity::class.java),
                 0
             )
             if (info.exported) {
-                details.add("✓ Activity is exported (visible to other apps)")
+                details.add("✓ Activity 已导出（对其他应用可见）")
                 results["exported"] = true
                 true
             } else {
-                details.add("✗ Activity is NOT exported (file manager can't launch it)")
+                details.add("✗ Activity 未导出（文件管理器无法启动）")
                 results["exported"] = false
                 false
             }
         } catch (e: Exception) {
-            details.add("✗ Error checking exported status: ${e.message}")
+            details.add("✗ 检查导出状态时出错: ${e.message}")
             results["exported"] = false
             false
         }
 
-        // 3. Test intent filters for markdown files
+        // 3. 测试 markdown 文件的 Intent 过滤器
         val testFilePath = testFile ?: createTempMarkdownFile(context)
         val uri = Uri.fromFile(testFilePath)
 
         val intentFiltersSupported = testIntentFilters(context, uri, details, results)
 
-        // 4. Test actual launch capability
+        // 4. 测试实际启动能力
         val canLaunch = if (testFilePath.exists()) {
             testActualLaunch(context, testFilePath, details, results)
         } else {
-            details.add("! Test file doesn't exist, skipping launch test")
+            details.add("! 测试文件不存在，跳过启动测试")
             results["launch_test"] = false
             false
         }
 
-        // Overall success if all critical tests pass
+        // 所有关键测试通过则整体成功
         val success = results["component_exists"] == true &&
                      results["exported"] == true &&
                      (results["intent_filter_md"] == true || results["intent_filter_mime"] == true)
@@ -91,7 +91,7 @@ object ActivityLaunchTest {
     }
 
     /**
-     * Test if intent filters are properly configured
+     * 测试 Intent 过滤器是否正确配置
      */
     private fun testIntentFilters(
         context: Context,
@@ -99,7 +99,7 @@ object ActivityLaunchTest {
         details: MutableList<String>,
         results: MutableMap<String, Boolean>
     ): Boolean {
-        // Test VIEW action with file scheme
+        // 测试使用 file:// 协议的 VIEW 动作
         val fileIntent = Intent(Intent.ACTION_VIEW).apply {
             data = uri
             type = "text/markdown"
@@ -110,14 +110,14 @@ object ActivityLaunchTest {
             .any { it.activityInfo.packageName == context.packageName }
 
         if (fileHandled) {
-            details.add("✓ App responds to .md file:// intents")
+            details.add("✓ 应用响应 .md file:// intents")
             results["intent_filter_md"] = true
         } else {
-            details.add("✗ App does NOT respond to .md file:// intents")
+            details.add("✗ 应用不响应 .md file:// intents")
             results["intent_filter_md"] = false
         }
 
-        // Test with MIME type
+        // 测试 MIME 类型
         val mimeIntent = Intent(Intent.ACTION_VIEW).apply {
             type = "text/markdown"
             addCategory(Intent.CATEGORY_DEFAULT)
@@ -127,10 +127,10 @@ object ActivityLaunchTest {
             .any { it.activityInfo.packageName == context.packageName }
 
         if (mimeHandled) {
-            details.add("✓ App responds to text/markdown MIME type")
+            details.add("✓ 应用响应 text/markdown MIME 类型")
             results["intent_filter_mime"] = true
         } else {
-            details.add("! App does NOT respond to text/markdown MIME type")
+            details.add("! 应用不响应 text/markdown MIME 类型")
             results["intent_filter_mime"] = false
         }
 
@@ -138,7 +138,7 @@ object ActivityLaunchTest {
     }
 
     /**
-     * Test if activity can actually be launched
+     * 测试 Activity 是否可以实际启动
      */
     private fun testActualLaunch(
         context: Context,
@@ -153,25 +153,25 @@ object ActivityLaunchTest {
         }
 
         return try {
-            // Check if intent can be resolved
+            // 检查 Intent 是否可以解析
             if (intent.resolveActivity(context.packageManager) != null) {
-                details.add("✓ Intent resolves to MainActivity")
+                details.add("✓ Intent 解析到 MainActivity")
                 results["launch_test"] = true
                 true
             } else {
-                details.add("✗ Intent does NOT resolve to MainActivity")
+                details.add("✗ Intent 未解析到 MainActivity")
                 results["launch_test"] = false
                 false
             }
         } catch (e: Exception) {
-            details.add("✗ Launch test failed: ${e.message}")
+            details.add("✗ 启动测试失败: ${e.message}")
             results["launch_test"] = false
             false
         }
     }
 
     /**
-     * Create a temporary markdown file for testing
+     * 创建用于测试的临时 markdown 文件
      */
     private fun createTempMarkdownFile(context: Context): File {
         val tempDir = context.cacheDir
@@ -181,7 +181,7 @@ object ActivityLaunchTest {
     }
 
     /**
-     * Run quick diagnostic from MainActivity
+     * 从 MainActivity 运行快速诊断
      */
     fun logDiagnosticInfo(context: Context) {
         Log.d(TAG, "=== Activity Launch Diagnostic ===")
@@ -197,7 +197,7 @@ object ActivityLaunchTest {
             Log.d(TAG, "Permission: ${info.permission}")
             Log.d(TAG, "Enabled: ${info.enabled}")
 
-            // List all intent filters
+            // 列出所有 Intent 过滤器
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 type = "text/markdown"
                 addCategory(Intent.CATEGORY_DEFAULT)
@@ -217,7 +217,7 @@ object ActivityLaunchTest {
 }
 
 /**
- * Result of launch test
+ * 启动测试结果
  */
 data class LaunchTestResult(
     val success: Boolean,

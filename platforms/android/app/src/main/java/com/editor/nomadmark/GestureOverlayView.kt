@@ -14,16 +14,16 @@ import android.view.KeyEvent
 import kotlin.math.abs
 
 /**
- * Gesture Overlay View for revision mode
+ * 用于修订模式的手势覆盖视图
  *
- * A transparent overlay that captures touch input for gesture recognition.
- * Appears on top of the editing area when revision mode is active.
+ * 一个捕获触摸输入用于手势识别的透明覆盖层。
+ * 在修订模式激活时显示在编辑区域上方。
  *
- * Features:
- * - Captures touch events and records stroke trajectory
- * - Visual feedback (draws gesture stroke)
- * - Passes events to GestureRecognizer
- * - Callback for recognized gestures
+ * 功能：
+ * - 捕获触摸事件并记录笔划轨迹
+ * - 视觉反馈（绘制手势笔划）
+ * - 将事件传递给 GestureRecognizer
+ * - 为识别的手势提供回调
  */
 class GestureOverlayView @JvmOverloads constructor(
     context: Context,
@@ -34,63 +34,63 @@ class GestureOverlayView @JvmOverloads constructor(
     companion object {
         private const val TAG = "GestureOverlayView"
 
-        /** Minimum distance to consider as movement (avoid noise) */
+        /** 视为移动的最小距离（避免噪点） */
         private const val MIN_MOVE_DISTANCE = 5  // pixels
 
-        /** Timeout for gesture completion (ms) - if no touch for this long, end gesture */
+        /** 手势完成超时（毫秒）- 如果在此时间内没有触摸，则结束手势 */
         private const val GESTURE_TIMEOUT_MS = 500L
 
-        /** Stroke color for gesture feedback */
+        /** 手势反馈的笔划颜色 */
         private const val STROKE_COLOR = 0xFF0000FF.toInt()  // Red
 
-        /** Stroke width for gesture feedback */
+        /** 手势反馈的笔划宽度 */
         private const val STROKE_WIDTH = 4f
     }
 
     // =========================================================================
-    // Gesture Recognition Callback
+    // 手势识别回调
     // =========================================================================
 
     /**
-     * Callback invoked when a gesture is recognized
+     * 当手势被识别时调用的回调
      *
-     * @param result The recognized gesture data
+     * @param result 识别到的手势数据
      */
     var onGestureRecognized: ((RecognResultData) -> Unit)? = null
 
     /**
-     * Callback invoked when gesture recognition fails
+     * 当手势识别失败时调用的回调
      */
     var onGestureRejected: (() -> Unit)? = null
 
     // =========================================================================
-    // State
+    // 状态
     // =========================================================================
 
-    /** Whether gesture recognition is enabled */
+    /** 是否启用手势识别 */
     var isGestureEnabled: Boolean = true
         set(value) {
             field = value
             if (!value) {
-                // Clear everything when disabled
+                // 禁用时清除所有内容
                 clearCurrentGesture()
                 invalidate()
             }
-            // Update clickable and focusable to ensure touch events pass through
+            // 更新 clickable 和 focusable 以确保触摸事件传递
             isClickable = value
             isFocusable = value
         }
 
-    /** Currently recorded gesture points */
+    /** 当前记录的手势点 */
     private val currentGesturePoints = mutableListOf<Point>()
 
-    /** Last recorded touch point (for filtering small movements) */
+    /** 上一个记录的触摸点（用于过滤小幅度移动） */
     private var lastPoint: Point? = null
 
-    /** Whether currently in a gesture (touch down) */
+    /** 是否当前在手势中（触摸按下） */
     private var isInGesture = false
 
-    /** Runnable for gesture timeout */
+    /** 手势超时的 Runnable */
     private val gestureTimeoutRunnable = Runnable {
         if (isInGesture) {
             Log.d(TAG, "Gesture timeout, ending gesture")
@@ -99,10 +99,10 @@ class GestureOverlayView @JvmOverloads constructor(
     }
 
     // =========================================================================
-    // Drawing
+    // 绘制
     // =========================================================================
 
-    /** Paint for drawing gesture stroke */
+    /** 用于绘制手势笔划的画笔 */
     private val strokePaint = Paint().apply {
         color = STROKE_COLOR
         style = Paint.Style.STROKE
@@ -110,30 +110,29 @@ class GestureOverlayView @JvmOverloads constructor(
         isAntiAlias = true
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
-        alpha = 180  // Semi-transparent
+        alpha = 180  // 半透明
     }
 
-    /** Path for current gesture stroke */
+    /** 当前手势笔划的路径 */
     private val strokePath = Path()
 
     // =========================================================================
-    // Touch Event Handling
+    // 触摸事件处理
     // =========================================================================
 
     /**
-     * Handle generic motion events (e.g., mouse wheel events)
-     * This ensures that mouse wheel events are passed through to underlying views
-     * when gesture recognition is disabled.
+     * 处理通用运动事件（例如鼠标滚轮事件）
+     * 这确保了当手势识别被禁用时，鼠标滚轮事件能够传递到底层视图。
      */
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
-        // Handle mouse wheel events
+        // 处理鼠标滚轮事件
         if (event.source and InputDevice.SOURCE_CLASS_POINTER != 0) {
             when (event.action) {
                 MotionEvent.ACTION_SCROLL -> {
-                    // Mouse wheel event - pass through to underlying views when gesture is disabled
+                    // 鼠标滚轮事件 - 当手势被禁用时传递到底层视图
                     if (!isGestureEnabled) {
                         Log.d(TAG, "Passing through mouse wheel event")
-                        return false  // Pass through to underlying views
+                        return false  // 传递到底层视图
                     }
                 }
             }
@@ -146,13 +145,13 @@ class GestureOverlayView @JvmOverloads constructor(
     @Suppress("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (!isGestureEnabled) {
-            return false  // Pass through to underlying views
+            return false  // 传递到底层视图
         }
 
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
                 handleActionDown(event)
-                return true  // Consume event
+                return true  // 消费事件
             }
 
             MotionEvent.ACTION_MOVE -> {
@@ -175,96 +174,96 @@ class GestureOverlayView @JvmOverloads constructor(
     }
 
     /**
-     * Handle touch down - start new gesture
+     * 处理触摸按下 - 开始新手势
      */
     private fun handleActionDown(event: MotionEvent) {
         Log.d(TAG, "ACTION_DOWN: x=${event.x}, y=${event.y}")
 
-        // Clear any previous gesture
+        // 清除任何先前的手势
         clearCurrentGesture()
 
-        // Start new gesture
+        // 开始新手势
         isInGesture = true
 
-        // Record first point
+        // 记录第一个点
         val point = Point(event.x.toInt(), event.y.toInt())
         currentGesturePoints.add(point)
         lastPoint = point
 
-        // Start path
+        // 开始路径
         strokePath.reset()
         strokePath.moveTo(event.x, event.y)
 
-        // Schedule timeout
+        // 安排超时
         removeCallbacks(gestureTimeoutRunnable)
         postDelayed(gestureTimeoutRunnable, GESTURE_TIMEOUT_MS)
 
-        // Trigger redraw
+        // 触发重绘
         invalidate()
     }
 
     /**
-     * Handle touch move - record gesture path
+     * 处理触摸移动 - 记录手势路径
      */
     private fun handleActionMove(event: MotionEvent) {
         if (!isInGesture) return
 
         val newPoint = Point(event.x.toInt(), event.y.toInt())
 
-        // Filter small movements
+        // 过滤小幅度移动
         if (lastPoint != null) {
             val distance = distance(lastPoint!!, newPoint)
             if (distance < MIN_MOVE_DISTANCE) {
-                return  // Skip tiny movements
+                return  // 跳过微小的移动
             }
         }
 
-        // Record point
+        // 记录点
         currentGesturePoints.add(newPoint)
         lastPoint = newPoint
 
-        // Update path
+        // 更新路径
         strokePath.lineTo(event.x, event.y)
 
-        // Reset timeout
+        // 重置超时
         removeCallbacks(gestureTimeoutRunnable)
         postDelayed(gestureTimeoutRunnable, GESTURE_TIMEOUT_MS)
 
-        // Trigger redraw
+        // 触发重绘
         invalidate()
 
         Log.v(TAG, "ACTION_MOVE: points=${currentGesturePoints.size}")
     }
 
     /**
-     * Handle touch up - recognize gesture
+     * 处理触摸抬起 - 识别手势
      */
     private fun handleActionUp(event: MotionEvent) {
         Log.d(TAG, "ACTION_UP: points=${currentGesturePoints.size}")
 
-        // Cancel timeout
+        // 取消超时
         removeCallbacks(gestureTimeoutRunnable)
 
-        // End gesture and recognize
+        // 结束手势并识别
         endGesture()
     }
 
     /**
-     * Handle touch cancel - discard gesture
+     * 处理触摸取消 - 丢弃手势
      */
     private fun handleActionCancel() {
         Log.d(TAG, "ACTION_CANCEL")
 
-        // Cancel timeout
+        // 取消超时
         removeCallbacks(gestureTimeoutRunnable)
 
-        // Clear gesture
+        // 清除手势
         clearCurrentGesture()
         invalidate()
     }
 
     /**
-     * End current gesture and trigger recognition
+     * 结束当前手势并触发识别
      */
     private fun endGesture() {
         if (!isInGesture) return
@@ -273,7 +272,7 @@ class GestureOverlayView @JvmOverloads constructor(
         Log.d(TAG, "Ending gesture with ${currentGesturePoints.size} points")
 
         if (currentGesturePoints.size >= GestureRecognizer.MIN_POINTS) {
-            // Attempt recognition
+            // 尝试识别
             val result = GestureRecognizer.recognize(currentGesturePoints)
 
             if (result != null) {
@@ -288,15 +287,15 @@ class GestureOverlayView @JvmOverloads constructor(
             onGestureRejected?.invoke()
         }
 
-        // Clear gesture (with a delay for visual feedback)
+        // 清除手势（延迟以提供视觉反馈）
         postDelayed({
             clearCurrentGesture()
             invalidate()
-        }, 300)  // Keep visible for 300ms after recognition
+        }, 300)  // 识别后保持可见 300ms
     }
 
     /**
-     * Clear current gesture data
+     * 清除当前手势数据
      */
     private fun clearCurrentGesture() {
         currentGesturePoints.clear()
@@ -306,24 +305,24 @@ class GestureOverlayView @JvmOverloads constructor(
     }
 
     // =========================================================================
-    // Rendering
+    // 渲染
     // =========================================================================
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        // Draw current gesture stroke
+        // 绘制当前手势笔划
         if (currentGesturePoints.size > 1) {
             canvas.drawPath(strokePath, strokePaint)
         }
     }
 
     // =========================================================================
-    // Helper Functions
+    // 辅助函数
     // =========================================================================
 
     /**
-     * Calculate Euclidean distance between two points
+     * 计算两点之间的欧几里得距离
      */
     private fun distance(p1: Point, p2: Point): Float {
         val dx = (p2.x - p1.x).toFloat()
@@ -332,7 +331,7 @@ class GestureOverlayView @JvmOverloads constructor(
     }
 
     /**
-     * Clear timeout when view is detached
+     * 当视图分离时清除超时
      */
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()

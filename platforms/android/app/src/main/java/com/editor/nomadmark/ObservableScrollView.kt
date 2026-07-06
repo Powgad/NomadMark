@@ -5,13 +5,13 @@ import android.util.AttributeSet
 import android.widget.ScrollView
 
 /**
- * Observable ScrollView
+ * 可观察的 ScrollView
  *
- * A custom ScrollView that provides scroll change callbacks.
- * This ensures that scroll events from mouse wheel and touch are both captured.
+ * 一个提供滚动变化回调的自定义 ScrollView。
+ * 这确保了鼠标滚轮和触摸的滚动事件都能被捕获。
  *
- * Unlike viewTreeObserver.onScrollChangedListener, this view's onScrollChanged
- * method is called for all scroll events, including mouse wheel events.
+ * 与 viewTreeObserver.onScrollChangedListener 不同，此视图的 onScrollChanged
+ * 方法对所有滚动事件（包括鼠标滚轮事件）都会被调用。
  */
 class ObservableScrollView @JvmOverloads constructor(
     context: Context,
@@ -20,12 +20,12 @@ class ObservableScrollView @JvmOverloads constructor(
 ) : ScrollView(context, attrs, defStyleAttr) {
 
     /**
-     * Callback for scroll changes
+     * 滚动变化的回调
      */
     var onScrollChangedCallback: ((scrollX: Int, scrollY: Int, oldScrollX: Int, oldScrollY: Int) -> Unit)? = null
 
     /**
-     * Scroll listener interface (alternative to callback)
+     * 滚动监听器接口（回调的替代方案）
      */
     interface OnScrollListener {
         fun onScrollChanged(scrollX: Int, scrollY: Int, oldScrollX: Int, oldScrollY: Int)
@@ -40,10 +40,10 @@ class ObservableScrollView @JvmOverloads constructor(
     override fun onScrollChanged(scrollX: Int, scrollY: Int, oldScrollX: Int, oldScrollY: Int) {
         super.onScrollChanged(scrollX, scrollY, oldScrollX, oldScrollY)
 
-        // Notify callback
+        // 通知回调
         onScrollChangedCallback?.invoke(scrollX, scrollY, oldScrollX, oldScrollY)
 
-        // Notify listener
+        // 通知监听器
         scrollListener?.onScrollChanged(scrollX, scrollY, oldScrollX, oldScrollY)
     }
 }

@@ -1,14 +1,14 @@
 package com.editor.nomadmark
 
 /**
- * MarkdownCore - FFI Bridge to Rust Core (libmarkdown_core.so)
+ * MarkdownCore - 到 Rust Core (libmarkdown_core.so) 的 FFI 桥接
  *
- * This object provides JNI bindings to the shared Rust core.
- * All Markdown parsing, layout, and rendering logic MUST be delegated
- * to the native layer - no parsing logic in Kotlin.
+ * 此对象提供到共享 Rust 核心的 JNI 绑定。
+ * 所有 Markdown 解析、布局和渲染逻辑必须委托给
+ * 原生层 - Kotlin 中没有解析逻辑。
  *
- * Thread Safety: All native functions are thread-safe and may be called
- * from any thread. Document handles are NOT thread-safe per instance.
+ * 线程安全：所有原生函数都是线程安全的，可以从任何线程调用。
+ * 文档句柄在每个实例上不是线程安全的。
  */
 object MarkdownCore {
 
@@ -17,52 +17,52 @@ object MarkdownCore {
     }
 
     // =========================================================================
-    // Document Lifecycle
+    // 文档生命周期
     // =========================================================================
 
     /**
-     * Create a new document instance from raw content.
+     * 从原始内容创建新的文档实例。
      *
-     * For large files (>50MB), use [nativeCreateFromPath] instead.
+     * 对于大文件（>50MB），请使用 [nativeCreateFromPath] 代替。
      *
-     * @param content Raw Markdown content
-     * @return Native handle (opaque pointer), 0 if failed
+     * @param content 原始 Markdown 内容
+     * @return 原生句柄（不透明指针），失败时返回 0
      */
     external fun nativeCreate(content: String): Long
 
     /**
-     * Create a document from file path (uses mmap for large files).
+     * 从文件路径创建文档（对大文件使用 mmap）。
      *
-     * Preferred method for files >50MB. Uses streaming parser.
+     * 对于 >50MB 的文件的首选方法。使用流式解析器。
      *
-     * @param path Absolute file path
-     * @return Native handle, 0 if failed
+     * @param path 绝对文件路径
+     * @return 原生句柄，失败时返回 0
      */
     external fun nativeCreateFromPath(path: String): Long
 
     /**
-     * Release document resources.
+     * 释放文档资源。
      *
-     * MUST be called when document is no longer needed to prevent memory leaks.
+     * 当不再需要文档时必须调用以防止内存泄漏。
      *
-     * @param handle Document handle from [nativeCreate]
+     * @param handle 来自 [nativeCreate] 的文档句柄
      */
     external fun nativeRelease(handle: Long)
 
     // =========================================================================
-    // Rendering
+    // 渲染
     // =========================================================================
 
     /**
-     * Render document content to native Canvas.
+     * 将文档内容渲染到原生 Canvas。
      *
-     * Direct rendering for maximum performance. Returns number of
-     * dirty rectangles for partial refresh optimization.
+     * 直接渲染以获得最大性能。返回脏矩形数量
+     * 用于部分刷新优化。
      *
-     * @param handle Document handle
-     * @param canvasPtr Native Canvas pointer (via Android NDK)
-     * @param commands Render command bundle
-     * @return Number of dirty rectangles, or 0 if nothing rendered
+     * @param handle 文档句柄
+     * @param canvasPtr 原生 Canvas 指针（通过 Android NDK）
+     * @param commands 渲染命令包
+     * @return 脏矩形数量，如果未渲染任何内容则返回 0
      */
     external fun nativeRenderToCanvas(
         handle: Long,
@@ -71,15 +71,15 @@ object MarkdownCore {
     ): Int
 
     /**
-     * Load and render a specific line range (for large file support).
+     * 加载并渲染特定行范围（用于大文件支持）。
      *
-     * Only parses and renders the requested range. Used for virtual scrolling
-     * and lazy loading.
+     * 仅解析和渲染请求的范围。用于虚拟滚动
+     * 和延迟加载。
      *
-     * @param handle Document handle
-     * @param startLine Starting line number (0-based)
-     * @param count Number of lines to load
-     * @return 0 on success, -1 on failure
+     * @param handle 文档句柄
+     * @param startLine 起始行号（从 0 开始）
+     * @param count 要加载的行数
+     * @return 成功时返回 0，失败时返回 -1
      */
     external fun nativeLoadRange(
         handle: Long,
@@ -91,11 +91,11 @@ object MarkdownCore {
     ): Int
 
     /**
-     * Get table of contents entries.
+     * 获取目录条目。
      *
-     * @param handle Document handle
-     * @param outEntries Output array to receive [entries pointer, count]
-     * @return 0 on success, -1 on failure
+     * @param handle 文档句柄
+     * @param outEntries 接收 [条目指针，计数] 的输出数组
+     * @return 成功时返回 0，失败时返回 -1
      */
     external fun nativeGetToc(
         handle: Long,
@@ -103,27 +103,27 @@ object MarkdownCore {
     ): Int
 
     // =========================================================================
-    // Table of Contents
+    // 目录
     // =========================================================================
 
     /**
-     * Get document table of contents.
+     * 获取文档目录。
      *
-     * @param handle Document handle
-     * @return Array of TOC entries (heading level, title, position)
+     * @param handle 文档句柄
+     * @return 目录条目数组（标题级别、标题、位置）
      */
     external fun nativeGetToc(handle: Long): Array<TocEntry>
 
     // =========================================================================
-    // Search
+    // 搜索
     // =========================================================================
 
     /**
-     * Full-text search within document.
+     * 在文档中进行全文搜索。
      *
-     * @param handle Document handle
-     * @param query Search query string
-     * @return Array of search results with line/column positions
+     * @param handle 文档句柄
+     * @param query 搜索查询字符串
+     * @return 带有行/列位置的搜索结果数组
      */
     external fun nativeSearch(
         handle: Long,
@@ -131,150 +131,150 @@ object MarkdownCore {
     ): Array<SearchResult>
 
     // =========================================================================
-    // History (Undo/Redo)
+    // 历史记录（撤销/重做）
     // =========================================================================
 
     /**
-     * Undo last operation.
+     * 撤销上一次操作。
      *
-     * @param handle Document handle
-     * @return true if undo was successful, false if nothing to undo
+     * @param handle 文档句柄
+     * @return 如果撤销成功则返回 true，如果没有可撤销的操作则返回 false
      */
     external fun nativeUndo(handle: Long): Boolean
 
     /**
-     * Redo last undone operation.
+     * 重做上一次撤销的操作。
      *
-     * @param handle Document handle
-     * @return true if redo was successful, false if nothing to redo
+     * @param handle 文档句柄
+     * @return 如果重做成功则返回 true，如果没有可重做的操作则返回 false
      */
     external fun nativeRedo(handle: Long): Boolean
 
     // =========================================================================
-    // Memory Management
+    // 内存管理
     // =========================================================================
 
     /**
-     * Release parsed content before a specific line to free memory.
+     * 释放特定行之前的已解析内容以释放内存。
      *
-     * Use this when scrolling large documents to prevent OOM.
+     * 在滚动大文档时使用以防止 OOM。
      *
-     * @param handle Document handle
-     * @param line Release all content before this line number
+     * @param handle 文档句柄
+     * @param line 释放此行号之前的所有内容
      */
     external fun nativeReleaseBefore(handle: Long, line: Int)
 
     /**
-     * Get current memory usage estimate.
+     * 获取当前内存使用估算值。
      *
-     * @return Memory usage in bytes
+     * @return 内存使用量（字节）
      */
     external fun nativeGetMemoryUsage(handle: Long): Long
 
     /**
-     * Free render commands allocated by Rust.
+     * 释放由 Rust 分配的渲染命令。
      *
-     * Call this after processing commands from nativeLoadRange.
+     * 在处理来自 nativeLoadRange 的命令后调用此方法。
      *
-     * @param ptr Pointer to RenderCommand array
-     * @param len Number of commands
+     * @param ptr RenderCommand 数组的指针
+     * @param len 命令数量
      */
     external fun nativeFreeCommands(ptr: Long, len: Int)
 
     /**
-     * Free TOC entries allocated by Rust.
+     * 释放由 Rust 分配的目录条目。
      *
-     * Call this after processing TOC from nativeGetToc or nativeGetMetadata.
+     * 在处理来自 nativeGetToc 或 nativeGetMetadata 的目录后调用此方法。
      *
-     * @param ptr Pointer to TocEntry array
-     * @param len Number of entries
+     * @param ptr TocEntry 数组的指针
+     * @param len 条目数量
      */
     external fun nativeFreeToc(ptr: Long, len: Int)
 
     /**
-     * Free dirty rects allocated by Rust.
+     * 释放由 Rust 分配的脏矩形。
      *
-     * Call this after processing dirty rects from nativeLoadRange or nativeGetDirtyRects.
+     * 在处理来自 nativeLoadRange 或 nativeGetDirtyRects 的脏矩形后调用此方法。
      *
-     * @param ptr Pointer to i32 array [x, y, w, h, ...]
-     * @param len Number of elements in the array (NOT number of rects)
+     * @param ptr i32 数组的指针 [x, y, w, h, ...]
+     * @param len 数组中的元素数量（不是矩形数量）
      */
     external fun nativeFreeDirtyRects(ptr: Long, len: Int)
 
     /**
-     * Release cached memory to reach a target threshold.
+     * 释放缓存的内存以达到目标阈值。
      *
-     * Use when Android signals low memory via onTrimMemory.
+     * 当 Android 通过 onTrimMemory 发出低内存信号时使用。
      *
-     * @param handle Document handle
-     * @param targetBytes Target memory usage in bytes
-     * @return Number of bytes actually released
+     * @param handle 文档句柄
+     * @param targetBytes 目标内存使用量（字节）
+     * @return 实际释放的字节数
      */
     external fun nativeReleaseToTarget(handle: Long, targetBytes: Long): Long
 
     /**
-     * Get document loading progress.
+     * 获取文档加载进度。
      *
-     * For large files, poll this to show loading indicator.
+     * 对于大文件，轮询此方法以显示加载指示器。
      *
-     * @param handle Document handle
-     * @return Progress (0.0 to 1.0, where 1.0 = complete)
+     * @param handle 文档句柄
+     * @return 进度（0.0 到 1.0，其中 1.0 = 完成）
      */
     external fun nativeGetProgress(handle: Long): Float
 
     /**
-     * Get document file size in bytes.
+     * 获取文档文件大小（字节）。
      *
-     * @param handle Document handle
-     * @return File size in bytes
+     * @param handle 文档句柄
+     * @return 文件大小（字节）
      */
     external fun nativeGetFileSize(handle: Long): Long
 }
 
 // =============================================================================
-// Native Data Structures (must match #[repr(C)] types in Rust)
+// 原生数据结构（必须匹配 Rust 中的 #[repr(C)] 类型）
 // =============================================================================
 
 /**
- * Table of Contents entry
+ * 目录条目
  *
- * Corresponds to Rust: TocEntry
+ * 对应 Rust：TocEntry
  */
 data class TocEntry(
-    val level: Int,          // Heading level (1-6)
-    val title: String,       // Heading text
-    val byteOffset: Int,    // Position in source file
-    val lineNumber: Int     // Line number (0-based)
+    val level: Int,          // 标题级别（1-6）
+    val title: String,       // 标题文本
+    val byteOffset: Int,    // 源文件中的位置
+    val lineNumber: Int     // 行号（从 0 开始）
 )
 
 /**
- * Search result
+ * 搜索结果
  *
- * Corresponds to Rust: SearchResult
+ * 对应 Rust：SearchResult
  */
 data class SearchResult(
-    val line: Int,           // Line number (0-based)
-    val startColumn: Int,   // Start column (0-based)
-    val endColumn: Int,     // End column (exclusive)
-    val context: String      // Surrounding text for preview
+    val line: Int,           // 行号（从 0 开始）
+    val startColumn: Int,   // 起始列（从 0 开始）
+    val endColumn: Int,     // 结束列（不包含）
+    val context: String      // 用于预览的周围文本
 )
 
 /**
- * Native render result bundle
+ * 原生渲染结果包
  *
- * Corresponds to Rust: NativeRenderResult
+ * 对应 Rust：NativeRenderResult
  */
 data class NativeRenderResult(
     val commands: NativeRenderCommands,
     val dirtyRects: IntArray,  // [x, y, w, h, x, y, w, h, ...]
-    val totalHeight: Int       // Total document height in pixels
+    val totalHeight: Int       // 文档总高度（像素）
 )
 
 /**
- * Bundle of render commands
+ * 渲染命令包
  *
- * Opaque wrapper for native render command array.
- * The actual commands are stored in native memory to avoid JNI overhead.
+ * 原生渲染命令数组的不透明包装器。
+ * 实际命令存储在原生内存中以避免 JNI 开销。
  */
 class NativeRenderCommands internal constructor(
     internal val nativePtr: Long
@@ -283,9 +283,9 @@ class NativeRenderCommands internal constructor(
 }
 
 /**
- * Document handle wrapper for RAII-style resource management.
+ * 用于 RAII 风格资源管理的文档句柄包装器。
  *
- * Automatically releases native resources when closed.
+ * 关闭时自动释放原生资源。
  */
 class DocumentHandle(
     private val handle: Long

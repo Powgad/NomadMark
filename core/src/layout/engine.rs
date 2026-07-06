@@ -93,7 +93,7 @@ pub struct FontMetrics {
     pub avg_char_width: f32,
 }
 
-/// 字体规格缓存键
+/// 字体指标缓存键
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct FontKey {
     pub family: FontFamily,
@@ -103,14 +103,14 @@ pub struct FontKey {
 }
 
 // -----------------------------------------------------------------------------
-// Glyph Cache (Three-tier)
+// 字形缓存（三层）
 // -----------------------------------------------------------------------------
 
 /// 字形缓存系统
 pub struct GlyphCacheSystem {
     /// L1: RAM 缓存（热数据，约 2MB）
     l1_ram: LruCache<GlyphKey, GlyphBitmap>,
-    /// L2: 预渲染的字形规格（温数据）
+    /// L2: 预渲染字形指标（温数据）
     l2_metrics: HashMap<GlyphKey, GlyphMetrics>,
 }
 
@@ -124,7 +124,7 @@ pub struct GlyphKey {
 pub struct GlyphBitmap {
     pub width: u8,
     pub height: u8,
-    pub data: Vec<u8>,  // Grayscale bitmap
+    pub data: Vec<u8>,  // 灰度位图
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -142,19 +142,19 @@ impl GlyphCacheSystem {
         }
     }
 
-    /// Get glyph bitmap (with L1 caching)
+    /// 获取字形位图（带 L1 缓存）
     pub fn get_glyph(&mut self, key: &GlyphKey) -> Option<&GlyphBitmap> {
         self.l1_ram.get(key)
     }
 
-    /// Get glyph metrics (from L2)
+    /// 获取字形指标（从 L2）
     pub fn get_metrics(&self, key: &GlyphKey) -> Option<&GlyphMetrics> {
         self.l2_metrics.get(key)
     }
 
-    /// Preload common CJK characters (call at startup)
+    /// 预加载常用 CJK 字符（启动时调用）
     pub fn preload_cjk_common(&mut self) {
-        // Top 500 common CJK characters
+        // 前 500 个常用 CJK 字符
         const CJK_COMMON: &str = "的一是在不了有和人这中大为上个国我以要他时来用们生到作地于出就分对成会可主发表还年能动同工也能下过子说产种面而方后多定行学法所民得经十三之进着等部度家电力里如水化高自二理起小物现实加量都两体制机当使点从业本去把性好应开它合还因由其些然前外天政四日那社义事平形相全表间样与关各重新线内数正心反你明看原又么利比或但质气第向道命此变条只没结解问意建月公无系军很情者最立代想已通并提直题党程展五果料象员革位入常文总次品式活设及管特件长求老头基资边流路级少图山统接知较将组见计别她手角期根论运农指几九区强放决西被干做必战先回则任取据处队南给色光门即保治北造百规热领七海口东导器压志世金增争济阶油思术极交受联什认六共权收证改清己美再采转更单风切打白教速花带安场身车例真务具万每目至达走积示议声报斗完类八离华名确才科张信马节话米整空元况今据温虫么书";
 
         let font = FontKey {
@@ -164,10 +164,10 @@ impl GlyphCacheSystem {
             italic: false,
         };
 
-        // Pre-populate metrics cache
+        // 预填充指标缓存
         for ch in CJK_COMMON.chars() {
             let key = GlyphKey { char: ch, font };
-            // In real implementation, would rasterize via FreeType
+            // 在实际实现中，将通过 FreeType 进行光栅化
             self.l2_metrics.insert(key, GlyphMetrics {
                 advance: font.size_pt as f32,
                 bearing_x: 0.0,
@@ -184,26 +184,26 @@ impl Default for GlyphCacheSystem {
 }
 
 // -----------------------------------------------------------------------------
-// Layout Engine
-// ----------------------------------------------------------------------------/
+// 布局引擎
+// -----------------------------------------------------------------------------
 
 /// 主布局引擎
 pub struct Layouter {
-    /// Configuration
+    /// 配置
     config: LayoutConfig,
-    /// Font metrics cache
+    /// 字体指标缓存
     font_metrics: LruCache<FontKey, FontMetrics>,
-    /// Glyph cache
+    /// 字形缓存
     glyph_cache: GlyphCacheSystem,
-    /// Current cursor position
+    /// 当前光标位置
     cursor_x: f32,
     cursor_y: f32,
-    /// Current line height
+    /// 当前行高
     current_line_height: f32,
 }
 
 impl Layouter {
-    /// Create new layouter for Supernote
+    /// 为 Supernote 创建新的布局器
     pub fn for_supernote() -> Self {
         let mut layouter = Self {
             config: LayoutConfig::for_supernote(),
@@ -214,26 +214,26 @@ impl Layouter {
             current_line_height: 0.0,
         };
 
-        // Preload common CJK glyphs
+        // 预加载常用 CJK 字形
         layouter.glyph_cache.preload_cjk_common();
 
         layouter
     }
 
-    /// Reset cursor to start of content area
+    /// 将光标重置到内容区域起始位置
     fn reset_cursor(&mut self) {
         self.cursor_x = self.config.margin_left;
         self.cursor_y = self.config.margin_top;
         self.current_line_height = self.config.pt_to_px(14.0) * self.config.line_spacing;
     }
 
-    /// Move to next line
+    /// 移动到下一行
     fn new_line(&mut self) {
         self.cursor_x = self.config.margin_left;
         self.cursor_y += self.current_line_height;
     }
 
-    /// Get font metrics (with caching)
+    /// 获取字体指标（带缓存）
     fn get_font_metrics(&mut self, font: FontSpec) -> FontMetrics {
         let key = FontKey {
             family: font.family,
@@ -246,7 +246,7 @@ impl Layouter {
             return metrics;
         }
 
-        // Compute metrics (simplified - real implementation uses font tables)
+        // 计算指标（简化版 - 实际实现使用字体表）
         let size_px = self.config.pt_to_px(font.size_pt);
         let metrics = FontMetrics {
             ascent: size_px * 0.8,
@@ -259,7 +259,7 @@ impl Layouter {
         metrics
     }
 
-    /// Layout a single block node
+    /// 布局单个块节点
     pub fn layout_block(&mut self, node: &BlockNode) -> RenderResult {
         let mut result = RenderResult::new();
 
@@ -277,14 +277,14 @@ impl Layouter {
                 self.layout_list(*ordered, *start_number, items, &mut result);
             }
             _ => {
-                // Placeholder for other block types
+                // 其他块类型的占位符
             }
         }
 
         result
     }
 
-    /// Layout heading
+    /// 布局标题
     fn layout_heading(&mut self, level: u8, children: &[InlineNode], result: &mut RenderResult) {
         let font_size = match level {
             1 => 24.0,
@@ -304,7 +304,7 @@ impl Layouter {
         let metrics = self.get_font_metrics(font);
         self.current_line_height = metrics.line_height;
 
-        // Draw heading background
+        // 绘制标题背景
         let bg_rect = QuantizedRect::from_float(
             self.config.margin_left,
             self.cursor_y,
@@ -319,14 +319,14 @@ impl Layouter {
             Color::WHITE,
         ));
 
-        // Layout inline content
+        // 布局内联内容
         self.layout_inline(children, font, Color::BLACK, result);
 
         self.new_line();
         self.cursor_y += self.config.paragraph_spacing;
     }
 
-    /// Layout paragraph
+    /// 布局段落
     fn layout_paragraph(&mut self, children: &[InlineNode], result: &mut RenderResult) {
         let font = FontSpec {
             family: FontFamily::Sans,
@@ -343,7 +343,7 @@ impl Layouter {
         self.cursor_y += self.config.paragraph_spacing;
     }
 
-    /// Layout inline nodes
+    /// 布局内联节点
     fn layout_inline(&mut self, nodes: &[InlineNode], font: FontSpec, color: Color, result: &mut RenderResult) {
         let metrics = self.get_font_metrics(font);
         let content_width = self.config.content_width();
@@ -351,17 +351,17 @@ impl Layouter {
         for node in nodes {
             match node {
                 InlineNode::Text(text) => {
-                    // Simple word wrapping
+                    // 简单的自动换行
                     let words: Vec<&str> = text.split_whitespace().collect();
                     for (i, word) in words.iter().enumerate() {
                         let word_width = word.len() as f32 * metrics.avg_char_width;
 
-                        // Check if need to wrap
+                        // 检查是否需要换行
                         if self.cursor_x + word_width > self.config.margin_left + content_width {
                             self.new_line();
                         }
 
-                        // Draw text
+                        // 绘制文本
                         result.push(RenderCommand::draw_text(
                             self.cursor_x,
                             self.cursor_y + metrics.ascent,
@@ -372,7 +372,7 @@ impl Layouter {
 
                         self.cursor_x += word_width;
 
-                        // Add space between words
+                        // 在单词之间添加空格
                         if i < words.len() - 1 {
                             self.cursor_x += metrics.avg_char_width * 0.3;
                         }
@@ -404,7 +404,7 @@ impl Layouter {
                         italic: false,
                     };
 
-                    // Draw code background
+                    // 绘制代码背景
                     let text_width = code.len() as f32 * metrics.avg_char_width;
                     result.push(RenderCommand::fill_rect(
                         self.cursor_x,
@@ -414,7 +414,7 @@ impl Layouter {
                         Color::rgb(240, 240, 240),
                     ));
 
-                    // Draw code text
+                    // 绘制代码文本
                     result.push(RenderCommand::draw_text(
                         self.cursor_x + 4.0,
                         self.cursor_y + metrics.ascent,
@@ -426,20 +426,20 @@ impl Layouter {
                     self.cursor_x += text_width + 8.0;
                 }
                 InlineNode::SoftBreak => {
-                    // Render as space
+                    // 渲染为空格
                     self.cursor_x += metrics.avg_char_width * 0.3;
                 }
                 InlineNode::HardBreak => {
                     self.new_line();
                 }
                 _ => {
-                    // Other inline nodes not implemented yet
+                    // 其他内联节点尚未实现
                 }
             }
         }
     }
 
-    /// Layout code block
+    /// 布局代码块
     fn layout_code_block(&mut self, _language: &Option<String>, content: &str, result: &mut RenderResult) {
         let font = FontSpec {
             family: FontFamily::Mono,
@@ -451,7 +451,7 @@ impl Layouter {
         let metrics = self.get_font_metrics(font);
         self.current_line_height = metrics.line_height;
 
-        // Draw background
+        // 绘制背景
         let line_count = content.lines().count() as f32;
         let block_height = line_count * self.current_line_height;
 
@@ -463,7 +463,7 @@ impl Layouter {
             Color::rgb(245, 245, 245),
         ));
 
-        // Draw each line
+        // 绘制每一行
         for line in content.lines() {
             result.push(RenderCommand::draw_text(
                 self.cursor_x + 8.0,
@@ -478,7 +478,7 @@ impl Layouter {
         self.cursor_y += self.config.paragraph_spacing;
     }
 
-    /// Layout list
+    /// 布局列表
     fn layout_list(&mut self, _ordered: bool, start_number: Option<usize>, items: &[crate::parser::ast::ListItem], result: &mut RenderResult) {
         let font = FontSpec {
             family: FontFamily::Sans,
@@ -491,9 +491,9 @@ impl Layouter {
         self.current_line_height = metrics.line_height;
 
         for (i, item) in items.iter().enumerate() {
-            self.cursor_x = self.config.margin_left + 20.0;  // Indent
+            self.cursor_x = self.config.margin_left + 20.0;  // 缩进
 
-            // Draw marker
+            // 绘制标记
             let marker = match start_number {
                 Some(start) => format!("{}.", start + i),
                 None => "•".to_string(),
@@ -507,14 +507,14 @@ impl Layouter {
                 Color::BLACK,
             ));
 
-            // Layout content
+            // 布局内容
             for block in &item.content {
                 self.layout_block(block);
             }
         }
     }
 
-    /// Layout visible range only
+    /// 仅布局可见范围
     pub fn layout_visible_range(
         &mut self,
         blocks: &[BlockNode],
@@ -524,7 +524,7 @@ impl Layouter {
         let mut result = RenderResult::new();
         self.reset_cursor();
 
-        // Skip blocks before visible range
+        // 跳过可见范围之前的块
         for block in blocks {
             let block_height = self.estimate_block_height(block);
 
@@ -537,7 +537,7 @@ impl Layouter {
                 break;
             }
 
-            // Layout this block
+            // 布局此块
             let block_result = self.layout_block(block);
             result.commands.extend(block_result.commands);
             result.dirty_rects.extend(block_result.dirty_rects);
@@ -549,17 +549,17 @@ impl Layouter {
         result
     }
 
-    /// Estimate block height without full layout
+    /// 估计块高度（无需完整布局）
     fn estimate_block_height(&self, _block: &BlockNode) -> f32 {
-        self.current_line_height * 2.0  // Simplified
+        self.current_line_height * 2.0  // 简化版
     }
 }
 
 // -----------------------------------------------------------------------------
-// Public API
-// ----------------------------------------------------------------------------/
+// 公共 API
+// -----------------------------------------------------------------------------
 
-/// 创建为 Supernote 配置的布局器
+/// 为 Supernote 创建配置好的布局器
 pub fn create_supernote_layouter() -> Layouter {
     Layouter::for_supernote()
 }
@@ -592,7 +592,7 @@ mod tests {
 
         let mut result = RenderResult::new();
         layouter.layout_paragraph(&nodes, &mut result);
-        // Should have generated at least one text command
+        // 应该至少生成了一个文本命令
         assert!(!result.commands.is_empty());
     }
 }

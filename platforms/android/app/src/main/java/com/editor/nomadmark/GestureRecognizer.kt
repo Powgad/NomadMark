@@ -8,55 +8,55 @@ import kotlin.math.atan2
 import kotlin.math.sqrt
 
 /**
- * Gesture Recognizer for revision mode
+ * 用于修订模式的手势识别器
  *
- * Recognizes handwritten gestures for editing operations:
- * - DELETE: Horizontal line stroke (划线删除)
- * - INSERT: Caret mark (插入符号)
- * - SELECT: Circle/loop around text (圈选)
+ * 识别用于编辑操作的手写手势：
+ * - DELETE：水平线条（划线删除）
+ * - INSERT：插入符号 (^)
+ * - SELECT：围绕文本的圆圈/环（圈选）
  *
- * Recognition algorithm:
- * 1. Analyze stroke trajectory (point sequence)
- * 2. Calculate linearity (how straight the line is)
- * 3. Detect direction (angle from horizontal)
- * 4. Calculate bounding box
- * 5. Classify gesture type
+ * 识别算法：
+ * 1. 分析笔划轨迹（点序列）
+ * 2. 计算线性度（线条有多直）
+ * 3. 检测方向（与水平线的角度）
+ * 4. 计算边界框
+ * 5. 分类手势类型
  */
 object GestureRecognizer {
 
     private const val TAG = "GestureRecognizer"
 
     // =========================================================================
-    // Recognition Parameters
+    // 识别参数
     // =========================================================================
 
-    /** Minimum number of points for a valid gesture */
+    /** 有效手势的最小点数 */
     const val MIN_POINTS = 5
 
-    /** Minimum gesture length (pixels) */
+    /** 最小手势长度（像素） */
     private const val MIN_LENGTH = 50f
 
-    /** Maximum gesture length (pixels) - prevent accidental whole-page swipes */
+    /** 最大手势长度（像素）- 防止意外整页滑动 */
     private const val MAX_LENGTH = 800f
 
-    /** Linearity threshold: points must be within 15% of line length deviation */
+    /** 线性度阈值：点必须在 15% 的线长偏差内 */
     private const val LINEARITY_THRESHOLD = 0.85f
 
-    /** Horizontal angle tolerance: ±30 degrees */
+    /** 水平角度容差：±30 度 */
     private const val ANGLE_TOLERANCE_DEGREES = 30f
 
-    /** Circle closure tolerance for select gesture */
+    /** 选择手势的圆圈闭合容差 */
     private const val CIRCLE_CLOSURE_RATIO = 0.3f
 
     // =========================================================================
-    // Main Recognition Entry Point
+    // 主识别入口点
     // =========================================================================
 
     /**
-     * Recognize gesture from point sequence
+     * 从点序列识别手势
      *
-     * @param points Sequence of touch points (in order)
-     * @return RecognResultData if gesture recognized, null otherwise
+     * @param points 按顺序的触摸点序列
+     * @return 如果手势被识别则返回 RecognResultData，否则返回 null
      */
     fun recognize(points: List<Point>): RecognResultData? {
         if (points.size < MIN_POINTS) {
@@ -74,23 +74,23 @@ object GestureRecognizer {
             return null
         }
 
-        // Try to recognize each gesture type
+        // 尝试识别每种手势类型
         return recognizeDeleteGesture(points)
             ?: recognizeInsertGesture(points)
             ?: recognizeSelectGesture(points)
     }
 
     // =========================================================================
-    // DELETE Gesture Recognition (Horizontal Line)
+    // DELETE 手势识别（水平线）
     // =========================================================================
 
     /**
-     * Recognize DELETE gesture: horizontal line stroke
+     * 识别 DELETE 手势：水平线条
      *
-     * Characteristics:
-     * - High linearity (points form a straight line)
-     * - Horizontal direction (angle within ±30° of horizontal)
-     * - Length > MIN_LENGTH
+     * 特征：
+     * - 高线性度（点形成一条直线）
+     * - 水平方向（角度在水平线的 ±30° 内）
+     * - 长度 > MIN_LENGTH
      */
     private fun recognizeDeleteGesture(points: List<Point>): RecognResultData? {
         val linearity = calculateLinearity(points)
@@ -102,7 +102,7 @@ object GestureRecognizer {
         val angle = calculateDirectionAngle(points)
         val angleDegrees = Math.toDegrees(angle.toDouble()).toFloat()
 
-        // Check if angle is within horizontal tolerance
+        // 检查角度是否在水平容差范围内
         val isHorizontal = abs(angleDegrees) <= ANGLE_TOLERANCE_DEGREES ||
                            abs(abs(angleDegrees) - 180f) <= ANGLE_TOLERANCE_DEGREES
 
@@ -122,34 +122,34 @@ object GestureRecognizer {
     }
 
     // =========================================================================
-    // INSERT Gesture Recognition (Caret Mark)
+    // INSERT 手势识别（插入符号）
     // =========================================================================
 
     /**
-     * Recognize INSERT gesture: caret mark (^)
+     * 识别 INSERT 手势：插入符号 (^)
      *
-     * Characteristics:
-     * - Two strokes meeting at a point
-     * - Bottom-Left to Top
-     * - Bottom-Right to Top
+     * 特征：
+     * - 两条笔划在一点汇合
+     * - 从左下到上
+     * - 从右下到上
      */
     private fun recognizeInsertGesture(points: List<Point>): RecognResultData? {
-        // For now, INSERT requires a distinct caret pattern
-        // This is a simplified version - full implementation would detect
-        // the characteristic "^" shape with angle convergence
+        // 目前，INSERT 需要一个明显的插入符号模式
+        // 这是一个简化版本 - 完整实现会检测
+        // 带有角度收敛的特征 "^" 形状
 
-        // Count direction changes (carets have sharp turns)
+        // 计算方向变化（插入符号有急剧转弯）
         val directionChanges = countDirectionChanges(points)
 
-        // Caret has 2-3 direction changes (up-left, up-right, or vice versa)
+        // 插入符号有 2-3 个方向变化（左上、右上，或反之）
         if (directionChanges < 1 || directionChanges > 3) {
             Log.d(TAG, "INSERT failed: wrong direction changes $directionChanges")
             return null
         }
 
-        // Check for upward tendency
+        // 检查向上的趋势
         val overallDirection = calculateOverallDirection(points)
-        val hasUpwardTendency = overallDirection.y < 0  // Negative Y is up
+        val hasUpwardTendency = overallDirection.y < 0  // 负 Y 是向上
 
         if (!hasUpwardTendency) {
             Log.d(TAG, "INSERT failed: not upward")
@@ -167,19 +167,19 @@ object GestureRecognizer {
     }
 
     // =========================================================================
-    // SELECT Gesture Recognition (Circle/Loop)
+    // SELECT 手势识别（圆圈/环）
     // =========================================================================
 
     /**
-     * Recognize SELECT gesture: circle/loop around text
+     * 识别 SELECT 手势：围绕文本的圆圈/环
      *
-     * Characteristics:
-     * - Closed or nearly-closed loop
-     * - Start and end points are close together
+     * 特征：
+     * - 闭合或近乎闭合的环
+     * - 起点和终点靠得很近
      */
     private fun recognizeSelectGesture(points: List<Point>): RecognResultData? {
         if (points.size < 8) {
-            // Circle needs more points
+            // 圆圈需要更多的点
             return null
         }
 
@@ -187,14 +187,14 @@ object GestureRecognizer {
         val closureDistance = distance(points.first(), points.last())
         val bboxDiagonal = sqrt(bbox.width().toFloat() * bbox.width() + bbox.height().toFloat() * bbox.height())
 
-        // Check if start and end are close (closed loop)
+        // 检查起点和终点是否接近（闭合环）
         val closureRatio = closureDistance / bboxDiagonal
         if (closureRatio > CIRCLE_CLOSURE_RATIO) {
             Log.d(TAG, "SELECT failed: not closed, ratio=$closureRatio")
             return null
         }
 
-        // Check aspect ratio - circles are roughly square-ish
+        // 检查长宽比 - 圆圈大致为正方形
         val aspectRatio = bbox.width().toFloat() / bbox.height().toFloat()
         if (aspectRatio < 0.5f || aspectRatio > 2.0f) {
             Log.d(TAG, "SELECT failed: wrong aspect ratio $aspectRatio")
@@ -211,11 +211,11 @@ object GestureRecognizer {
     }
 
     // =========================================================================
-    // Helper Functions
+    // 辅助函数
     // =========================================================================
 
     /**
-     * Calculate total path length (sum of segment lengths)
+     * 计算总路径长度（线段长度之和）
      */
     private fun calculatePathLength(points: List<Point>): Float {
         var length = 0f
@@ -226,15 +226,15 @@ object GestureRecognizer {
     }
 
     /**
-     * Calculate linearity score (0.0 to 1.0)
+     * 计算线性度分数（0.0 到 1.0）
      *
-     * Higher score = more linear (straight line)
-     * Uses least squares fit to a line
+     * 分数越高 = 越线性（直线）
+     * 使用最小二乘法拟合到一条线
      */
     private fun calculateLinearity(points: List<Point>): Float {
         if (points.size < 2) return 0f
 
-        // Calculate centroid
+        // 计算质心
         var sumX = 0
         var sumY = 0
         for (p in points) {
@@ -244,43 +244,43 @@ object GestureRecognizer {
         val centroidX = sumX.toFloat() / points.size
         val centroidY = sumY.toFloat() / points.size
 
-        // Calculate direction vector (from first to last point)
+        // 计算方向向量（从第一个到最后一个点）
         val dx = (points.last().x - points.first().x).toFloat()
         val dy = (points.last().y - points.first().y).toFloat()
         val length = sqrt((dx * dx + dy * dy).toDouble()).toFloat()
 
         if (length < 1f) return 0f
 
-        // Normalize direction
+        // 归一化方向
         val dirX = dx / length
         val dirY = dy / length
 
-        // Calculate perpendicular distances
+        // 计算垂直距离
         var totalDistance = 0f
         for (p in points) {
-            // Vector from centroid to point
+            // 从质心到点的向量
             val vx = p.x - centroidX
             val vy = p.y - centroidY
 
-            // Perpendicular distance to line (cross product / length)
+            // 到线的垂直距离（叉积 / 长度）
             val perpDist = abs(vx * dirY - vy * dirX)
             totalDistance += perpDist
         }
 
         val avgDistance = totalDistance / points.size
 
-        // Linearity score: 1 - (avg_distance / total_length)
+        // 线性度分数：1 - (平均距离 / 总长度)
         return 1f - (avgDistance / length).coerceAtMost(1f)
     }
 
     /**
-     * Calculate direction angle of gesture (in radians)
+     * 计算手势的方向角度（以弧度为单位）
      *
-     * Returns angle from positive X axis:
-     * - 0° = horizontal right
-     * - 90° = vertical down
-     * - -90° = vertical up
-     * - 180° = horizontal left
+     * 返回从正 X 轴的角度：
+     * - 0° = 水平向右
+     * - 90° = 垂直向下
+     * - -90° = 垂直向上
+     * - 180° = 水平向左
      */
     private fun calculateDirectionAngle(points: List<Point>): Float {
         val dx = points.last().x - points.first().x
@@ -289,7 +289,7 @@ object GestureRecognizer {
     }
 
     /**
-     * Calculate overall direction vector (normalized)
+     * 计算总体方向向量（归一化）
      */
     private fun calculateOverallDirection(points: List<Point>): Point {
         var totalX = 0
@@ -302,9 +302,9 @@ object GestureRecognizer {
     }
 
     /**
-     * Count direction changes in the stroke
+     * 计算笔划中的方向变化次数
      *
-     * Used to detect sharp turns (like in caret marks)
+     * 用于检测急剧转弯（如插入符号中的）
      */
     private fun countDirectionChanges(points: List<Point>): Int {
         if (points.size < 3) return 0
@@ -319,14 +319,14 @@ object GestureRecognizer {
 
             if (i > 1) {
                 val angleDiff = abs(angle - lastAngle)
-                // Normalize to [0, π]
+                // 归一化到 [0, π]
                 val normalizedDiff = if (angleDiff > Math.PI) {
                     (2 * Math.PI - angleDiff).toFloat()
                 } else {
                     angleDiff
                 }
 
-                // Significant direction change (> 45 degrees)
+                // 显著的方向变化（> 45 度）
                 if (normalizedDiff > Math.PI / 4) {
                     changes++
                 }
@@ -338,7 +338,7 @@ object GestureRecognizer {
     }
 
     /**
-     * Calculate bounding box of point sequence
+     * 计算点序列的边界框
      */
     private fun calculateBoundingBox(points: List<Point>): Rect {
         var minX = Int.MAX_VALUE
@@ -357,7 +357,7 @@ object GestureRecognizer {
     }
 
     /**
-     * Calculate Euclidean distance between two points
+     * 计算两点之间的欧几里得距离
      */
     private fun distance(p1: Point, p2: Point): Float {
         val dx = p2.x - p1.x
