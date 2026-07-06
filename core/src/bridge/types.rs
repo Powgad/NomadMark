@@ -1,33 +1,33 @@
 // =============================================================================
-// Shared Types for FFI (C ABI Compatible)
+// FFI 共享类型 (C ABI 兼容)
 // =============================================================================
 //
-// All types in this module MUST be #[repr(C)] for compatibility with:
+// 本模块中的所有类型必须是 #[repr(C)] 以兼容：
 // - Kotlin (JNI)
 // - Swift (C-interop)
-// - Tauri (direct Rust call, no FFI needed)
+// - Tauri (直接 Rust 调用，无需 FFI)
 //
-// Critical Rules:
-// 1. Use #[repr(C)] on all exported structs
-// 2. Use only C-compatible types (i32, u32, f32, pointers)
-// 3. String handling: use *const c_char + length, not Rust String
-// 4. Array handling: use *const T + length
+// 关键规则：
+// 1. 在所有导出的结构体上使用 #[repr(C)]
+// 2. 只使用 C 兼容类型（i32, u32, f32, 指针）
+// 3. 字符串处理：使用 *const c_char + length，而非 Rust String
+// 4. 数组处理：使用 *const T + length
 // =============================================================================
 
 
-// Screen constants for Supernote A6 X2 Nomad
+// Supernote A6 X2 Nomad 屏幕常量
 pub const SCREEN_WIDTH: u16 = 1404;
 pub const SCREEN_HEIGHT: u16 = 1872;
 pub const DPI: f32 = 300.0;
 
 // =============================================================================
-// Quantized Coordinate System (Memory Optimized)
+// 量化坐标系统（内存优化）
 // =============================================================================
 
-/// Quantized rectangle using u16 coordinates.
+/// 使用 u16 坐标的量化矩形。
 ///
-/// Supernote screen is 1404x1872, which fits in u16 (max 65535).
-/// This reduces memory usage compared to f32 (4 bytes -> 2 bytes per coordinate).
+/// Supernote 屏幕为 1404x1872，适合 u16（最大 65535）。
+/// 与 f32 相比，这减少了内存使用（4 字节 -> 每坐标 2 字节）。
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct QuantizedRect {
@@ -38,7 +38,7 @@ pub struct QuantizedRect {
 }
 
 impl QuantizedRect {
-    /// Convert from float coordinates
+    /// 从浮点坐标转换
     #[inline]
     pub fn from_float(x: f32, y: f32, width: f32, height: f32) -> Self {
         Self {
@@ -49,7 +49,7 @@ impl QuantizedRect {
         }
     }
 
-    /// Check if this rectangle intersects with another
+    /// 检查此矩形是否与另一个矩形相交
     #[inline]
     pub fn intersects(&self, other: &QuantizedRect) -> bool {
         self.x < other.x + other.width
@@ -58,7 +58,7 @@ impl QuantizedRect {
             && self.y + self.height > other.y
     }
 
-    /// Union with another rectangle (bounding box)
+    /// 与另一个矩形的并集（边界框）
     pub fn union(&self, other: &QuantizedRect) -> QuantizedRect {
         let x1 = self.x.min(other.x);
         let y1 = self.y.min(other.y);
@@ -73,7 +73,7 @@ impl QuantizedRect {
         }
     }
 
-    /// Area in pixels
+    /// 面积（像素）
     #[inline]
     pub fn area(&self) -> u32 {
         (self.width as u32) * (self.height as u32)
@@ -81,10 +81,10 @@ impl QuantizedRect {
 }
 
 // =============================================================================
-// Color (RGBA)
+// 颜色 (RGBA)
 // =============================================================================
 
-/// 32-bit RGBA color (0-255 per channel)
+/// 32 位 RGBA 颜色（每通道 0-255）
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Color {
@@ -105,10 +105,10 @@ impl Color {
 }
 
 // =============================================================================
-// Font Specification
+// 字体规格
 // =============================================================================
 
-/// Font identifier (matches font cache keys)
+/// 字体标识符（匹配字体缓存键）
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum FontFamily {
@@ -118,7 +118,7 @@ pub enum FontFamily {
     CJK,
 }
 
-/// Font specification for rendering
+/// 用于渲染的字体规格
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FontSpec {
@@ -129,66 +129,66 @@ pub struct FontSpec {
 }
 
 // =============================================================================
-// Document Metadata
+// 文档元数据
 // =============================================================================
 
-/// Table of contents entry
+/// 目录条目
 #[repr(C)]
 #[derive(Clone, Debug)]
 pub struct TocEntry {
-    /// Heading level (1-6)
+    /// 标题级别（1-6）
     pub level: u8,
-    /// Byte offset in source file
+    /// 源文件中的字节偏移
     pub byte_offset: usize,
-    /// Line number (0-based)
+    /// 行号（从 0 开始）
     pub line_number: usize,
-    /// Title text (UTF-8)
+    /// 标题文本（UTF-8）
     pub title_len: usize,
     pub title_ptr: *const u8,
 }
 
-// Safety: This type is only passed across FFI boundary with careful lifetime management
+// 安全性：此类型仅在仔细管理生命周期的情况下通过 FFI 边界传递
 unsafe impl Send for TocEntry {}
 unsafe impl Sync for TocEntry {}
 
-/// Document metadata
+/// 文档元数据
 #[repr(C)]
 #[derive(Clone, Debug)]
 pub struct DocumentMetadata {
-    /// Total character count
+    /// 总字符数
     pub total_chars: usize,
-    /// Total line count
+    /// 总行数
     pub total_lines: usize,
-    /// Number of TOC entries
+    /// 目录条目数
     pub toc_count: usize,
-    /// Pointer to TOC array
+    /// 指向目录数组的指针
     pub toc_ptr: *const TocEntry,
-    /// Last modification offset (for incremental parsing)
+    /// 最后修改偏移（用于增量解析）
     pub last_modified_offset: usize,
 }
 
 // =============================================================================
-// Render Commands (Platform Agnostic)
+// 渲染命令（平台无关）
 // =============================================================================
 
-/// Render command type
+/// 渲染命令类型
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub enum RenderCommandType {
-    /// Draw text at position
+    /// 在位置绘制文本
     DrawText = 0,
-    /// Fill rectangle (backgrounds, highlights)
+    /// 填充矩形（背景、高亮）
     FillRect = 1,
-    /// Draw line (borders, underlines)
+    /// 绘制线条（边框、下划线）
     DrawLine = 2,
-    /// Draw image
+    /// 绘制图像
     DrawImage = 3,
 }
 
-/// Single render command (opaque pointer)
+/// 单个渲染命令（不透明指针）
 ///
-/// The actual data is stored in native memory to avoid serialization overhead.
-/// Accessors provided via FFI functions.
+/// 实际数据存储在本机内存中，避免序列化开销。
+/// 通过 FFI 函数提供访问器。
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct RenderCommand {
@@ -203,44 +203,44 @@ pub struct RenderCommand {
 }
 
 // =============================================================================
-// Search Result
+// 搜索结果
 // =============================================================================
 
-/// Search result entry
+/// 搜索结果条目
 #[repr(C)]
 #[derive(Clone, Debug)]
 pub struct SearchResult {
-    /// Match start position (byte offset)
+    /// 匹配起始位置（字节偏移）
     pub start: usize,
-    /// Match end position (byte offset)
+    /// 匹配结束位置（字节偏移）
     pub end: usize,
-    /// Line number (0-based)
+    /// 行号（从 0 开始）
     pub line_number: usize,
 }
 
 // =============================================================================
-// Memory Management Helpers
+// 内存管理辅助
 // =============================================================================
 
-/// Wrapper for FFI-returned strings
+/// FFI 返回字符串的包装器
 ///
-/// MUST be freed with md_free_string
+/// 必须使用 md_free_string 释放
 #[repr(C)]
 pub struct FfiString {
     pub ptr: *const u8,
     pub len: usize,
 }
 
-/// Wrapper for FFI-returned arrays
+/// FFI 返回数组的包装器
 ///
-/// MUST be freed with md_free
+/// 必须使用 md_free 释放
 #[repr(C)]
 pub struct FfiArray<T> {
     pub ptr: *const T,
     pub len: usize,
 }
 
-// Null pointer constant
+// 空指针常量
 pub const NULL_PTR: *const u8 = std::ptr::null();
 
 #[cfg(test)]

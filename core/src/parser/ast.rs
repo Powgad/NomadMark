@@ -1,57 +1,57 @@
 // =============================================================================
-// Markdown AST Definition
+// Markdown AST 定义
 // =============================================================================
 //
-// Internal representation for parsed Markdown content.
-// NOT exposed via FFI - used only within Rust Core.
+// 解析后的 Markdown 内容的内部表示。
+// 不通过 FFI 暴露 - 仅在 Rust Core 内部使用。
 // =============================================================================
 
 use std::collections::HashMap;
 
 // -----------------------------------------------------------------------------
-// Block Level Nodes
+// 块级节点
 // -----------------------------------------------------------------------------
 
-/// Block-level node (paragraph, heading, list, etc.)
+/// 块级节点（段落、标题、列表等）
 #[derive(Debug, Clone)]
 pub enum BlockNode {
-    /// Heading (level 1-6)
+    /// 标题（级别 1-6）
     Heading {
         level: u8,
         children: Vec<InlineNode>,
     },
-    /// Paragraph
+    /// 段落
     Paragraph {
         children: Vec<InlineNode>,
     },
-    /// Code block (fenced or indented)
+    /// 代码块（围栏式或缩进式）
     CodeBlock {
         language: Option<String>,
         content: String,
     },
-    /// Block quote
+    /// 引用块
     BlockQuote {
         children: Vec<BlockNode>,
     },
-    /// Ordered or unordered list
+    /// 有序或无序列表
     List {
         ordered: bool,
         start_number: Option<usize>,
         items: Vec<ListItem>,
     },
-    /// Table
+    /// 表格
     Table {
         headers: Vec<Vec<InlineNode>>,
         rows: Vec<Vec<Vec<InlineNode>>>,
         alignments: Vec<TableCellAlignment>,
     },
-    /// Thematic break (horizontal rule)
+    /// 主题分隔线（水平线）
     ThematicBreak,
-    /// HTML block
+    /// HTML 块
     HtmlBlock {
         content: String,
     },
-    /// Reference definition
+    /// 引用定义
     ReferenceDef {
         label: String,
         dest: String,
@@ -60,19 +60,19 @@ pub enum BlockNode {
 }
 
 impl BlockNode {
-    /// Get the bounding box for this block (after layout)
+    /// 获取此块的边界框（布局后）
     pub fn bounding_box(&self) -> (f32, f32, f32, f32) {
-        // (x, y, width, height)
-        // This will be computed by the Layouter
+        // (x, y, 宽度, 高度)
+        // 这将由布局器计算
         (0.0, 0.0, 0.0, 0.0)
     }
 }
 
 // -----------------------------------------------------------------------------
-// List Items
+// 列表项
 // -----------------------------------------------------------------------------
 
-/// List item (can contain nested blocks)
+/// 列表项（可包含嵌套块）
 #[derive(Debug, Clone)]
 pub struct ListItem {
     pub marker: ListMarker,
@@ -81,16 +81,16 @@ pub struct ListItem {
 
 #[derive(Debug, Clone)]
 pub enum ListMarker {
-    /// Unordered (bullet: -, *, +)
+    /// 无序（项目符号：-, *, +）
     Unordered(char),
-    /// Ordered (1., 2., 3., ...)
+    /// 有序（1., 2., 3., ...）
     Ordered { number: usize, delimiter: char },
-    /// Task list item [ ] or [x]
+    /// 任务列表项 [ ] 或 [x]
     Task { checked: bool },
 }
 
 // -----------------------------------------------------------------------------
-// Table
+// 表格
 // -----------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -102,40 +102,40 @@ pub enum TableCellAlignment {
 }
 
 // -----------------------------------------------------------------------------
-// Inline Level Nodes
+// 行内节点
 // -----------------------------------------------------------------------------
 
-/// Inline-level node (text within blocks)
+/// 行内节点（块内的文本）
 #[derive(Debug, Clone)]
 pub enum InlineNode {
-    /// Plain text
+    /// 纯文本
     Text(String),
-    /// Soft line break (render as space)
+    /// 软换行（渲染为空格）
     SoftBreak,
-    /// Hard line break (render as <br>)
+    /// 硬换行（渲染为 <br>）
     HardBreak,
-    /// Emphasized text (italic)
+    /// 强调文本（斜体）
     Emphasis {
         children: Vec<InlineNode>,
-        level: u8,  // 1 = italic, 2 = bold, 3 = italic+bold
+        level: u8,  // 1 = 斜体, 2 = 粗体, 3 = 斜体+粗体
     },
-    /// Strong text (bold)
+    /// 粗体文本
     Strong {
         children: Vec<InlineNode>,
     },
-    /// Strikethrough
+    /// 删除线
     Strikethrough {
         children: Vec<InlineNode>,
     },
-    /// Code (inline)
+    /// 行内代码
     Code(String),
-    /// Link
+    /// 链接
     Link {
         dest: String,
         title: Option<String>,
         children: Vec<InlineNode>,
     },
-    /// Image
+    /// 图片
     Image {
         dest: String,
         title: Option<String>,
@@ -146,7 +146,7 @@ pub enum InlineNode {
 }
 
 impl InlineNode {
-    /// Get plain text content (recursively)
+    /// 获取纯文本内容（递归）
     pub fn text_content(&self) -> String {
         match self {
             InlineNode::Text(s) => s.clone(),
@@ -163,7 +163,7 @@ impl InlineNode {
         }
     }
 
-    /// Check if node is empty
+    /// 检查节点是否为空
     pub fn is_empty(&self) -> bool {
         match self {
             InlineNode::Text(s) => s.is_empty(),
@@ -181,34 +181,34 @@ impl InlineNode {
 }
 
 // -----------------------------------------------------------------------------
-// Document Root
+// 文档根节点
 // -----------------------------------------------------------------------------
 
-/// Complete Markdown document
+/// 完整的 Markdown 文档
 #[derive(Debug, Clone)]
 pub struct MarkdownDocument {
-    /// Root block nodes
+    /// 根块节点
     pub blocks: Vec<BlockNode>,
-    /// Metadata
+    /// 元数据
     pub metadata: DocumentMetadata,
 }
 
-/// Document metadata
+/// 文档元数据
 #[derive(Debug, Clone)]
 pub struct DocumentMetadata {
-    /// Total character count
+    /// 总字符数
     pub total_chars: usize,
-    /// Total line count
+    /// 总行数
     pub total_lines: usize,
-    /// Table of contents (headings)
+    /// 目录（标题）
     pub toc: Vec<TocEntry>,
-    /// Reference definitions ([label]: url "title")
+    /// 引用定义 ([label]: url "title")
     pub refs: HashMap<String, (String, Option<String>)>,
-    /// Last modification offset (for incremental parsing)
+    /// 最后修改偏移量（用于增量解析）
     pub last_modified_offset: usize,
 }
 
-/// Table of contents entry
+/// 目录条目
 #[derive(Debug, Clone)]
 pub struct TocEntry {
     pub level: u8,
@@ -218,7 +218,7 @@ pub struct TocEntry {
 }
 
 // -----------------------------------------------------------------------------
-// Parse Position
+// 解析位置
 // -----------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

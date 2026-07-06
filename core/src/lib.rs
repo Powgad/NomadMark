@@ -1,18 +1,18 @@
 // =============================================================================
-// NomadMark Core - Shared Rust Library
+// NomadMark Core - 共享 Rust 库
 // =============================================================================
 //
-// This library is compiled to:
+// 本库编译为:
 // - libmarkdown_core.so (Android/Linux)
 // - libmarkdown_core.a (iOS/macOS)
 // - markdown_core.dll (Windows)
 //
-// All FFI functions use #[no_mangle] and extern "C" for C ABI compatibility.
+// 所有 FFI 函数使用 #[no_mangle] 和 extern "C" 以实现 C ABI 兼容。
 //
-// Memory Management:
-// - All returned pointers must be freed with md_free()
-// - Document handles are opaque pointers (*mut MarkdownDocument)
-// - Arrays are returned as (ptr, len) pairs
+// 内存管理:
+// - 所有返回的指针必须使用 md_free() 释放
+// - 文档句柄是不透明指针 (*mut MarkdownDocument)
+// - 数组以 (ptr, len) 对的形式返回
 // =============================================================================
 
 use std::ffi::{c_char, c_void};
@@ -29,17 +29,17 @@ pub mod history;
 pub mod search;
 pub mod replace;
 
-// Ensure JNI bridge is linked (bridge::jni module is conditionally compiled)
+// 确保 JNI 桥接已链接（bridge::jni 模块按条件编译）
 use parser::streaming::StreamingParser;
 use render::commands::RenderCommand;
 use render::{RenderResult, dirty_rects_to_ffi};
 use layout::engine::create_supernote_layouter;
 
 // =============================================================================
-// Helper Functions
+// 辅助函数
 // =============================================================================
 
-/// Convert AST TOC entry to FFI TOC entry
+/// 将 AST TOC 条目转换为 FFI TOC 条目
 fn convert_toc_entry(ast_entry: &crate::parser::ast::TocEntry) -> bridge::types::TocEntry {
     bridge::types::TocEntry {
         level: ast_entry.level,
@@ -1088,7 +1088,7 @@ mod tests {
 
     #[test]
     fn test_md_document_null_safety() {
-        // These should not crash
+        // 这些操作不应导致崩溃
         md_document_release(std::ptr::null_mut());
         md_free(std::ptr::null_mut());
         assert_eq!(md_document_undo(std::ptr::null_mut()), -1);
@@ -1130,9 +1130,9 @@ mod tests {
         );
 
         assert_eq!(result, 0);
-        assert_eq!(count, 2); // Should find "hello" twice (case-insensitive)
+        assert_eq!(count, 2); // 应该找到两次 "hello"（不区分大小写）
 
-        // Clean up
+        // 清理
         if !results_ptr.is_null() && count > 0 {
             md_free_search_results(results_ptr as *mut bridge::types::SearchResult, count);
         }
@@ -1148,7 +1148,7 @@ mod tests {
         );
         assert!(!ptr.is_null());
 
-        // Initially, no undo/redo available
+        // 初始状态，无撤销/重做可用
         assert_eq!(md_document_can_undo(ptr), 0);
         assert_eq!(md_document_can_redo(ptr), 0);
         assert_eq!(md_document_undo(ptr), 0);
@@ -1162,7 +1162,7 @@ mod tests {
         let mut core = Core::new();
         let content = "Hello world, hello universe";
 
-        // Create a temporary file for testing
+        // 创建临时文件用于测试
         let temp_dir = std::env::temp_dir();
         let temp_file = temp_dir.join("test_search.md");
         std::fs::write(&temp_file, content).unwrap();
@@ -1172,16 +1172,16 @@ mod tests {
 
         assert_eq!(results.len(), 2);
 
-        // Cleanup
+        // 清理
         std::fs::remove_file(&temp_file).ok();
     }
 }
 
-// Force inclusion of JNI module when feature is enabled
+// 启用功能时强制包含 JNI 模块
 #[cfg(feature = "jni")]
 pub use bridge::jni;
 
-// Direct test function in lib.rs to verify export
+// 在 lib.rs 中的直接测试函数，用于验证导出
 #[no_mangle]
 pub extern "C" fn direct_test_export() -> i32 {
     123

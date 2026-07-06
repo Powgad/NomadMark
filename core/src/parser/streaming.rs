@@ -1,18 +1,18 @@
 // =============================================================================
-// Streaming Markdown Parser
+// 流式 Markdown 解析器
 // =============================================================================
 //
-// Optimized for large files (>50MB) on memory-constrained devices.
-// Uses mmap + RingBuffer for O(1) memory overhead regardless of file size.
+// 针对内存受限设备上的大文件（>50MB）进行优化。
+// 使用 mmap + RingBuffer 实现 O(1) 内存开销，无论文件大小如何。
 //
-// Architecture:
-// - Phase 1 (Quick Scan): Scan headings, build line index (50-100ms for 50MB)
-// - Phase 2 (On-Demand): Parse only requested line ranges
-// - Phase 3 (Incremental): Parse ahead based on scroll direction
+// 架构：
+// - 阶段 1（快速扫描）：扫描标题，构建行索引（50MB 文件需 50-100ms）
+// - 阶段 2（按需）：仅解析请求的行范围
+// - 阶段 3（增量）：根据滚动方向提前解析
 //
-// Performance Targets:
-// - 50MB file open: <200ms
-// - Single screen render: <50ms
+// 性能目标：
+// - 打开 50MB 文件：<200ms
+// - 单屏渲染：<50ms
 // =============================================================================
 
 use super::ast::{BlockNode, InlineNode, DocumentMetadata, TocEntry};
@@ -25,12 +25,12 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 
 // -----------------------------------------------------------------------------
-// RingBuffer (Fixed-size, no allocation after init)
+// RingBuffer（固定大小，初始化后无额外分配）
 // -----------------------------------------------------------------------------
 
-/// Fixed-size ring buffer for streaming file content.
+/// 用于流式文件内容的固定大小环形缓冲区。
 ///
-/// Capacity: 8MB (configurable). Prevents OOM on large files.
+/// 容量：8MB（可配置）。防止大文件导致内存溢出。
 pub struct RingBuffer<const N: usize> {
     data: [u8; N],
     read_pos: usize,
@@ -48,7 +48,7 @@ impl<const N: usize> RingBuffer<N> {
         }
     }
 
-    /// Write bytes from source, returns bytes written
+    /// 从源写入字节，返回写入的字节数
     pub fn write(&mut self, src: &[u8]) -> usize {
         let available = self.available();
         let to_write = src.len().min(available);
@@ -60,10 +60,10 @@ impl<const N: usize> RingBuffer<N> {
         let write_end = (self.write_pos + to_write) % N;
 
         if write_end > self.write_pos {
-            // Single write
+            // 单次写入
             self.data[self.write_pos..write_end].copy_from_slice(&src[..to_write]);
         } else {
-            // Wrap-around write
+            // 环绕写入
             let first_part = N - self.write_pos;
             let second_part = to_write - first_part;
             self.data[self.write_pos..].copy_from_slice(&src[..first_part]);
@@ -79,7 +79,7 @@ impl<const N: usize> RingBuffer<N> {
         to_write
     }
 
-    /// Read bytes into buffer
+    /// 读取字节到缓冲区
     pub fn read(&mut self, dst: &mut [u8]) -> usize {
         let available = self.len();
         let to_read = dst.len().min(available);
@@ -105,7 +105,7 @@ impl<const N: usize> RingBuffer<N> {
         to_read
     }
 
-    /// Available write space
+    /// 可用写入空间
     #[inline]
     pub fn available(&self) -> usize {
         if self.is_full {
@@ -117,7 +117,7 @@ impl<const N: usize> RingBuffer<N> {
         }
     }
 
-    /// Current buffered data length
+    /// 当前缓冲数据长度
     #[inline]
     pub fn len(&self) -> usize {
         if self.is_full {
@@ -134,7 +134,7 @@ impl<const N: usize> RingBuffer<N> {
         !self.is_full && self.read_pos == self.write_pos
     }
 
-    /// Clear buffer
+    /// 清空缓冲区
     pub fn clear(&mut self) {
         self.read_pos = 0;
         self.write_pos = 0;
@@ -142,18 +142,18 @@ impl<const N: usize> RingBuffer<N> {
     }
 }
 
-// 8MB ring buffer for streaming
+// 8MB 环形缓冲区用于流式处理
 pub type DefaultRingBuffer = RingBuffer<8388608>;
 
 // -----------------------------------------------------------------------------
-// Line Index (for fast seeking)
+// 行索引（用于快速定位）
 // -----------------------------------------------------------------------------
 
-/// Line index for O(1) line -> byte offset lookup
+/// 行索引，实现 O(1) 的行号 -> 字节偏移量查找
 #[derive(Debug, Clone)]
 pub struct LineIndex {
-    /// Line number -> (byte_offset, line_length)
-    /// Stored as Vec for cache efficiency
+    /// 行号 -> (字节偏移量, 行长度)
+    /// 存储为 Vec 以提高缓存效率
     lines: Vec<(usize, usize)>,
 }
 
@@ -162,18 +162,18 @@ impl LineIndex {
         Self { lines: Vec::new() }
     }
 
-    /// Add a line entry
+    /// 添加一个行条目
     pub fn push(&mut self, offset: usize, length: usize) {
         self.lines.push((offset, length));
     }
 
-    /// Get line info by line number (0-based)
+    /// 根据行号获取行信息（从 0 开始）
     #[inline]
     pub fn get(&self, line_number: usize) -> Option<(usize, usize)> {
         self.lines.get(line_number).copied()
     }
 
-    /// Find line containing byte offset
+    /// 查找包含字节偏移量的行
     pub fn find_line(&self, byte_offset: usize) -> usize {
         match self.lines.binary_search_by(|(offset, _)| offset.cmp(&byte_offset)) {
             Ok(i) => i,
@@ -181,7 +181,7 @@ impl LineIndex {
         }
     }
 
-    /// Total line count
+    /// 总行数
     #[inline]
     pub fn len(&self) -> usize {
         self.lines.len()
@@ -189,17 +189,17 @@ impl LineIndex {
 }
 
 // -----------------------------------------------------------------------------
-// Mmapped File
+// 内存映射文件
 // -----------------------------------------------------------------------------
 
-/// Memory-mapped file wrapper
+/// 内存映射文件包装器
 pub struct MmappedFile {
     _mmap: Mmap,
     len: usize,
 }
 
 impl MmappedFile {
-    /// Open and memory-map a file
+    /// 打开并内存映射一个文件
     pub fn open(path: &Path) -> Result<Self, ParseError> {
         let file = File::open(path).map_err(|e| ParseError::Io(e.to_string()))?;
         let mmap = unsafe {
@@ -210,13 +210,13 @@ impl MmappedFile {
         Ok(Self { _mmap: mmap, len })
     }
 
-    /// Get file length
+    /// 获取文件长度
     #[inline]
     pub fn len(&self) -> usize {
         self.len
     }
 
-    /// Get reference to the mmap data as bytes
+    /// 获取 mmap 数据的字节引用
     #[inline]
     pub fn as_bytes(&self) -> &[u8] {
         &self._mmap
@@ -224,36 +224,36 @@ impl MmappedFile {
 }
 
 // -----------------------------------------------------------------------------
-// Streaming Parser
+// 流式解析器
 // -----------------------------------------------------------------------------
 
-/// Streaming parser state
+/// 流式解析器状态
 pub struct StreamingParser {
-    /// Memory-mapped file (for >50MB files)
+    /// 内存映射文件（用于 >50MB 文件）
     mmap: Option<Arc<MmappedFile>>,
-    /// Line index
+    /// 行索引
     line_index: LineIndex,
-    /// Heading index (for TOC)
+    /// 标题索引（用于目录）
     headings: Vec<TocEntry>,
-    /// Reference definitions
+    /// 参考定义
     refs: HashMap<String, (String, Option<String>)>,
-    /// Total stats
+    /// 总体统计
     total_chars: usize,
     total_lines: usize,
-    /// Scan progress (for large file feedback)
+    /// 扫描进度（用于大文件反馈）
     scan_progress: AtomicUsize,
-    /// Total file size (for progress calculation)
+    /// 文件总大小（用于进度计算）
     total_size: usize,
 }
 
 impl StreamingParser {
-    /// Create new streaming parser (for large files)
+    /// 创建新的流式解析器（用于大文件）
     pub fn new(path: &Path) -> Result<Self, ParseError> {
         let mmap = MmappedFile::open(path)?;
         let mmap = Arc::new(mmap);
         let total_size = mmap.len();
 
-        // Phase 1: Quick scan to build index
+        // 阶段 1：快速扫描以构建索引
         let (line_index, headings, refs, total_chars, total_lines) =
             Self::quick_scan(mmap.clone(), total_size, &AtomicUsize::new(0))?;
 
@@ -264,14 +264,14 @@ impl StreamingParser {
             refs,
             total_chars,
             total_lines,
-            scan_progress: AtomicUsize::new(total_size),  // Complete
+            scan_progress: AtomicUsize::new(total_size),  // 完成
             total_size,
         })
     }
 
-    /// Quick scan: Build line index, heading index, refs
+    /// 快速扫描：构建行索引、标题索引、参考定义
     ///
-    /// Performance: ~50-100ms for 50MB file
+    /// 性能：50MB 文件约需 50-100ms
     fn quick_scan(
         mmap: Arc<MmappedFile>,
         total_size: usize,
@@ -286,33 +286,33 @@ impl StreamingParser {
         let mut total_chars = 0;
         let mut in_code_block = false;
         let mut last_progress_update = 0;
-        const PROGRESS_UPDATE_INTERVAL: usize = 1024 * 1024;  // Update every 1MB
+        const PROGRESS_UPDATE_INTERVAL: usize = 1024 * 1024;  // 每隔 1MB 更新一次
 
-        // Scan line by line
+        // 逐行扫描
         let bytes = mmap.as_bytes();
 
         for (i, &byte) in bytes.iter().enumerate() {
-            // Update progress periodically
+            // 定期更新进度
             if i - last_progress_update > PROGRESS_UPDATE_INTERVAL {
                 progress.store(i, std::sync::atomic::Ordering::Relaxed);
                 last_progress_update = i;
             }
 
-            // Track line start
+            // 跟踪行起始
             if i == 0 || bytes[i - 1] == b'\n' {
                 line_start = i;
             }
 
-            // Line end
+            // 行结束
             if byte == b'\n' || i == bytes.len() - 1 {
                 let line_length = i - line_start + (if byte == b'\n' { 1 } else { 0 });
                 line_index.push(line_start, line_length);
 
-                // Check for heading
+                // 检查标题
                 if !in_code_block {
                     let line = &bytes[line_start..i];
                     if let Some(level) = detect_heading_level(line) {
-                        // Extract title (after # symbols and space)
+                        // 提取标题（在 # 符号和空格之后）
                         let title_start = line.iter().position(|&b| b != b'#' && b != b' ').unwrap_or(0);
                         let title = std::str::from_utf8(&line[title_start..]).unwrap_or("");
                         headings.push(TocEntry {
@@ -323,12 +323,12 @@ impl StreamingParser {
                         });
                     }
 
-                    // Check for code block fence
+                    // 检查代码块围栏
                     if line.starts_with(b"```") || line.starts_with(b"~~~") {
                         in_code_block = !in_code_block;
                     }
 
-                    // Check for reference definition
+                    // 检查参考定义
                     if let Some((label, dest, title)) = parse_reference_def(line) {
                         refs.insert(label, (dest, title));
                     }
@@ -339,15 +339,15 @@ impl StreamingParser {
             }
         }
 
-        // Mark as complete
+        // 标记为完成
         progress.store(total_size, std::sync::atomic::Ordering::Relaxed);
 
         Ok((line_index, headings, refs, total_chars, line_number))
     }
 
-    /// Parse a specific line range (on-demand)
+    /// 解析特定行范围（按需）
     ///
-    /// Used for rendering visible content only.
+    /// 仅用于渲染可见内容。
     pub fn parse_range(&self, start_line: usize, count: usize) -> Result<Vec<BlockNode>, ParseError> {
         let mmap = self.mmap.as_ref().ok_or(ParseError::NotMapped)?;
 
@@ -356,13 +356,13 @@ impl StreamingParser {
 
         for line_num in start_line..end_line {
             if let Some((offset, length)) = self.line_index.get(line_num) {
-                // Parse this line's content
-                // This is simplified - full implementation would use pulldown-cmark
-                // with custom callbacks for range-limited parsing
+                // 解析该行内容
+                // 此处为简化实现 - 完整实现应使用 pulldown-cmark
+                // 并通过自定义回调实现范围限制解析
                 let bytes = mmap.as_bytes();
                 let line = &bytes[offset..offset + length];
 
-                // Simple line detection (full parser would be more complex)
+                // 简单的行检测（完整解析器会更复杂）
                 let text = std::str::from_utf8(line).unwrap_or("");
                 blocks.push(BlockNode::Paragraph {
                     children: vec![InlineNode::Text(text.trim().to_string())],
@@ -373,7 +373,7 @@ impl StreamingParser {
         Ok(blocks)
     }
 
-    /// Get document metadata
+    /// 获取文档元数据
     pub fn metadata(&self) -> DocumentMetadata {
         DocumentMetadata {
             total_chars: self.total_chars,
@@ -384,12 +384,12 @@ impl StreamingParser {
         }
     }
 
-    /// Get table of contents
+    /// 获取目录
     pub fn toc(&self) -> &[TocEntry] {
         &self.headings
     }
 
-    /// Get scan progress (0.0 to 1.0)
+    /// 获取扫描进度（0.0 到 1.0）
     pub fn progress(&self) -> f32 {
         let current = self.scan_progress.load(std::sync::atomic::Ordering::Relaxed);
         if self.total_size == 0 {
@@ -430,10 +430,10 @@ impl StreamingParser {
 }
 
 // -----------------------------------------------------------------------------
-// Helper Functions
+// 辅助函数
 // -----------------------------------------------------------------------------
 
-/// Detect heading level from line start
+/// 从行首检测标题级别
 fn detect_heading_level(line: &[u8]) -> Option<u8> {
     if !line.starts_with(b"#") {
         return None;
@@ -447,7 +447,7 @@ fn detect_heading_level(line: &[u8]) -> Option<u8> {
                 return None;
             }
         } else if byte == b' ' {
-            // Must have space after #'s
+            // # 后必须有空格
             return if level >= 1 && level <= 6 { Some(level) } else { None };
         } else {
             return None;
@@ -457,7 +457,7 @@ fn detect_heading_level(line: &[u8]) -> Option<u8> {
     None
 }
 
-/// Parse reference definition: [label]: url "title"
+/// 解析参考定义：[标签]: URL "标题"
 fn parse_reference_def(line: &[u8]) -> Option<(String, String, Option<String>)> {
     let line = std::str::from_utf8(line).ok()?;
     let line = line.trim();
@@ -521,7 +521,7 @@ mod tests {
 
         let mut dst = [0u8; 8];
         let n = buf.read(&mut dst);
-        assert_eq!(n, 5);  // Remaining in buffer
+        assert_eq!(n, 5);  // 缓冲区中剩余的字节数
         assert_eq!(&dst[..5], b"AABBB");
     }
 

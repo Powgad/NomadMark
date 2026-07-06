@@ -1,10 +1,10 @@
 // =============================================================================
-// Bridge Module (FFI)
+// 桥接模块 (FFI)
 // =============================================================================
 
 pub mod types;
 
-// JNI module - always included when jni feature is enabled (Android builds)
+// JNI 模块 - 启用 jni feature 时总是包含（Android 构建）
 #[cfg(feature = "jni")]
 pub mod jni;
 

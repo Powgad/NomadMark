@@ -1,16 +1,16 @@
 // =============================================================================
-// Layout Engine (300 DPI Optimized)
+// 布局引擎（300 DPI 优化）
 // =============================================================================
 //
-// Responsible for:
-// 1. Computing layout for Markdown blocks
-// 2. Generating render commands
-// 3. Managing glyph cache (L1: RAM, L2: mmap)
-// 4. Tracking dirty rectangles
+// 职责：
+// 1. 计算 Markdown 块的布局
+// 2. 生成渲染命令
+// 3. 管理字形缓存（L1: RAM，L2: mmap）
+// 4. 跟踪脏矩形
 //
-// Performance Targets:
-// - Single screen render: <50ms
-// - Layout cache hit: <1ms per block
+// 性能目标：
+// - 单屏渲染：<50ms
+// - 布局缓存命中：每块 <1ms
 // =============================================================================
 
 use crate::bridge::types::{QuantizedRect, Color, FontSpec, FontFamily, SCREEN_WIDTH, SCREEN_HEIGHT};
@@ -21,34 +21,34 @@ use std::collections::HashMap;
 use std::num::NonZeroUsize;
 
 // -----------------------------------------------------------------------------
-// Layout Configuration
+// 布局配置
 // -----------------------------------------------------------------------------
 
-/// Layout engine configuration
+/// 布局引擎配置
 #[derive(Clone, Copy)]
 pub struct LayoutConfig {
-    /// Device DPI (default 300 for Supernote)
+    /// 设备 DPI（Supernote 默认为 300）
     pub dpi: f32,
-    /// Screen width in pixels
+    /// 屏幕宽度（像素）
     pub screen_width: u16,
-    /// Screen height in pixels
+    /// 屏幕高度（像素）
     pub screen_height: u16,
-    /// Left margin (pixels)
+    /// 左边距（像素）
     pub margin_left: f32,
-    /// Right margin (pixels)
+    /// 右边距（像素）
     pub margin_right: f32,
-    /// Top margin (pixels)
+    /// 上边距（像素）
     pub margin_top: f32,
-    /// Bottom margin (pixels)
+    /// 下边距（像素）
     pub margin_bottom: f32,
-    /// Line spacing multiplier
+    /// 行间距倍数
     pub line_spacing: f32,
-    /// Paragraph spacing
+    /// 段落间距
     pub paragraph_spacing: f32,
 }
 
 impl LayoutConfig {
-    /// Default configuration for Supernote A6 X2 Nomad
+    /// Supernote A6 X2 Nomad 的默认配置
     pub fn for_supernote() -> Self {
         Self {
             dpi: 300.0,
@@ -63,13 +63,13 @@ impl LayoutConfig {
         }
     }
 
-    /// Convert points to pixels (at current DPI)
+    /// 将点转换为像素（基于当前 DPI）
     #[inline]
     pub fn pt_to_px(&self, pt: f32) -> f32 {
         pt * (self.dpi / 72.0)
     }
 
-    /// Available content width
+    /// 可用内容宽度
     #[inline]
     pub fn content_width(&self) -> f32 {
         (self.screen_width as f32) - self.margin_left - self.margin_right
@@ -77,23 +77,23 @@ impl LayoutConfig {
 }
 
 // -----------------------------------------------------------------------------
-// Font Metrics Cache
-// ----------------------------------------------------------------------------/
+// 字体指标缓存
+// -----------------------------------------------------------------------------
 
-/// Font metrics (cached per font/size combination)
+/// 字体指标（按字体/大小组合缓存）
 #[derive(Clone, Copy, Debug)]
 pub struct FontMetrics {
-    /// Height from baseline to top
+    /// 从基线到顶部的高度
     pub ascent: f32,
-    /// Height from baseline to bottom
+    /// 从基线到底部的高度
     pub descent: f32,
-    /// Line height (ascent + descent + leading)
+    /// 行高（ascent + descent + leading）
     pub line_height: f32,
-    /// Average character width
+    /// 平均字符宽度
     pub avg_char_width: f32,
 }
 
-/// Font metrics cache key
+/// 字体规格缓存键
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct FontKey {
     pub family: FontFamily,
@@ -106,11 +106,11 @@ pub struct FontKey {
 // Glyph Cache (Three-tier)
 // -----------------------------------------------------------------------------
 
-/// Glyph cache system
+/// 字形缓存系统
 pub struct GlyphCacheSystem {
-    /// L1: RAM cache (hot data, ~2MB)
+    /// L1: RAM 缓存（热数据，约 2MB）
     l1_ram: LruCache<GlyphKey, GlyphBitmap>,
-    /// L2: Pre-rendered glyph metrics (warm data)
+    /// L2: 预渲染的字形规格（温数据）
     l2_metrics: HashMap<GlyphKey, GlyphMetrics>,
 }
 
@@ -187,7 +187,7 @@ impl Default for GlyphCacheSystem {
 // Layout Engine
 // ----------------------------------------------------------------------------/
 
-/// Main layout engine
+/// 主布局引擎
 pub struct Layouter {
     /// Configuration
     config: LayoutConfig,
@@ -559,7 +559,7 @@ impl Layouter {
 // Public API
 // ----------------------------------------------------------------------------/
 
-/// Create layouter configured for Supernote
+/// 创建为 Supernote 配置的布局器
 pub fn create_supernote_layouter() -> Layouter {
     Layouter::for_supernote()
 }

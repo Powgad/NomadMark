@@ -1,32 +1,32 @@
 // =============================================================================
-// JNI Bridge for Android
+// Android JNI 桥接层
 // =============================================================================
 //
-// This module provides JNI-style wrapper functions that connect Kotlin/Java
-// native method calls to the underlying C FFI functions.
+// 本模块提供 JNI 风格的包装函数，将 Kotlin/Java
+// 本地方法调用连接到底层 C FFI 函数。
 //
-// JNI naming convention: Java_<package_name>_<class_name>_<method_name>
+// JNI 命名约定：Java_<package_name>_<class_name>_<method_name>
 // =============================================================================
 
 use std::ffi::CStr;
 
-// Import types needed for JNI functions
+// 导入 JNI 函数所需的类型
 use crate::render::commands::RenderCommand;
 use crate::bridge::types::TocEntry;
 
-// Always include JNI when this module is compiled
+// 编译此模块时始终包含 JNI
 #[cfg(feature = "jni")]
 use jni::sys::{jfloat, jint, jlong, jstring, jobject, jsize};
 #[cfg(feature = "jni")]
 use jni::{JNIEnv, objects::JString};
 
-// Simple test function to verify JNI symbols are exported
+// 简单的测试函数，用于验证 JNI 符号是否导出
 #[no_mangle]
 pub extern "C" fn test_jni_export() -> i32 {
     42
 }
 
-// Import C FFI functions from parent crate
+// 从父 crate 导入 C FFI 函数
 extern "C" {
     fn md_document_create(content: *const i8, len: usize) -> *mut crate::MarkdownDocument;
     fn md_document_create_from_path(path: *const i8) -> *mut crate::MarkdownDocument;
@@ -58,7 +58,7 @@ extern "C" {
 }
 
 // =============================================================================
-// JNI Functions - MarkdownCore
+// JNI 函数 - MarkdownCore
 // =============================================================================
 
 /// JNI: Java_com_editor_nomadmark_MarkdownCore_nativeCreate
@@ -296,7 +296,7 @@ pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeFreeDirtyRects(
 }
 
 /// JNI: Java_com_editor_nomadmark_MarkdownCore_nativeRenderToCanvas
-/// Renders document content to the given area
+/// 将文档内容渲染到指定区域
 #[cfg(feature = "jni")]
 #[no_mangle]
 pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeRenderToCanvas(
@@ -310,12 +310,12 @@ pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeRenderToCanvas(
         return 0;
     }
 
-    // Get render target and rect from NativeRenderCommands object
-    // For now, we'll use load_range to get commands and return dirty rects count
+    // 从 NativeRenderCommands 对象获取渲染目标和矩形
+    // 目前我们使用 load_range 来获取命令并返回脏矩形数量
     unsafe {
         let doc = &mut *(handle as *mut crate::MarkdownDocument);
 
-        // Get parser metadata to determine viewport
+        // 获取解析器元数据以确定视口
         let parser = match std::ptr::replace(&mut doc.parser, None) {
             Some(p) => p,
             None => return 0,
@@ -325,7 +325,7 @@ pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeRenderToCanvas(
         let parser_ref = doc.parser.as_ref().unwrap();
         let metadata = parser_ref.metadata();
 
-        // Render first visible range (0 to 100 lines for now)
+        // 渲染第一个可见范围（目前为 0 到 100 行）
         let mut out_commands: *const RenderCommand = std::ptr::null();
         let mut out_count: usize = 0;
         let mut out_dirty_rects: *const i32 = std::ptr::null();
@@ -345,7 +345,7 @@ pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeRenderToCanvas(
         );
 
         if result == 0 && out_dirty_count > 0 {
-            // Return number of dirty rectangles (count is array elements / 4)
+            // 返回脏矩形数量（数量 = 数组元素 / 4）
             return (out_dirty_count / 4) as jsize;
         }
     }
@@ -353,7 +353,7 @@ pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeRenderToCanvas(
 }
 
 /// JNI: Java_com_editor_nomadmark_MarkdownCore_nativeLoadRange
-/// Load and render a specific line range
+/// 加载并渲染指定的行范围
 #[cfg(feature = "jni")]
 #[no_mangle]
 pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeLoadRange(
@@ -389,7 +389,7 @@ pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeLoadRange(
         );
 
         if result == 0 {
-            // Write output values to the provided pointers (LongArray in Kotlin)
+            // 将输出值写入提供的指针（Kotlin 中的 LongArray）
             if out_commands != 0 && out_count != 0 {
                 *(out_commands as *mut jlong) = commands_ptr as jlong;
                 *(out_count as *mut jint) = commands_count as jint;
@@ -398,7 +398,7 @@ pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeLoadRange(
                 *(out_dirty_rects as *mut jlong) = dirty_ptr as jlong;
                 *(out_dirty_count as *mut jint) = dirty_count as jint;
             }
-            // Estimate total height (20px per line for now)
+            // 估算总高度（目前每行 20px）
             if out_total_height != 0 {
                 *(out_total_height as *mut jint) = (count * 20) as jint;
             }
@@ -410,7 +410,7 @@ pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeLoadRange(
 }
 
 /// JNI: Java_com_editor_nomadmark_MarkdownCore_nativeGetToc
-/// Get table of contents entries
+/// 获取目录条目
 #[cfg(feature = "jni")]
 #[no_mangle]
 pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeGetToc(
@@ -435,7 +435,7 @@ pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeGetToc(
         );
 
         if result == 0 {
-            // Write output values to the provided pointers
+            // 将输出值写入提供的指针
             if out_entries != 0 && out_count != 0 {
                 *(out_entries as *mut jlong) = entries_ptr as jlong;
                 *(out_count as *mut jint) = count as jint;
@@ -448,7 +448,7 @@ pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeGetToc(
 }
 
 /// JNI: Java_com_editor_nomadmark_MarkdownCore_nativeSearch
-/// TODO: Implement search
+/// TODO: 实现搜索功能
 #[cfg(feature = "jni")]
 #[no_mangle]
 pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeSearch(
@@ -457,12 +457,12 @@ pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeSearch(
     _handle: jlong,
     _query: jstring,
 ) -> jlong {
-    // TODO: Implement search
+    // TODO: 实现搜索功能
     0
 }
 
 /// JNI: Java_com_editor_nomadmark_MarkdownCore_00024NativeRenderCommands_nativeRelease
-/// For NativeRenderCommands
+/// 用于 NativeRenderCommands
 #[cfg(feature = "jni")]
 #[no_mangle]
 pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_00024NativeRenderCommands_nativeRelease(
@@ -470,15 +470,15 @@ pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_00024NativeRenderComman
     _class: jobject,
     _ptr: jlong,
 ) {
-    // TODO: Implement commands release
+    // TODO: 实现命令释放
 }
 
 // =============================================================================
-// JNI Functions - MarkdownEditorView
+// JNI 函数 - MarkdownEditorView
 // =============================================================================
 
 /// JNI: Java_com_editor_nomadmark_MarkdownEditorView_getCanvasNativePtr
-/// Get native pointer to Canvas for rendering
+/// 获取用于渲染的 Canvas 本地指针
 #[cfg(feature = "jni")]
 #[no_mangle]
 pub extern "C" fn Java_com_editor_nomadmark_MarkdownEditorView_getCanvasNativePtr(
@@ -486,8 +486,7 @@ pub extern "C" fn Java_com_editor_nomadmark_MarkdownEditorView_getCanvasNativePt
     _class: jobject,
     _canvas: jobject,
 ) -> jlong {
-    // Return a valid non-null pointer to allow app to start
-    // In a full implementation, this would extract the actual Canvas native pointer
+    // 返回一个有效的非空指针以允许应用启动
+    // 在完整的实现中，这将提取实际的 Canvas 本地指针
     1
 }
-
