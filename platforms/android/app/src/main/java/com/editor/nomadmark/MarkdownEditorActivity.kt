@@ -22,6 +22,7 @@ import android.widget.*
 import java.io.File
 
 import com.editor.nomadmark.GestureType
+import com.editor.nomadmark.SearchHighlightSpan
 
 import io.noties.markwon.Markwon
 import io.noties.markwon.core.CorePlugin
@@ -72,7 +73,8 @@ class MarkdownEditorActivity : android.app.Activity() {
     // 搜索栏
     private lateinit var searchBar: LinearLayout
     private lateinit var searchInput: EditText
-    private lateinit var btnSearchConfirm: ImageButton
+    private lateinit var btnSearchSingle: ImageButton
+    private lateinit var btnSearchAll: ImageButton
     private lateinit var btnSearchPrev: ImageButton
     private lateinit var btnSearchNext: ImageButton
     private lateinit var btnSearchClose: ImageButton
@@ -194,6 +196,9 @@ class MarkdownEditorActivity : android.app.Activity() {
     private var searchResults = mutableListOf<Pair<Int, Int>>() // start, end
     private var currentSearchIndex = 0
 
+    /** 当前搜索模式：true=单个搜索，false=全部搜索 */
+    private var isSingleSearchMode = true
+
     // =========================================================================
     // 生命周期
     // =========================================================================
@@ -304,7 +309,8 @@ class MarkdownEditorActivity : android.app.Activity() {
         // 搜索栏
         searchBar = findViewById(R.id.search_bar)
         searchInput = findViewById(R.id.search_input)
-        btnSearchConfirm = findViewById(R.id.btn_search_confirm)
+        btnSearchSingle = findViewById(R.id.btn_search_single)
+        btnSearchAll = findViewById(R.id.btn_search_all)
         btnSearchPrev = findViewById(R.id.btn_search_prev)
         btnSearchNext = findViewById(R.id.btn_search_next)
         btnSearchClose = findViewById(R.id.btn_search_close)
@@ -447,9 +453,10 @@ class MarkdownEditorActivity : android.app.Activity() {
 
         // 搜索栏
         btnSearchClose.setOnClickListener { toggleSearchBar() }
-        btnSearchConfirm.setOnClickListener { performSearch() }
+        btnSearchSingle.setOnClickListener { performSearch(singleMode = true) }
+        btnSearchAll.setOnClickListener { performSearch(singleMode = false) }
         searchInput.setOnEditorActionListener { _, _, _ ->
-            performSearch()
+            performSearch(singleMode = true)  // 回车键默认使用单个搜索模式
             true
         }
         btnSearchNext.setOnClickListener { findNext() }
@@ -904,11 +911,12 @@ class MarkdownEditorActivity : android.app.Activity() {
 
     private fun toggleSearchBar() {
         if (searchBar.visibility == View.VISIBLE) {
-            // 关闭搜索栏时清除所有内容
+            // 关闭搜索栏时清除所有内容和高亮
             searchInput.text.clear()
             replaceInput.text.clear()
             searchResults.clear()
             currentSearchIndex = 0
+            clearSearchHighlights()  // 清除搜索高亮
             searchBar.visibility = View.GONE
             replaceRow.visibility = View.GONE
         } else {
@@ -939,7 +947,11 @@ class MarkdownEditorActivity : android.app.Activity() {
     // 搜索和替换
     // =========================================================================
 
-    private fun performSearch() {
+    /**
+     * 执行搜索
+     * @param singleMode true=单个搜索模式，false=全部搜索模式
+     */
+    private fun performSearch(singleMode: Boolean) {
         val query = searchInput.text.toString()
         if (query.isEmpty()) {
             Toast.makeText(this, "请输入搜索内容", Toast.LENGTH_SHORT).show()
@@ -947,7 +959,7 @@ class MarkdownEditorActivity : android.app.Activity() {
         }
 
         // 使用本地搜索实现（Core 层 JNI 接口未完全实现）
-        performLocalSearch(query)
+        performLocalSearch(query, singleMode)
 
         // 显示替换选项
         replaceRow.visibility = View.VISIBLE
@@ -955,10 +967,18 @@ class MarkdownEditorActivity : android.app.Activity() {
 
     /**
      * 本地搜索实现
+     * @param query 搜索关键词
+     * @param singleMode true=单个搜索模式，false=全部搜索模式
      */
-    private fun performLocalSearch(query: String) {
+    private fun performLocalSearch(query: String, singleMode: Boolean) {
         searchResults.clear()
         currentSearchIndex = 0
+
+        // 保存当前搜索模式
+        isSingleSearchMode = singleMode
+
+        // 先清除旧的高亮
+        clearSearchHighlights()
 
         val content = getCurrentContent()
         var index = 0
@@ -972,27 +992,181 @@ class MarkdownEditorActivity : android.app.Activity() {
         if (searchResults.isEmpty()) {
             Toast.makeText(this, "未找到匹配项", Toast.LENGTH_SHORT).show()
         } else {
-            Toast.makeText(this, "找到 ${searchResults.size} 个匹配项", Toast.LENGTH_SHORT).show()
-            highlightSearchResult(0)
+            if (singleMode) {
+                // 单个搜索：只高亮第一个匹配项
+                currentSearchIndex = 0
+                highlightSingleResult(0)
+                Toast.makeText(this, "已定位到第 1 个匹配项", Toast.LENGTH_SHORT).show()
+            } else {
+                // 全部搜索：高亮所有匹配项并显示数量
+                applyAllHighlights()
+                Toast.makeText(this, "找到 ${searchResults.size} 个匹配项", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    /**
+     * 清除搜索高亮
+     */
+    private fun clearSearchHighlights() {
+        val editor = getCurrentEditor()
+        val text = editor.text as? android.text.Spannable ?: return
+
+        // 移除所有 SearchHighlightSpan
+        val spans = text.getSpans(0, text.length, SearchHighlightSpan::class.java)
+        for (span in spans) {
+            text.removeSpan(span)
         }
     }
 
     private fun findNext() {
         if (searchResults.isEmpty()) return
         currentSearchIndex = (currentSearchIndex + 1) % searchResults.size
-        highlightSearchResult(currentSearchIndex)
+
+        if (isSingleSearchMode) {
+            highlightSingleResult(currentSearchIndex)
+        } else {
+            highlightAllResults(currentSearchIndex)
+        }
     }
 
     private fun findPrev() {
         if (searchResults.isEmpty()) return
         currentSearchIndex = (currentSearchIndex - 1 + searchResults.size) % searchResults.size
-        highlightSearchResult(currentSearchIndex)
+
+        if (isSingleSearchMode) {
+            highlightSingleResult(currentSearchIndex)
+        } else {
+            highlightAllResults(currentSearchIndex)
+        }
     }
 
-    private fun highlightSearchResult(index: Int) {
+    /**
+     * 单个搜索模式：只高亮当前一个匹配项
+     */
+    private fun highlightSingleResult(index: Int) {
+        if (searchResults.isEmpty() || index < 0 || index >= searchResults.size) return
+
         val (start, end) = searchResults[index]
         val editor = getCurrentEditor()
+        val text = editor.text as? android.text.Spannable ?: return
+
+        // 清除所有高亮
+        clearSearchHighlights()
+
+        // 只高亮当前项（深灰色边框）
+        text.setSpan(
+            SearchHighlightSpan(
+                borderColor = SearchHighlightSpan.CURRENT_BORDER_COLOR,
+                isCurrent = true
+            ),
+            start, end,
+            android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+        )
+
+        // 设置选中文本并滚动到该位置
         editor.setSelection(start, end)
+        scrollToPosition(start)
+
+        // 显示当前匹配项位置
+        Toast.makeText(this, "第 ${index + 1} / ${searchResults.size} 个匹配项", Toast.LENGTH_SHORT).show()
+    }
+
+    /**
+     * 全部搜索模式：高亮所有匹配项，当前项使用深灰色
+     */
+    private fun applyAllHighlights() {
+        if (searchResults.isEmpty()) return
+
+        val editor = getCurrentEditor()
+        val text = editor.text as? android.text.Spannable ?: return
+
+        // 高亮所有匹配项（灰色），第一项使用深灰色
+        searchResults.forEachIndexed { index, (start, end) ->
+            text.setSpan(
+                SearchHighlightSpan(
+                    borderColor = if (index == 0) {
+                        SearchHighlightSpan.CURRENT_BORDER_COLOR
+                    } else {
+                        SearchHighlightSpan.ALL_SEARCH_BORDER_COLOR
+                    },
+                    isCurrent = (index == 0)
+                ),
+                start, end,
+                android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
+
+        // 滚动到第一个匹配项
+        val (start, end) = searchResults[0]
+        editor.setSelection(start, end)
+        scrollToPosition(start)
+    }
+
+    /**
+     * 全部搜索模式下的导航：更新当前项的高亮
+     */
+    private fun highlightAllResults(index: Int) {
+        if (searchResults.isEmpty() || index < 0 || index >= searchResults.size) return
+
+        val editor = getCurrentEditor()
+        val text = editor.text as? android.text.Spannable ?: return
+
+        // 清除所有高亮
+        clearSearchHighlights()
+
+        // 重新应用所有高亮，当前项使用深灰色
+        searchResults.forEachIndexed { i, (start, end) ->
+            text.setSpan(
+                SearchHighlightSpan(
+                    borderColor = if (i == index) {
+                        SearchHighlightSpan.CURRENT_BORDER_COLOR
+                    } else {
+                        SearchHighlightSpan.ALL_SEARCH_BORDER_COLOR
+                    },
+                    isCurrent = (i == index)
+                ),
+                start, end,
+                android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
+
+        // 设置选中文本并滚动到该位置
+        val (start, end) = searchResults[index]
+        editor.setSelection(start, end)
+        scrollToPosition(start)
+
+        // 显示当前匹配项位置
+        Toast.makeText(this, "第 ${index + 1} / ${searchResults.size} 个匹配项", Toast.LENGTH_SHORT).show()
+    }
+
+    /**
+     * @deprecated 使用 highlightSingleResult 或 highlightAllResults 代替
+     */
+    private fun highlightSearchResult(index: Int) {
+        if (isSingleSearchMode) {
+            highlightSingleResult(index)
+        } else {
+            highlightAllResults(index)
+        }
+    }
+
+    /**
+     * 滚动到指定文本位置
+     */
+    private fun scrollToPosition(position: Int) {
+        val scrollView = getCurrentScrollView()
+        val editor = getCurrentEditor()
+
+        // 获取文本布局信息
+        val layout = editor.layout ?: return
+        val line = layout.getLineForOffset(position)
+
+        // 计算滚动位置
+        val lineHeight = editor.lineHeight
+        val scrollY = line * lineHeight - scrollView.height / 2
+
+        scrollView.smoothScrollTo(0, scrollY.coerceAtLeast(0))
     }
 
     private fun replaceOne() {

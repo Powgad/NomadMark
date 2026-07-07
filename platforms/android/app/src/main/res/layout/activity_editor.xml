@@ -211,13 +211,22 @@
                 android:imeOptions="actionSearch" />
 
             <ImageButton
-                android:id="@+id/btn_search_confirm"
+                android:id="@+id/btn_search_single"
                 android:layout_width="40dp"
                 android:layout_height="40dp"
                 android:layout_marginStart="8dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
-                android:src="@drawable/ic_search"
-                android:contentDescription="搜索" />
+                android:src="@drawable/ic_search_single"
+                android:contentDescription="单个搜索" />
+
+            <ImageButton
+                android:id="@+id/btn_search_all"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginStart="4dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_search_all"
+                android:contentDescription="全部搜索" />
 
             <ImageButton
                 android:id="@+id/btn_search_prev"
