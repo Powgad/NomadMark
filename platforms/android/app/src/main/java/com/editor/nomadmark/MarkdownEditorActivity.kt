@@ -27,6 +27,7 @@ import com.editor.nomadmark.SearchHighlightSpan
 import io.noties.markwon.Markwon
 import io.noties.markwon.core.CorePlugin
 import io.noties.markwon.core.MarkwonTheme
+import io.noties.markwon.AbstractMarkwonPlugin
 import android.graphics.Color
 import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
 import io.noties.markwon.ext.tables.TablePlugin
@@ -254,14 +255,21 @@ class MarkdownEditorActivity : android.app.Activity() {
     // =========================================================================
 
     private fun initMarkwon() {
-        // Markwon 配置 - 使用默认配置
-        // 注意：尝试自定义主题在当前版本中不可行，使用默认配置
         markwon = Markwon.builder(this)
             .usePlugin(CorePlugin.create())
             .usePlugin(StrikethroughPlugin.create())
             .usePlugin(TablePlugin.create(this))
             .usePlugin(TaskListPlugin.create(this))
             .usePlugin(ImagesPlugin.create())
+            // 添加自定义主题配置，移除标题下划线和链接下划线
+            .usePlugin(object : AbstractMarkwonPlugin() {
+                override fun configureTheme(builder: MarkwonTheme.Builder) {
+                    // 移除 H1 和 H2 标题下方的分隔线（"下划线"效果）
+                    builder.headingBreakHeight(0)
+                    // 禁用链接下划线
+                    builder.isLinkUnderlined(false)
+                }
+            })
             .build()
     }
 
@@ -270,18 +278,64 @@ class MarkdownEditorActivity : android.app.Activity() {
      * 用于标题等不应有下划线的文本
      */
     private fun removeUnderlines(spanned: Spanned) {
+        val spannable = spanned as android.text.Spannable
+
         // 获取所有 span 类型用于调试
         val allSpans = (0 until spanned.length).flatMap { i ->
             val spans = spanned.getSpans(i, i + 1, Any::class.java)
-            spans.map { it.javaClass.simpleName }
+            spans.map { it.javaClass.name }
         }.distinct()
         Log.d("removeUnderlines", "All span types: $allSpans")
 
-        // 只移除 UnderlineSpan
-        val underlineSpans = spanned.getSpans(0, spanned.length, android.text.style.UnderlineSpan::class.java)
+        // 处理 Markwon 的 LinkSpan（Markwon 4.6.2 使用自定义 LinkSpan）
+        try {
+            val linkSpanClass = Class.forName("io.noties.markwon.core.span.LinkSpan")
+            val linkSpans = spannable.getSpans(0, spanned.length, linkSpanClass)
+            Log.d("removeUnderlines", "Found ${linkSpans.size} LinkSpans")
+            for (span in linkSpans) {
+                val start = spannable.getSpanStart(span)
+                val end = spannable.getSpanEnd(span)
+                val flags = spannable.getSpanFlags(span)
+                spannable.removeSpan(span)
+
+                // 创建不带下划线的自定义 Span
+                val noUnderlineSpan = object : android.text.style.URLSpan("about:blank") {
+                    override fun updateDrawState(ds: android.text.TextPaint) {
+                        super.updateDrawState(ds)
+                        ds.isUnderlineText = false
+                        // 保留原始链接颜色
+                        ds.color = ds.linkColor
+                    }
+                }
+                spannable.setSpan(noUnderlineSpan, start, end, flags)
+            }
+        } catch (e: ClassNotFoundException) {
+            Log.e("removeUnderlines", "LinkSpan class not found", e)
+        }
+
+        // 处理标准 URLSpan（兼容处理）
+        val urlSpans = spannable.getSpans(0, spanned.length, android.text.style.URLSpan::class.java)
+        Log.d("removeUnderlines", "Found ${urlSpans.size} URLSpans")
+        for (span in urlSpans) {
+            val start = spannable.getSpanStart(span)
+            val end = spannable.getSpanEnd(span)
+            val flags = spannable.getSpanFlags(span)
+            spannable.removeSpan(span)
+            // 创建不带下划线的 URLSpan
+            val noUnderlineSpan = object : android.text.style.URLSpan(span.url) {
+                override fun updateDrawState(ds: android.text.TextPaint) {
+                    super.updateDrawState(ds)
+                    ds.isUnderlineText = false
+                }
+            }
+            spannable.setSpan(noUnderlineSpan, start, end, flags)
+        }
+
+        // 移除 UnderlineSpan
+        val underlineSpans = spannable.getSpans(0, spanned.length, android.text.style.UnderlineSpan::class.java)
         Log.d("removeUnderlines", "Found ${underlineSpans.size} UnderlineSpans")
         for (span in underlineSpans) {
-            (spanned as android.text.Spannable).removeSpan(span)
+            spannable.removeSpan(span)
         }
 
         // 确保分割线可见 - 检查 ThematicBreakSpan
