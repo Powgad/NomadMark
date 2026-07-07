@@ -199,6 +199,9 @@ class MarkdownEditorActivity : android.app.Activity() {
     /** 当前搜索模式：true=单个搜索，false=全部搜索 */
     private var isSingleSearchMode = true
 
+    /** 是否正在执行撤销/重做操作（用于防止 textWatcher 重复保存状态） */
+    private var isUndoingOrRedoing = false
+
     // =========================================================================
     // 生命周期
     // =========================================================================
@@ -517,6 +520,11 @@ class MarkdownEditorActivity : android.app.Activity() {
             updateSaveButton()
             updateFilenameDisplay()
 
+            // 清空撤销重做栈并保存初始状态
+            undoStack.clear()
+            redoStack.clear()
+            undoStack.add(content)
+
             // 暂时禁用 Core 文档集成，因为 JNI 接口未完全实现
             // 如需启用，需先完善 core/src/bridge/jni.rs 中的 nativeSearch 等函数
             Log.d("MarkdownEditorActivity", "Loaded file: $path, size: ${content.length}")
@@ -537,6 +545,12 @@ class MarkdownEditorActivity : android.app.Activity() {
             isModified = false
             updateSaveButton()
             updateFilenameDisplay()
+
+            // 清空撤销重做栈并保存初始状态
+            undoStack.clear()
+            redoStack.clear()
+            undoStack.add(editorText.text.toString())
+
             Toast.makeText(this, "已创建新文件", Toast.LENGTH_SHORT).show()
         }
     }
@@ -1335,10 +1349,17 @@ class MarkdownEditorActivity : android.app.Activity() {
             return
         }
 
-        redoStack.add(getCurrentContent())
-        val previous = undoStack.removeAt(undoStack.size - 1)
-        getCurrentEditor().setText(previous)
-        markAsModified()
+        isUndoingOrRedoing = true
+        try {
+            redoStack.add(getCurrentContent())
+            val previous = undoStack.removeAt(undoStack.size - 1)
+            getCurrentEditor().setText(previous)
+            isModified = true
+            updateSaveButton()
+            updatePreview()
+        } finally {
+            isUndoingOrRedoing = false
+        }
     }
 
     /**
@@ -1350,10 +1371,17 @@ class MarkdownEditorActivity : android.app.Activity() {
             return
         }
 
-        undoStack.add(getCurrentContent())
-        val next = redoStack.removeAt(redoStack.size - 1)
-        getCurrentEditor().setText(next)
-        markAsModified()
+        isUndoingOrRedoing = true
+        try {
+            undoStack.add(getCurrentContent())
+            val next = redoStack.removeAt(redoStack.size - 1)
+            getCurrentEditor().setText(next)
+            isModified = true
+            updateSaveButton()
+            updatePreview()
+        } finally {
+            isUndoingOrRedoing = false
+        }
     }
 
     // =========================================================================
@@ -1569,14 +1597,38 @@ class MarkdownEditorActivity : android.app.Activity() {
 
     // 文本变化监听器
     private val textWatcher = object : TextWatcher {
-        override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+        private var beforeChangeContent: String = ""
+
+        override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {
+            // 保存变化前的内容（撤销/重做操作时不保存）
+            if (!isSyncing && !isUndoingOrRedoing && s != null) {
+                beforeChangeContent = s.toString()
+            }
+        }
+
         override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-            if (!isSyncing) {
+            if (!isSyncing && !isUndoingOrRedoing) {
                 markAsModified()
                 updatePreview()
             }
         }
-        override fun afterTextChanged(s: Editable?) {}
+
+        override fun afterTextChanged(s: Editable?) {
+            // 文本变化后，将变化前的状态保存到撤销栈（撤销/重做操作时不保存）
+            if (!isSyncing && !isUndoingOrRedoing && beforeChangeContent.isNotEmpty()) {
+                // 只有内容真正变化时才保存（避免重复保存相同内容）
+                if (undoStack.isEmpty() || undoStack.last() != beforeChangeContent) {
+                    undoStack.add(beforeChangeContent)
+                    // 限制撤销栈大小，避免内存占用过大
+                    if (undoStack.size > 50) {
+                        undoStack.removeAt(0)
+                    }
+                }
+                // 文本变化后清空重做栈
+                redoStack.clear()
+                beforeChangeContent = ""
+            }
+        }
     }
 
     // =========================================================================
