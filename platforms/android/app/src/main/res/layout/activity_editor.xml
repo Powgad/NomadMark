@@ -528,13 +528,19 @@
                 android:background="#FFFFFF"
                 android:padding="8dp" />
 
+            <!-- 竖分隔线 -->
+            <View
+                android:layout_width="2dp"
+                android:layout_height="match_parent"
+                android:background="#000000" />
+
             <!-- 空白区域 (占1/3，点击关闭目录) -->
             <View
                 android:id="@+id/toc_close_area"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
                 android:layout_weight="1"
-                android:background="#AA000000" />
+                android:background="#AAFFFFFF" />
         </LinearLayout>
     </FrameLayout>
 

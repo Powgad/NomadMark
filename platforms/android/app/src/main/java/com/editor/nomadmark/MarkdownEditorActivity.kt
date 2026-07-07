@@ -1008,6 +1008,7 @@ class MarkdownEditorActivity : android.app.Activity() {
         } else {
             tocPanel.visibility = View.VISIBLE
             updateToc()
+            hideSoftKeyboardFromAll()
         }
     }
 
