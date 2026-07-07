@@ -824,6 +824,8 @@ class MarkdownEditorActivity : android.app.Activity() {
             // 预览模式下隐藏光标（不支持编辑）
             editorText.isCursorVisible = false
 
+            hideSoftKeyboardFromAll()
+
             updatePreview()
         } else {
             // 切换到编辑模式
