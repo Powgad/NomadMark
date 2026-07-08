@@ -501,6 +501,12 @@
                 android:id="@+id/btn_hr"
                 style="@style/ToolbarButton"
                 android:text="---" />
+
+            <!-- 数学公式 -->
+            <Button
+                android:id="@+id/btn_formula"
+                style="@style/ToolbarButton"
+                android:text="∑" />
         </LinearLayout>
     </HorizontalScrollView>
 

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- 数学公式图标 - 使用积分符号风格 -->
+    <path
+        android:fillColor="#333333"
+        android:pathData="M6,4 L6,20 M6,4 L10,4 C13,4 14,6 14,8 C14,10 13,12 10,12 L6,12 M6,20 L10,20 C13,20 14,18 14,16 C14,14 13,12 10,12" />
+    <path
+        android:fillColor="#333333"
+        android:pathData="M16,8 L18,6 L20,8 M18,6 L18,12" />
+</vector>

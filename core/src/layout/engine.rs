@@ -20,6 +20,32 @@ use lru::LruCache;
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 
+// Android 日志函数
+#[cfg(target_os = "android")]
+fn android_log(tag: &str, msg: &str) {
+    use std::ffi::CString;
+    unsafe {
+        let tag_cstr = CString::new(tag).unwrap();
+        let msg_cstr = CString::new(msg).unwrap();
+        let fmt = CString::new("%s").unwrap();
+        extern "C" {
+            fn __android_log_print(priority: std::os::raw::c_int, tag: *const std::os::raw::c_char, fmt: *const std::os::raw::c_char, ...) -> std::os::raw::c_int;
+        }
+        __android_log_print(3, tag_cstr.as_ptr(), fmt.as_ptr(), msg_cstr.as_ptr());
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+fn android_log(tag: &str, msg: &str) {
+    eprintln!("[{}] {}", tag, msg);
+}
+
+macro_rules! layout_log {
+    ($($arg:tt)*) => {
+        android_log("NomadMark", &format!($($arg)*))
+    };
+}
+
 // -----------------------------------------------------------------------------
 // 布局配置
 // -----------------------------------------------------------------------------
@@ -276,6 +302,15 @@ impl Layouter {
             BlockNode::List { ordered, start_number, items } => {
                 self.layout_list(*ordered, *start_number, items, &mut result);
             }
+            BlockNode::Blockquote { level, children } => {
+                self.layout_blockquote(*level, children, &mut result);
+            }
+            BlockNode::ThematicBreak => {
+                self.layout_thematic_break(&mut result);
+            }
+            BlockNode::MathBlock { latex } => {
+                self.layout_math_block(latex, &mut result);
+            }
             _ => {
                 // 其他块类型的占位符
             }
@@ -338,9 +373,11 @@ impl Layouter {
         let metrics = self.get_font_metrics(font);
         self.current_line_height = metrics.line_height;
 
+        layout_log!("  📝 Paragraph BEFORE: cursor_y={}", self.cursor_y);
         self.layout_inline(children, font, Color::BLACK, result);
         self.new_line();
         self.cursor_y += self.config.paragraph_spacing;
+        layout_log!("  📝 Paragraph AFTER: cursor_y={}", self.cursor_y);
     }
 
     /// 布局内联节点
@@ -432,6 +469,49 @@ impl Layouter {
                 InlineNode::HardBreak => {
                     self.new_line();
                 }
+                InlineNode::Math { display_mode, latex } => {
+                    // 布局行内数学公式
+                    let math_font = FontSpec {
+                        family: FontFamily::Sans,
+                        size_pt: font.size_pt,
+                        bold: false,
+                        italic: true,  // 数学公式使用斜体
+                    };
+
+                    // 简化实现：显示为占位符
+                    let placeholder = format!("${}$", latex);
+                    let text_width = placeholder.len() as f32 * metrics.avg_char_width;
+
+                    // 绘制数学公式背景（浅蓝色）
+                    let math_height = if *display_mode {
+                        self.current_line_height * 1.5  // 块级显示更高
+                    } else {
+                        self.current_line_height
+                    };
+
+                    result.push(RenderCommand::fill_rect(
+                        self.cursor_x,
+                        self.cursor_y,
+                        text_width + 8.0,
+                        math_height,
+                        Color::rgb(235, 245, 255),
+                    ));
+
+                    // 绘制占位符文本
+                    result.push(RenderCommand::draw_text(
+                        self.cursor_x + 4.0,
+                        self.cursor_y + if *display_mode {
+                            math_height / 2.0 - metrics.ascent / 2.0
+                        } else {
+                            metrics.ascent
+                        },
+                        &placeholder,
+                        math_font,
+                        Color::rgb(0, 100, 200),
+                    ));
+
+                    self.cursor_x += text_width + 8.0;
+                }
                 _ => {
                     // 其他内联节点尚未实现
                 }
@@ -514,7 +594,117 @@ impl Layouter {
         }
     }
 
-    /// 仅布局可见范围
+    /// 布局引用块
+    fn layout_blockquote(&mut self, level: u8, children: &[BlockNode], result: &mut RenderResult) {
+        layout_log!("  💬 Blockquote level={} BEFORE: cursor_y={}", level, self.cursor_y);
+
+        // 计算缩进（每级 12px）
+        let indent = self.config.margin_left + (level as f32 * 12.0);
+
+        // 绘制背景
+        let bg_height = self.estimate_block_height(&BlockNode::Blockquote {
+            level,
+            children: children.to_vec(),
+        });
+
+        result.push(RenderCommand::fill_rect(
+            indent,
+            self.cursor_y,
+            self.config.content_width() - (level as f32 * 12.0),
+            bg_height,
+            Color::rgb(245, 245, 245),  // E-ink 友好的浅灰背景
+        ));
+
+        // 绘制左边框（2px）
+        result.push(RenderCommand::fill_rect(
+            indent,
+            self.cursor_y,
+            2.0,
+            bg_height,
+            Color::rgb(204, 204, 204),  // 边框颜色
+        ));
+
+        // 保存原始 cursor_x，设置新的缩进
+        let original_x = self.cursor_x;
+        self.cursor_x = indent + 12.0;  // 左内边距
+
+        // 递归布局子块
+        for child in children {
+            let child_result = self.layout_block(child);
+            result.commands.extend(child_result.commands);
+            result.dirty_rects.extend(child_result.dirty_rects);
+        }
+
+        // 恢复原始 cursor_x
+        self.cursor_x = original_x;
+        self.cursor_y += bg_height + 8.0;  // 下边距
+
+        layout_log!("  💬 Blockquote AFTER: cursor_y={}", self.cursor_y);
+    }
+
+    /// 布局分割线
+    fn layout_thematic_break(&mut self, result: &mut RenderResult) {
+        layout_log!("  ➖ ThematicBreak BEFORE: cursor_y={}", self.cursor_y);
+
+        let line_y = self.cursor_y + self.current_line_height / 2.0;
+
+        // 绘制分割线（1px 实线）
+        result.push(RenderCommand::draw_line(
+            self.config.margin_left,
+            line_y,
+            self.config.margin_left + self.config.content_width(),
+            line_y,
+            1.0,
+            Color::rgb(221, 221, 221),  // 分割线颜色
+        ));
+
+        // 上下边距各 16px
+        self.cursor_y += self.current_line_height + 16.0;
+
+        layout_log!("  ➖ ThematicBreak AFTER: cursor_y={}", self.cursor_y);
+    }
+
+    /// 布局数学公式块
+    fn layout_math_block(&mut self, latex: &str, result: &mut RenderResult) {
+        layout_log!("  📐 MathBlock BEFORE: cursor_y={}, latex={}", self.cursor_y, latex);
+
+        // 简化实现：显示为占位符文本
+        // 完整实现需要集成 LaTeX 渲染引擎
+        let placeholder = format!("[公式: {}]", latex);
+        let font_size = 14.0;
+
+        // 计算高度（数学公式通常比普通文本高）
+        let formula_height = font_size * self.config.line_spacing * 2.0; // 2倍行高
+
+        // 绘制占位符背景（浅蓝色表示数学公式）
+        result.push(RenderCommand::fill_rect(
+            self.config.margin_left,
+            self.cursor_y,
+            self.config.content_width(),
+            formula_height,
+            Color::rgb(235, 245, 255),  // 浅蓝色背景
+        ));
+
+        // 绘制占位符文本
+        result.push(RenderCommand::draw_text(
+            self.config.margin_left + 8.0,
+            self.cursor_y + formula_height / 2.0,
+            &placeholder,
+            FontSpec {
+                family: FontFamily::Sans,
+                size_pt: font_size,
+                bold: false,
+                italic: true,  // 斜体表示数学公式
+            },
+            Color::rgb(0, 100, 200),  // 深蓝色文字
+        ));
+
+        self.cursor_y += formula_height + 8.0;  // 下边距
+
+        layout_log!("  📐 MathBlock AFTER: cursor_y={}", self.cursor_y);
+    }
+
+/// 仅布局可见范围
     pub fn layout_visible_range(
         &mut self,
         blocks: &[BlockNode],

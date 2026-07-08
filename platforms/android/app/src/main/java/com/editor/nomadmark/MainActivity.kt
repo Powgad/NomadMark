@@ -5,6 +5,7 @@ import android.content.ComponentCallbacks2
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
+import android.content.SharedPreferences
 
 /**
  * Main Activity for NomadMark
@@ -13,8 +14,12 @@ import android.util.Log
  */
 class MainActivity : Activity(), ComponentCallbacks2 {
 
+    private lateinit var prefs: SharedPreferences
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        prefs = getSharedPreferences("NomadMarkPrefs", MODE_PRIVATE)
 
         // 直接启动编辑器 Activity 并传递所有数据
         launchEditorActivity(intent)
@@ -49,6 +54,23 @@ class MainActivity : Activity(), ComponentCallbacks2 {
 
         // 传递 action
         editorIntent.action = intent.action
+
+        // 检查是否是首次启动（没有传入文件路径）
+        val hasFilePath = intent.extras?.containsKey("file_path") ?: false
+        val hasDataUri = intent.data != null
+
+        if (!hasFilePath && !hasDataUri) {
+            // 检查是否已展示过示例
+            val hasShownSample = prefs.getBoolean("has_shown_sample", false)
+
+            if (!hasShownSample) {
+                // 首次启动，打开示例文件
+                editorIntent.putExtra("open_sample", true)
+
+                // 标记已展示过示例
+                prefs.edit().putBoolean("has_shown_sample", true).apply()
+            }
+        }
 
         // 启动编辑器
         startActivity(editorIntent)

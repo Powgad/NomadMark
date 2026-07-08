@@ -97,9 +97,15 @@ dependencies {
     implementation "io.noties.markwon:ext-tables:$markwonVersion"
     implementation "io.noties.markwon:ext-tasklist:$markwonVersion"
     implementation "io.noties.markwon:image:$markwonVersion"
+    implementation "io.noties.markwon:inline-parser:$markwonVersion"
 
-    // 代码语法高亮 - 暂时禁用（Prism4j 语言包需要额外配置）
+    // 数学公式渲染 (使用 JLatexMath)
+    implementation "io.noties.markwon:ext-latex:$markwonVersion"
+    implementation "ru.noties:jlatexmath-android:0.2.0"
+
+    // 代码语法高亮 - 暂时禁用（需要额外配置 Prism4j）
     // TODO: 后续可添加 syntax-highlight 和 prism4j 支持
+    // implementation "io.noties.markwon:syntax-highlight:$markwonVersion"
 
     // Testing
     testImplementation 'junit:junit:4.13.2'

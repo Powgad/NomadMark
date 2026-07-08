@@ -7,6 +7,7 @@ import android.util.AttributeSet
 import android.view.View
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.Scroller
+import com.editor.nomadmark.render.RenderCommandExecutor
 import kotlin.math.max
 import kotlin.math.min
 
@@ -29,6 +30,15 @@ class MarkdownEditorView @JvmOverloads constructor(
     attrs: AttributeSet? = null,
     defStyleAttr: Int = 0
 ) : View(context, attrs, defStyleAttr) {
+
+    // =========================================================================
+    // 渲染命令执行器
+    // =========================================================================
+
+    /**
+     * Rust Core 渲染命令执行器
+     */
+    private val renderCommandExecutor = RenderCommandExecutor()
 
     // =========================================================================
     // 状态定义 (必须严格遵守 UI 交互文档)
@@ -614,38 +624,54 @@ class MarkdownEditorView @JvmOverloads constructor(
             canvas.drawText("No document loaded", 50f, y + 140, paint)
         } else {
             paint.color = 0xFF00AA00.toInt()
-            canvas.drawText("Document loaded successfully", 50f, y + 140, paint)
+            canvas.drawText("Document loaded - Rendering with Rust Core...", 50f, y + 140, paint)
 
-            // 显示测试内容（模拟文档内容）
-            paint.color = 0xFF000000.toInt()
-            val testLines = arrayOf(
-                "# Welcome to NomadMark",
-                "",
-                "This is a Markdown editor optimized for E-ink displays.",
-                "",
-                "## Features",
-                "- Split view editing",
-                "- Revision mode",
-                "- Large file support"
-            )
-            var lineY = y + 200
-            for (line in testLines) {
-                if (line.startsWith("#")) {
-                    paint.color = 0xFF0000EE.toInt()
-                    paint.textSize = 26f
-                } else if (line.startsWith("-")) {
-                    paint.color = 0xFF000000.toInt()
-                    paint.textSize = 20f
-                } else {
-                    paint.color = 0xFF444444.toInt()
-                    paint.textSize = 20f
-                }
-                canvas.drawText(line, 50f, lineY, paint)
-                lineY += 35
-            }
+            // 使用 Rust Core 渲染命令
+            renderFromRustCore(canvas, 0, 100)  // 渲染前 100 行
         }
 
         canvas.restore()
+    }
+
+    /**
+     * 使用 Rust Core 渲染指定行范围
+     */
+    private fun renderFromRustCore(canvas: Canvas, startLine: Int, lineCount: Int) {
+        if (documentHandle == 0L) return
+
+        try {
+            // 准备输出数组
+            val outCommands = LongArray(2)      // [commands_ptr, commands_count]
+            val outDirtyRects = LongArray(8)     // [x, y, w, h, x, y, w, h] (最多2个矩形)
+            val outTotalHeight = IntArray(1)    // [total_height]
+
+            // 调用 Rust Core 加载渲染命令
+            val result = MarkdownCore.nativeLoadRange(
+                documentHandle,
+                startLine,
+                lineCount,
+                outCommands,
+                outDirtyRects,
+                outTotalHeight
+            )
+
+            if (result == 0) {
+                val commandsPtr = outCommands[0]
+                val commandsCount = outCommands[1].toInt()
+
+                android.util.Log.d("MarkdownEditorView", "Rust Core rendered: commandsPtr=$commandsPtr, count=$commandsCount")
+
+                if (commandsPtr != 0L && commandsCount > 0) {
+                    // 执行渲染命令
+                    renderCommandExecutor.execute(commandsPtr, commandsCount, canvas)
+
+                    // 释放 Rust 分配的命令内存
+                    MarkdownCore.nativeFreeCommands(commandsPtr, commandsCount)
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("MarkdownEditorView", "Error rendering from Rust Core", e)
+        }
     }
 
     /**
@@ -656,25 +682,17 @@ class MarkdownEditorView @JvmOverloads constructor(
         canvas.clipRect(previewRect)
         canvas.drawColor(0xFFFFFFFF.toInt())
 
-        val paint = android.graphics.Paint().apply {
-            color = 0xFF000000.toInt()
-            textSize = 28f
-            isAntiAlias = true
-        }
-
-        val y = 100f
-        canvas.drawText("Preview Mode", 50f, y, paint)
-
-        paint.textSize = 20f
-        paint.color = 0xFF666666.toInt()
-        canvas.drawText("Document handle: $documentHandle", 50f, y + 40, paint)
-
         if (documentHandle == 0L) {
-            paint.color = 0xFFFF0000.toInt()
-            canvas.drawText("No document loaded", 50f, y + 80, paint)
+            // 没有文档时显示提示
+            val paint = android.graphics.Paint().apply {
+                color = 0xFFFF0000.toInt()
+                textSize = 28f
+                isAntiAlias = true
+            }
+            canvas.drawText("No document loaded", 50f, 200f, paint)
         } else {
-            paint.color = 0xFF00AA00.toInt()
-            canvas.drawText("Document loaded - Rendering preview...", 50f, y + 80, paint)
+            // 使用 Rust Core 渲染 Markdown 内容
+            renderFromRustCore(canvas, 0, 100)
         }
 
         canvas.restore()

@@ -1175,6 +1175,283 @@ mod tests {
         // 清理
         std::fs::remove_file(&temp_file).ok();
     }
+
+    #[test]
+    fn test_blockquote_parsing_and_rendering() {
+        let content = r#"# 测试引用块
+
+> 这是一个简单的引用块
+> 有多行内容
+
+> 第一级引用
+>> 第二级引用
+>>> 第三级引用
+
+---
+
+> 引用块后跟分割线
+"#;
+
+        let ptr = md_document_create(
+            content.as_ptr() as *const c_char,
+            content.len(),
+        );
+        assert!(!ptr.is_null(), "文档创建失败");
+
+        // 渲染文档
+        let mut commands_ptr: *const RenderCommand = std::ptr::null();
+        let mut count: usize = 0;
+        let mut dirty_ptr: *const i32 = std::ptr::null();
+        let mut dirty_count: usize = 0;
+
+        let result = md_document_load_range(
+            ptr,
+            0,
+            100,
+            &mut commands_ptr as *mut _ as *mut _,
+            &mut count as *mut _ as *mut _,
+            &mut dirty_ptr as *mut _ as *mut _,
+            &mut dirty_count as *mut _ as *mut _,
+        );
+
+        assert_eq!(result, 0, "加载范围失败");
+        assert!(count > 0, "应该有渲染命令");
+
+        // 验证渲染命令包含引用块和分割线
+        let commands = unsafe { std::slice::from_raw_parts(commands_ptr, count) };
+
+        // 检查是否有 FillRect 命令（用于引用块背景）
+        let has_fill_rect = commands.iter().any(|cmd| cmd.cmd_type == render::commands::RenderCommandType::FillRect);
+        assert!(has_fill_rect, "应该有 FillRect 命令用于引用块背景");
+
+        // 检查是否有 DrawLine 命令（用于分割线）
+        let has_draw_line = commands.iter().any(|cmd| cmd.cmd_type == render::commands::RenderCommandType::DrawLine);
+        assert!(has_draw_line, "应该有 DrawLine 命令用于分割线");
+
+        // 清理
+        if !commands_ptr.is_null() && count > 0 {
+            md_free_commands(commands_ptr as *mut RenderCommand, count);
+        }
+        if !dirty_ptr.is_null() && dirty_count > 0 {
+            md_free_dirty_rects(dirty_ptr as *mut i32, dirty_count);
+        }
+        md_document_release(ptr);
+    }
+
+    #[test]
+    fn test_thematic_break_variations() {
+        // 测试三种分割线变体
+        let content = r#"---
+
+***
+
+___
+"#;
+
+        let ptr = md_document_create(
+            content.as_ptr() as *const c_char,
+            content.len(),
+        );
+        assert!(!ptr.is_null());
+
+        let mut commands_ptr: *const RenderCommand = std::ptr::null();
+        let mut count: usize = 0;
+        let mut dirty_ptr: *const i32 = std::ptr::null();
+        let mut dirty_count: usize = 0;
+
+        let result = md_document_load_range(
+            ptr,
+            0,
+            10,
+            &mut commands_ptr as *mut _ as *mut _,
+            &mut count as *mut _ as *mut _,
+            &mut dirty_ptr as *mut _ as *mut _,
+            &mut dirty_count as *mut _ as *mut _,
+        );
+
+        assert_eq!(result, 0);
+
+        let commands = unsafe { std::slice::from_raw_parts(commands_ptr, count) };
+
+        // 应该有3条 DrawLine 命令（三个分割线）
+        let line_count = commands.iter()
+            .filter(|cmd| cmd.cmd_type == render::commands::RenderCommandType::DrawLine)
+            .count();
+        assert_eq!(line_count, 3, "应该有3条分割线");
+
+        // 清理
+        if !commands_ptr.is_null() && count > 0 {
+            md_free_commands(commands_ptr as *mut RenderCommand, count);
+        }
+        if !dirty_ptr.is_null() && dirty_count > 0 {
+            md_free_dirty_rects(dirty_ptr as *mut i32, dirty_count);
+        }
+        md_document_release(ptr);
+    }
+
+    #[test]
+    fn test_nested_blockquote_indentation() {
+        // 测试嵌套引用块的解析
+        // 注意：当前实现将嵌套引用块解析为单一 Blockquote，level 为最大深度
+        // 完整的嵌套支持需要更新 parse_blockquote_lines 函数（已有 TODO）
+
+        let content = r#"> 外层
+>> 中层
+>>> 内层
+"#;
+
+        let ptr = md_document_create(
+            content.as_ptr() as *const c_char,
+            content.len(),
+        );
+        assert!(!ptr.is_null());
+
+        let mut commands_ptr: *const RenderCommand = std::ptr::null();
+        let mut count: usize = 0;
+        let mut dirty_ptr: *const i32 = std::ptr::null();
+        let mut dirty_count: usize = 0;
+
+        let result = md_document_load_range(
+            ptr,
+            0,
+            10,
+            &mut commands_ptr as *mut _ as *mut _,
+            &mut count as *mut _ as *mut _,
+            &mut dirty_ptr as *mut _ as *mut _,
+            &mut dirty_count as *mut _,
+        );
+
+        assert_eq!(result, 0);
+
+        let commands = unsafe { std::slice::from_raw_parts(commands_ptr, count) };
+
+        // 当前实现：创建单一 Blockquote，level 为最大深度（3）
+        // 这会产生一个 FillRect 背景，缩进为 3 * 12px = 36px
+        let fill_rects: Vec<_> = commands.iter()
+            .filter(|cmd| cmd.cmd_type == render::commands::RenderCommandType::FillRect)
+            .collect();
+
+        // 验证至少有一个背景矩形
+        assert!(!fill_rects.is_empty(), "应该有引用块背景");
+
+        // 验证缩进值（每级 12px，3级 = 36px）
+        // 基础 margin_left 加上缩进
+        let expected_indent = 3.0 * 12.0; // 36px for level 3
+        let actual_x = fill_rects[0].x;
+        // 验证 x 坐标包含预期的缩进
+        assert!(actual_x >= expected_indent, "嵌套引用块应该有相应的缩进");
+
+        // 清理
+        if !commands_ptr.is_null() && count > 0 {
+            md_free_commands(commands_ptr as *mut RenderCommand, count);
+        }
+        if !dirty_ptr.is_null() && dirty_count > 0 {
+            md_free_dirty_rects(dirty_ptr as *mut i32, dirty_count);
+        }
+        md_document_release(ptr);
+    }
+
+    #[test]
+    fn test_math_block_parsing_and_rendering() {
+        let content = r#"# 数学公式测试
+
+这是一个简单的行内公式：$E=mc^2$
+
+块级公式：
+
+$$
+x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
+$$
+"#;
+
+        let ptr = md_document_create(
+            content.as_ptr() as *const c_char,
+            content.len(),
+        );
+        assert!(!ptr.is_null());
+
+        let mut commands_ptr: *const RenderCommand = std::ptr::null();
+        let mut count: usize = 0;
+        let mut dirty_ptr: *const i32 = std::ptr::null();
+        let mut dirty_count: usize = 0;
+
+        let result = md_document_load_range(
+            ptr,
+            0,
+            20,
+            &mut commands_ptr as *mut _ as *mut _,
+            &mut count as *mut _ as *mut _,
+            &mut dirty_ptr as *mut _ as *mut _,
+            &mut dirty_count as *mut _ as *mut _,
+        );
+
+        assert_eq!(result, 0);
+        assert!(count > 0, "应该有渲染命令");
+
+        let commands = unsafe { std::slice::from_raw_parts(commands_ptr, count) };
+
+        // 检查是否有 FillRect 命令（数学公式占位符背景）
+        let fill_rect_count = commands.iter()
+            .filter(|cmd| cmd.cmd_type == render::commands::RenderCommandType::FillRect)
+            .count();
+
+        assert!(fill_rect_count >= 2, "应该至少有 2 个 FillRect 命令（行内公式和块级公式）");
+
+        // 清理
+        if !commands_ptr.is_null() && count > 0 {
+            md_free_commands(commands_ptr as *mut RenderCommand, count);
+        }
+        if !dirty_ptr.is_null() && dirty_count > 0 {
+            md_free_dirty_rects(dirty_ptr as *mut i32, dirty_count);
+        }
+        md_document_release(ptr);
+    }
+
+    #[test]
+    fn test_inline_math_in_paragraph() {
+        let content = "爱因斯坦方程 $E=mc^2$ 很著名";
+
+        let ptr = md_document_create(
+            content.as_ptr() as *const c_char,
+            content.len(),
+        );
+        assert!(!ptr.is_null());
+
+        let mut commands_ptr: *const RenderCommand = std::ptr::null();
+        let mut count: usize = 0;
+        let mut dirty_ptr: *const i32 = std::ptr::null();
+        let mut dirty_count: usize = 0;
+
+        let result = md_document_load_range(
+            ptr,
+            0,
+            10,
+            &mut commands_ptr as *mut _ as *mut _,
+            &mut count as *mut _ as *mut _,
+            &mut dirty_ptr as *mut _ as *mut _,
+            &mut dirty_count as *mut _ as *mut _,
+        );
+
+        assert_eq!(result, 0);
+
+        let commands = unsafe { std::slice::from_raw_parts(commands_ptr, count) };
+
+        // 应该有文本和数学公式占位符
+        let text_count = commands.iter()
+            .filter(|cmd| cmd.cmd_type == render::commands::RenderCommandType::DrawText)
+            .count();
+
+        assert!(text_count >= 2, "应该至少有 2 个文本命令（普通文本和数学公式占位符）");
+
+        // 清理
+        if !commands_ptr.is_null() && count > 0 {
+            md_free_commands(commands_ptr as *mut RenderCommand, count);
+        }
+        if !dirty_ptr.is_null() && dirty_count > 0 {
+            md_free_dirty_rects(dirty_ptr as *mut i32, dirty_count);
+        }
+        md_document_release(ptr);
+    }
 }
 
 // 启用功能时强制包含 JNI 模块

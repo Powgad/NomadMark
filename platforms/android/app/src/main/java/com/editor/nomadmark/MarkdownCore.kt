@@ -94,22 +94,6 @@ object MarkdownCore {
      * 获取目录条目。
      *
      * @param handle 文档句柄
-     * @param outEntries 接收 [条目指针，计数] 的输出数组
-     * @return 成功时返回 0，失败时返回 -1
-     */
-    external fun nativeGetToc(
-        handle: Long,
-        outEntries: LongArray
-    ): Int
-
-    // =========================================================================
-    // 目录
-    // =========================================================================
-
-    /**
-     * 获取文档目录。
-     *
-     * @param handle 文档句柄
      * @return 目录条目数组（标题级别、标题、位置）
      */
     external fun nativeGetToc(handle: Long): Array<TocEntry>
@@ -180,6 +164,15 @@ object MarkdownCore {
      * @param len 命令数量
      */
     external fun nativeFreeCommands(ptr: Long, len: Int)
+
+    /**
+     * 从 Rust 分配的内存读取字节数组。
+     *
+     * @param ptr Rust 内存指针
+     * @param size 要读取的字节数
+     * @return 字节数组
+     */
+    external fun nativeReadBytes(ptr: Long, size: Int): ByteArray
 
     /**
      * 释放由 Rust 分配的目录条目。

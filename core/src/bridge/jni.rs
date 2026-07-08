@@ -461,6 +461,28 @@ pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeSearch(
     0
 }
 
+/// JNI: Java_com_editor_nomadmark_MarkdownCore_nativeReadBytes
+/// 从 Rust 分配的内存读取字节数组
+#[cfg(feature = "jni")]
+#[no_mangle]
+pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeReadBytes(
+    mut env: JNIEnv,
+    _class: jobject,
+    ptr: jlong,
+    size: jint,
+) -> jbyteArray {
+    if ptr == 0 || size <= 0 {
+        return env.new_byte_array(0).unwrap();
+    }
+
+    unsafe {
+        let bytes = std::slice::from_raw_parts(ptr as *const u8, size as usize);
+        let jbyte_array = env.new_byte_array(size).unwrap();
+        env.set_byte_array_region(&jbyte_array, 0, bytes).unwrap();
+        jbyte_array
+    }
+}
+
 /// JNI: Java_com_editor_nomadmark_MarkdownCore_00024NativeRenderCommands_nativeRelease
 /// 用于 NativeRenderCommands
 #[cfg(feature = "jni")]

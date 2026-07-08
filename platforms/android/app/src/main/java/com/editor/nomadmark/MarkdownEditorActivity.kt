@@ -32,6 +32,8 @@ import android.graphics.Color
 import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
 import io.noties.markwon.ext.tables.TablePlugin
 import io.noties.markwon.ext.tasklist.TaskListPlugin
+import io.noties.markwon.ext.latex.JLatexMathPlugin
+import io.noties.markwon.inlineparser.MarkwonInlineParserPlugin
 import io.noties.markwon.image.ImagesPlugin
 import android.text.Spanned
 import android.text.style.URLSpan
@@ -120,6 +122,7 @@ class MarkdownEditorActivity : android.app.Activity() {
     private lateinit var btnQuote: Button
     private lateinit var btnTable: Button
     private lateinit var btnHr: Button
+    private lateinit var btnFormula: Button
 
     // 目录面板
     private lateinit var tocPanel: FrameLayout
@@ -261,6 +264,15 @@ class MarkdownEditorActivity : android.app.Activity() {
             .usePlugin(TablePlugin.create(this))
             .usePlugin(TaskListPlugin.create(this))
             .usePlugin(ImagesPlugin.create())
+            // 添加行内解析器（支持行内数学公式）
+            .usePlugin(MarkwonInlineParserPlugin.create())
+            // 数学公式渲染（JLatexMath）
+            .usePlugin(JLatexMathPlugin.create(14f, object : JLatexMathPlugin.BuilderConfigure {
+                override fun configureBuilder(builder: JLatexMathPlugin.Builder) {
+                    // 启用行内公式（需要 $$...$$ 语法）
+                    builder.inlinesEnabled(true)
+                }
+            }))
             // 添加自定义主题配置，移除标题下划线和链接下划线
             .usePlugin(object : AbstractMarkwonPlugin() {
                 override fun configureTheme(builder: MarkwonTheme.Builder) {
@@ -411,6 +423,7 @@ class MarkdownEditorActivity : android.app.Activity() {
         btnQuote = findViewById(R.id.btn_quote)
         btnTable = findViewById(R.id.btn_table)
         btnHr = findViewById(R.id.btn_hr)
+        btnFormula = findViewById(R.id.btn_formula)
 
         // 目录
         tocPanel = findViewById(R.id.toc_panel)
@@ -540,6 +553,7 @@ class MarkdownEditorActivity : android.app.Activity() {
         btnQuote.setOnClickListener { insertLine("> ") }
         btnTable.setOnClickListener { insertTable() }
         btnHr.setOnClickListener { insertLine("---\n") }
+        btnFormula.setOnClickListener { insertFormula() }
 
         // 目录关闭
         tocCloseArea.setOnClickListener { toggleToc() }
@@ -552,13 +566,50 @@ class MarkdownEditorActivity : android.app.Activity() {
     private fun handleOpenIntent(intent: Intent?) {
         val extras = intent?.extras
         val path = extras?.getString("file_path")
+        val openSample = extras?.getBoolean("open_sample", false) ?: false
 
-        if (!path.isNullOrEmpty()) {
+        if (openSample) {
+            // 打开示例文件
+            loadAssetSample()
+        } else if (!path.isNullOrEmpty()) {
             filePath = path
             fileName = File(path).nameWithoutExtension
             loadFile(path)
         } else {
             // 创建新文件
+            createNewFile()
+        }
+    }
+
+    /**
+     * 加载 assets 中的示例文件
+     */
+    private fun loadAssetSample() {
+        try {
+            val content = assets.open("math-formulas-example.md").bufferedReader().use { it.readText() }
+            editorText.setText(content)
+            splitEditorText.setText(content)
+            lastSavedContent = content
+            isModified = false
+            updateSaveButton()
+
+            // 示例文件特殊标识
+            fileName = "数学公式示例"
+            textFilename.text = "数学公式示例 (只读)"
+
+            // 禁用保存按钮（示例文件不可保存）
+            btnSave.isEnabled = false
+            btnSave.alpha = 0.5f
+
+            // 清空撤销重做栈并保存初始状态
+            undoStack.clear()
+            redoStack.clear()
+            undoStack.add(content)
+
+            Log.d("MarkdownEditorActivity", "Loaded asset sample, size: ${content.length}")
+        } catch (e: Exception) {
+            Log.e("MarkdownEditorActivity", "Failed to load asset sample", e)
+            Toast.makeText(this, "加载示例文件失败: ${e.message}", Toast.LENGTH_LONG).show()
             createNewFile()
         }
     }
@@ -1353,6 +1404,26 @@ class MarkdownEditorActivity : android.app.Activity() {
         val table = "| 列1 | 列2 | 列3 |\n|-----|-----|-----|\n| 内容1 | 内容2 | 内容3 |\n"
         editor.text.insert(position, table)
         markAsModified()
+    }
+
+    private fun insertFormula() {
+        // 弹出对话框让用户选择行内公式还是块级公式
+        val options = arrayOf("行内公式 $...$", "块级公式 $$...$$")
+        AlertDialog.Builder(this)
+            .setTitle("选择公式类型")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> insertMarkdown("$", "$")  // 行内公式
+                    1 -> {  // 块级公式
+                        val editor = getCurrentEditor()
+                        val position = editor.selectionStart
+                        editor.text.insert(position, "$$\n\n$$\n")
+                        editor.setSelection(position + 3)
+                        markAsModified()
+                    }
+                }
+            }
+            .show()
     }
 
     private fun changeHeading(delta: Int) {

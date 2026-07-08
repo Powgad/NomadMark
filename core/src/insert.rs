@@ -10,7 +10,6 @@
 // - insert_code/code_block: 代码插入
 // - insert_link/image: 链接和图片
 // - insert_list: 无序/有序/任务列表
-// - insert_quote: 引用块
 // - insert_table: 表格
 // - insert_horizontal_rule: 水平分隔线
 // =============================================================================
@@ -175,36 +174,6 @@ pub fn insert_task_list(items: &[(bool, &str)]) -> String {
         + "\n"
 }
 
-/// 插入引用块
-///
-/// # 参数
-/// - `text`: 被引用的文本
-///
-/// # 示例
-/// ```
-/// assert_eq!(insert_quote("引用文本"), "> 引用文本\n");
-/// ```
-pub fn insert_quote(text: &str) -> String {
-    format!("> {}\n", text)
-}
-
-/// 插入多行引用块
-///
-/// # 参数
-/// - `lines`: 引用文本行数组
-///
-/// # 示例
-/// ```
-/// assert_eq!(insert_quote_multiline(&["第一行", "第二行"]), "> 第一行\n> 第二行\n");
-/// ```
-pub fn insert_quote_multiline(lines: &[&str]) -> String {
-    lines.iter()
-        .map(|line| format!("> {}", line))
-        .collect::<Vec<_>>()
-        .join("\n")
-        + "\n"
-}
-
 /// 插入表格
 ///
 /// # 参数
@@ -315,13 +284,7 @@ mod tests {
         assert_eq!(insert_task_list(&[(true, "完成"), (false, "未完成")]), "[x] 完成\n[ ] 未完成\n");
     }
 
-    #[test]
-    fn test_quote() {
-        assert_eq!(insert_quote("文本"), "> 文本\n");
-        assert_eq!(insert_quote_multiline(&["A", "B"]), "> A\n> B\n");
-    }
-
-    #[test]
+#[test]
     fn test_table() {
         let headers = vec!["列A", "列B"];
         let rows = vec![vec!["1", "2"]];

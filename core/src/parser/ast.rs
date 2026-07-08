@@ -29,10 +29,6 @@ pub enum BlockNode {
         language: Option<String>,
         content: String,
     },
-    /// 引用块
-    BlockQuote {
-        children: Vec<BlockNode>,
-    },
     /// 有序或无序列表
     List {
         ordered: bool,
@@ -56,6 +52,15 @@ pub enum BlockNode {
         label: String,
         dest: String,
         title: Option<String>,
+    },
+    /// 引用块（blockquote）
+    Blockquote {
+        level: u8,
+        children: Vec<BlockNode>,
+    },
+    /// 数学公式块（块级显示）
+    MathBlock {
+        latex: String,
     },
 }
 
@@ -143,6 +148,11 @@ pub enum InlineNode {
     },
     /// HTML
     Html(String),
+    /// 行内数学公式
+    Math {
+        display_mode: bool,  // true = 块级显示, false = 行内显示
+        latex: String,
+    },
 }
 
 impl InlineNode {
@@ -160,6 +170,7 @@ impl InlineNode {
                 children.iter().map(|c| c.text_content()).collect()
             }
             InlineNode::Code(s) | InlineNode::Html(s) => s.clone(),
+            InlineNode::Math { latex, .. } => latex.clone(),
         }
     }
 
@@ -176,6 +187,7 @@ impl InlineNode {
                 children.iter().all(|c| c.is_empty())
             }
             InlineNode::Code(s) | InlineNode::Html(s) => s.is_empty(),
+            InlineNode::Math { latex, .. } => latex.is_empty(),
         }
     }
 }
