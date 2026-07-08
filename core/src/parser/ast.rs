@@ -9,6 +9,85 @@
 use std::collections::HashMap;
 
 // -----------------------------------------------------------------------------
+// Callout 类型
+// -----------------------------------------------------------------------------
+
+/// Callout 提示块类型
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CalloutKind {
+    /// 信息提示 (ℹ️)
+    Info,
+    /// 警告 (⚠️)
+    Warning,
+    /// 注意 (📝)
+    Note,
+    /// 提示 (💡)
+    Tip,
+    /// 重要 (❗)
+    Important,
+    /// 危险 (⛔)
+    Caution,
+    /// 成功 (✅)
+    Success,
+}
+
+impl CalloutKind {
+    /// 从字符串解析 Callout 类型
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "info" | "ℹ️" => Some(CalloutKind::Info),
+            "warning" | "warn" | "⚠️" => Some(CalloutKind::Warning),
+            "note" | "备忘" | "📝" => Some(CalloutKind::Note),
+            "tip" | "hint" | "提示" | "💡" => Some(CalloutKind::Tip),
+            "important" | "重要" | "❗" => Some(CalloutKind::Important),
+            "caution" | "danger" | "危险" | "⛔" => Some(CalloutKind::Caution),
+            "success" | "成功" | "✅" => Some(CalloutKind::Success),
+            _ => None,
+        }
+    }
+
+    /// 获取默认标题
+    pub fn default_title(&self) -> &'static str {
+        match self {
+            CalloutKind::Info => "信息",
+            CalloutKind::Warning => "警告",
+            CalloutKind::Note => "注意",
+            CalloutKind::Tip => "提示",
+            CalloutKind::Important => "重要",
+            CalloutKind::Caution => "危险",
+            CalloutKind::Success => "成功",
+        }
+    }
+
+    /// 获取图标（Unicode 字符）
+    pub fn icon(&self) -> &'static str {
+        match self {
+            CalloutKind::Info => "ℹ️",
+            CalloutKind::Warning => "⚠️",
+            CalloutKind::Note => "📝",
+            CalloutKind::Tip => "💡",
+            CalloutKind::Important => "❗",
+            CalloutKind::Caution => "⛔",
+            CalloutKind::Success => "✅",
+        }
+    }
+
+    /// 获取 E-ink 友好的颜色（灰度）
+    pub fn border_color(&self) -> (u8, u8, u8) {
+        // 所有颜色使用深灰，确保 E-ink 显示
+        match self {
+            CalloutKind::Info => (100, 100, 100),
+            CalloutKind::Warning => (80, 80, 80),
+            CalloutKind::Note => (120, 120, 120),
+            CalloutKind::Tip => (90, 90, 90),
+            CalloutKind::Important => (60, 60, 60),
+            CalloutKind::Caution => (50, 50, 50),
+            CalloutKind::Success => (70, 70, 70),
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
 // 块级节点
 // -----------------------------------------------------------------------------
 
@@ -62,6 +141,14 @@ pub enum BlockNode {
     MathBlock {
         latex: String,
     },
+    /// Callout 提示块
+    Callout {
+        kind: CalloutKind,
+        title: Option<String>,
+        children: Vec<BlockNode>,
+    },
+    /// 目录（TOC）
+    TableOfContents,
 }
 
 impl BlockNode {
@@ -153,6 +240,14 @@ pub enum InlineNode {
         display_mode: bool,  // true = 块级显示, false = 行内显示
         latex: String,
     },
+    /// 下划线文本
+    Underline {
+        children: Vec<InlineNode>,
+    },
+    /// 高亮文本（类似荧光笔效果）
+    Highlight {
+        children: Vec<InlineNode>,
+    },
 }
 
 impl InlineNode {
@@ -166,7 +261,9 @@ impl InlineNode {
             | InlineNode::Strong { children }
             | InlineNode::Strikethrough { children }
             | InlineNode::Link { children, .. }
-            | InlineNode::Image { alt: children, .. } => {
+            | InlineNode::Image { alt: children, .. }
+            | InlineNode::Underline { children }
+            | InlineNode::Highlight { children } => {
                 children.iter().map(|c| c.text_content()).collect()
             }
             InlineNode::Code(s) | InlineNode::Html(s) => s.clone(),
@@ -183,7 +280,9 @@ impl InlineNode {
             | InlineNode::Strong { children }
             | InlineNode::Strikethrough { children }
             | InlineNode::Link { children, .. }
-            | InlineNode::Image { alt: children, .. } => {
+            | InlineNode::Image { alt: children, .. }
+            | InlineNode::Underline { children }
+            | InlineNode::Highlight { children } => {
                 children.iter().all(|c| c.is_empty())
             }
             InlineNode::Code(s) | InlineNode::Html(s) => s.is_empty(),

@@ -16,6 +16,7 @@
 use crate::bridge::types::{QuantizedRect, Color, FontSpec, FontFamily, SCREEN_WIDTH, SCREEN_HEIGHT};
 use crate::parser::ast::{BlockNode, InlineNode};
 use crate::render::commands::{RenderCommand, RenderResult};
+use crate::syntax::CodeHighlighter;
 use lru::LruCache;
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
@@ -311,6 +312,12 @@ impl Layouter {
             BlockNode::MathBlock { latex } => {
                 self.layout_math_block(latex, &mut result);
             }
+            BlockNode::Callout { kind, title, children } => {
+                self.layout_callout(kind, title.as_deref(), children, &mut result);
+            }
+            BlockNode::TableOfContents => {
+                self.layout_toc(&mut result);
+            }
             _ => {
                 // 其他块类型的占位符
             }
@@ -519,8 +526,8 @@ impl Layouter {
         }
     }
 
-    /// 布局代码块
-    fn layout_code_block(&mut self, _language: &Option<String>, content: &str, result: &mut RenderResult) {
+    /// 布局代码块（支持语法高亮）
+    fn layout_code_block(&mut self, language: &Option<String>, content: &str, result: &mut RenderResult) {
         let font = FontSpec {
             family: FontFamily::Mono,
             size_pt: 12.0,
@@ -535,27 +542,65 @@ impl Layouter {
         let line_count = content.lines().count() as f32;
         let block_height = line_count * self.current_line_height;
 
+        // E-ink 友好的浅灰背景
+        let bg_color = Color::rgb(245, 245, 245);
         result.push(RenderCommand::fill_rect(
             self.config.margin_left,
             self.cursor_y,
             self.config.content_width(),
             block_height,
-            Color::rgb(245, 245, 245),
+            bg_color,
         ));
 
-        // 绘制每一行
+        // 使用语法高亮器
+        let highlighter = CodeHighlighter::new();
+        let theme = highlighter.theme();
+
+        // 获取高亮 token
+        let lang_str = language.as_deref();
+        let tokens = highlighter.highlight(content, lang_str);
+
+        // 逐行渲染高亮代码
+        let mut char_offset = 0;
+        let base_x = self.cursor_x + 8.0;
+        let mut y = self.cursor_y + metrics.ascent;
+
         for line in content.lines() {
-            result.push(RenderCommand::draw_text(
-                self.cursor_x + 8.0,
-                self.cursor_y + metrics.ascent,
-                line,
-                font,
-                Color::rgb(40, 40, 40),
-            ));
-            self.new_line();
+            let mut x = base_x;
+
+            // 渲染该行的每个 token
+            for token in &tokens {
+                // 只处理当前行的 token
+                if token.offset < char_offset || token.offset >= char_offset + line.len() {
+                    continue;
+                }
+
+                // 获取 token 颜色
+                let color = theme.color_for_token(token.token_type.color_name());
+
+                // 渲染 token 文本
+                if !token.text.is_empty() {
+                    result.push(RenderCommand::draw_text(
+                        x,
+                        y,
+                        &token.text,
+                        font,
+                        color,
+                    ));
+
+                    // 计算下一个 token 的 x 位置（简化：使用字符数）
+                    // 在实际实现中，应该使用字形度量
+                    x += token.text.len() as f32 * font.size_pt * 0.6;
+                }
+            }
+
+            // 移动到下一行
+            y += self.current_line_height;
+            char_offset += line.len() + 1; // +1 for newline
         }
 
-        self.cursor_y += self.config.paragraph_spacing;
+        // 更新光标位置
+        self.cursor_y += block_height + self.config.paragraph_spacing;
     }
 
     /// 布局列表
@@ -640,6 +685,149 @@ impl Layouter {
         self.cursor_y += bg_height + 8.0;  // 下边距
 
         layout_log!("  💬 Blockquote AFTER: cursor_y={}", self.cursor_y);
+    }
+
+    /// 布局 Callout 提示块
+    fn layout_callout(&mut self, kind: &crate::parser::CalloutKind, title: Option<&str>, _children: &[BlockNode], result: &mut RenderResult) {
+        layout_log!("  📋 Callout kind={:?} BEFORE: cursor_y={}", kind, self.cursor_y);
+
+        let font = FontSpec {
+            family: FontFamily::Sans,
+            size_pt: 14.0,
+            bold: true,
+            italic: false,
+        };
+
+        let body_font = FontSpec {
+            family: FontFamily::Sans,
+            size_pt: 14.0,
+            bold: false,
+            italic: false,
+        };
+
+        let metrics = self.get_font_metrics(font);
+        let body_metrics = self.get_font_metrics(body_font);
+
+        // 估算高度（简化：标题 + 2行内容）
+        let title_height = metrics.line_height;
+        let content_height = body_metrics.line_height * 2.0;
+        let total_height = title_height + content_height + 16.0; // + padding
+
+        // 获取 Callout 类型的颜色
+        let border_color = kind.border_color();
+
+        // 绘制背景（浅灰）
+        result.push(RenderCommand::fill_rect(
+            self.config.margin_left,
+            self.cursor_y,
+            self.config.content_width(),
+            total_height,
+            Color::rgb(250, 250, 250),
+        ));
+
+        // 绘制左边框（4px）
+        result.push(RenderCommand::fill_rect(
+            self.config.margin_left,
+            self.cursor_y,
+            4.0,
+            total_height,
+            Color::rgb(border_color.0, border_color.1, border_color.2),
+        ));
+
+        // 绘制图标和标题
+        let icon = kind.icon();
+        let title_text = title.unwrap_or(kind.default_title());
+
+        // 图标
+        let icon_x = self.config.margin_left + 12.0;
+        let icon_y = self.cursor_y + metrics.ascent;
+        result.push(RenderCommand::draw_text(
+            icon_x,
+            icon_y,
+            icon,
+            font,
+            Color::rgb(60, 60, 60),
+        ));
+
+        // 标题
+        let title_x = icon_x + 24.0;
+        let title_y = self.cursor_y + metrics.ascent;
+        result.push(RenderCommand::draw_text(
+            title_x,
+            title_y,
+            title_text,
+            font,
+            Color::rgb(60, 60, 60),
+        ));
+
+        // 移动光标
+        self.cursor_y += total_height + self.config.paragraph_spacing;
+
+        layout_log!("  📋 Callout AFTER: cursor_y={}", self.cursor_y);
+    }
+
+    /// 布局目录（TOC）
+    fn layout_toc(&mut self, result: &mut RenderResult) {
+        layout_log!("  📑 TOC BEFORE: cursor_y={}", self.cursor_y);
+
+        let font = FontSpec {
+            family: FontFamily::Sans,
+            size_pt: 14.0,
+            bold: false,
+            italic: false,
+        };
+
+        let metrics = self.get_font_metrics(font);
+
+        // 绘制目录标题
+        let title_font = FontSpec {
+            family: FontFamily::Sans,
+            size_pt: 16.0,
+            bold: true,
+            italic: false,
+        };
+
+        let title_metrics = self.get_font_metrics(title_font);
+        result.push(RenderCommand::draw_text(
+            self.config.margin_left,
+            self.cursor_y + title_metrics.ascent,
+            "目录",
+            title_font,
+            Color::rgb(0, 0, 0),
+        ));
+
+        self.cursor_y += title_metrics.line_height + 8.0;
+
+        // 绘制背景
+        result.push(RenderCommand::fill_rect(
+            self.config.margin_left,
+            self.cursor_y,
+            self.config.content_width(),
+            metrics.line_height * 3.0, // 简化：显示3个条目
+            Color::rgb(245, 245, 245),
+        ));
+
+        // 绘制示例条目（简化实现）
+        let toc_items = vec![
+            ("  • 第一章", Color::rgb(60, 60, 60)),
+            ("    • 1.1 小节", Color::rgb(100, 100, 100)),
+            ("  • 第二章", Color::rgb(60, 60, 60)),
+        ];
+
+        for (item, color) in toc_items {
+            result.push(RenderCommand::draw_text(
+                self.config.margin_left + 8.0,
+                self.cursor_y + metrics.ascent,
+                item,
+                font,
+                color,
+            ));
+            self.cursor_y += metrics.line_height;
+        }
+
+        self.cursor_y += self.config.paragraph_spacing;
+
+        layout_log!("  📑 TOC AFTER: cursor_y={}", self.cursor_y);
     }
 
     /// 布局分割线

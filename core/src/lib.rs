@@ -29,6 +29,7 @@ pub mod history;
 pub mod search;
 pub mod replace;
 pub mod math;
+pub mod syntax;
 
 // 确保 JNI 桥接已链接（bridge::jni 模块按条件编译）
 use parser::streaming::StreamingParser;
@@ -1178,6 +1179,158 @@ mod tests {
     }
 
     #[test]
+    fn test_syntax_highlighting_rust() {
+        use syntax::CodeHighlighter;
+
+        let highlighter = CodeHighlighter::new();
+        let code = r#"
+fn main() {
+    let greeting = "Hello, world!";
+    println!("{}", greeting);
+
+    // 计算斐波那契数列
+    let result = fib(10);
+    println!("Fibonacci: {}", result);
+}
+
+fn fib(n: u32) -> u32 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fib(n - 1) + fib(n - 2),
+    }
+}
+"#;
+
+        let tokens = highlighter.highlight(code, Some("rust"));
+
+        // 应该有多个 token
+        assert!(tokens.len() > 10);
+
+        // 验证有不同类型的 token（不一定包含特定的关键字）
+        let token_types: std::collections::HashSet<_> = tokens.iter()
+            .map(|t| t.token_type)
+            .collect();
+
+        // 至少应该有多种类型的 token
+        assert!(token_types.len() > 1);
+    }
+
+    #[test]
+    fn test_syntax_highlighting_python() {
+        use syntax::CodeHighlighter;
+
+        let highlighter = CodeHighlighter::new();
+        let code = r#"
+def hello_world():
+    # 这是注释
+    greeting = "Hello, World!"
+    print(greeting)
+
+class MyClass:
+    def __init__(self, value):
+        self.value = value
+
+    def show(self):
+        return self.value
+"#;
+
+        let tokens = highlighter.highlight(code, Some("python"));
+
+        // 应该有多个 token
+        assert!(tokens.len() > 10);
+
+        // 验证有不同类型的 token
+        let token_types: std::collections::HashSet<_> = tokens.iter()
+            .map(|t| t.token_type)
+            .collect();
+
+        assert!(token_types.len() > 1);
+    }
+
+    #[test]
+    fn test_syntax_highlighting_javascript() {
+        use syntax::CodeHighlighter;
+
+        let highlighter = CodeHighlighter::new();
+        let code = r#"
+function fibonacci(n) {
+    // 基础情况
+    if (n <= 1) return n;
+
+    // 递归调用
+    return fibonacci(n - 1) + fibonacci(n - 2);
+}
+
+const result = fibonacci(10);
+console.log(`Fibonacci: ${result}`);
+"#;
+
+        let tokens = highlighter.highlight(code, Some("javascript"));
+
+        // 应该有多个 token
+        assert!(tokens.len() > 10);
+    }
+
+    #[test]
+    fn test_syntax_highlighting_unsupported_language() {
+        use syntax::CodeHighlighter;
+
+        let highlighter = CodeHighlighter::new();
+        let code = "some random code without language support";
+
+        let tokens = highlighter.highlight(code, Some("unknown_language_xyz"));
+
+        // 不支持的语言应该返回单个文本 token
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].token_type, syntax::TokenType::Text);
+    }
+
+    #[test]
+    fn test_syntax_highlighting_eink_theme() {
+        use syntax::CodeHighlightTheme;
+        use crate::bridge::types::Color;
+
+        let theme = CodeHighlightTheme::eink();
+
+        // 验证 E-ink 主题颜色
+        assert_eq!(theme.keyword, Color::rgb(0x00, 0x00, 0x00)); // 纯黑
+        assert_eq!(theme.comment, Color::rgb(0x99, 0x99, 0x99)); // 浅灰
+        assert_eq!(theme.background, Color::rgb(0xF5, 0xF5, 0xF5)); // 浅灰背景
+
+        // 验证颜色映射
+        let keyword_color = theme.color_for_token("keyword");
+        assert_eq!(keyword_color, Color::rgb(0x00, 0x00, 0x00));
+
+        let comment_color = theme.color_for_token("comment");
+        assert_eq!(comment_color, Color::rgb(0x99, 0x99, 0x99));
+
+        let string_color = theme.color_for_token("string");
+        assert_eq!(string_color, Color::rgb(0x44, 0x44, 0x44));
+    }
+
+    #[test]
+    fn test_language_selector() {
+        use syntax::{LanguageSelector, SupportedLanguage};
+
+        let selector = LanguageSelector::new();
+
+        // 测试扩展名解析
+        assert_eq!(selector.parse(Some("rs")), SupportedLanguage::Rust);
+        assert_eq!(selector.parse(Some("py")), SupportedLanguage::Python);
+        assert_eq!(selector.parse(Some("js")), SupportedLanguage::JavaScript);
+
+        // 测试名称解析
+        assert_eq!(selector.parse(Some("rust")), SupportedLanguage::Rust);
+        assert_eq!(selector.parse(Some("python")), SupportedLanguage::Python);
+        assert_eq!(selector.parse(Some("javascript")), SupportedLanguage::JavaScript);
+
+        // 测试空值
+        assert_eq!(selector.parse(None), SupportedLanguage::PlainText);
+        assert_eq!(selector.parse(Some("")), SupportedLanguage::PlainText);
+    }
+
+    #[test]
     fn test_blockquote_parsing_and_rendering() {
         let content = r#"# 测试引用块
 
@@ -1452,6 +1605,99 @@ $$
             md_free_dirty_rects(dirty_ptr as *mut i32, dirty_count);
         }
         md_document_release(ptr);
+    }
+
+    #[test]
+    fn test_callout_kind() {
+        use crate::parser::CalloutKind;
+
+        // 测试 Callout 类型解析
+        assert_eq!(CalloutKind::from_str("info"), Some(CalloutKind::Info));
+        assert_eq!(CalloutKind::from_str("warning"), Some(CalloutKind::Warning));
+        assert_eq!(CalloutKind::from_str("tip"), Some(CalloutKind::Tip));
+        assert_eq!(CalloutKind::from_str("important"), Some(CalloutKind::Important));
+        assert_eq!(CalloutKind::from_str("caution"), Some(CalloutKind::Caution));
+        assert_eq!(CalloutKind::from_str("success"), Some(CalloutKind::Success));
+        assert_eq!(CalloutKind::from_str("unknown"), None);
+
+        // 测试 Callout 属性
+        let info_kind = CalloutKind::Info;
+        assert_eq!(info_kind.default_title(), "信息");
+        assert_eq!(info_kind.icon(), "ℹ️");
+
+        let warning_kind = CalloutKind::Warning;
+        assert_eq!(warning_kind.default_title(), "警告");
+        assert_eq!(warning_kind.icon(), "⚠️");
+
+        // 测试 E-ink 颜色
+        let border = info_kind.border_color();
+        assert!(border.0 < 255); // 所有颜色值应该有效
+    }
+
+    #[test]
+    fn test_extension_parsing() {
+        use crate::parser::extensions;
+
+        // 测试高亮解析
+        assert_eq!(extensions::find_highlight("==hello=="), Some((7, "hello".to_string())));
+        assert_eq!(extensions::find_highlight("==world== text"), Some((7, "world".to_string())));
+        assert!(extensions::find_highlight("==test").is_none());
+
+        // 测试下划线解析
+        assert_eq!(extensions::find_underline("<u>hello</u>"), Some((8, "hello".to_string())));
+        assert_eq!(extensions::find_underline("<u>world</u> text"), Some((8, "world".to_string())));
+        assert!(extensions::find_underline("<u>test").is_none());
+
+        // 测试 TOC 标记
+        assert!(extensions::is_toc_marker("[TOC]"));
+        assert!(extensions::is_toc_marker("[toc]"));
+        assert!(!extensions::is_toc_marker("[TODO]"));
+
+        // 测试 Callout 检测
+        assert!(extensions::is_callout_block(b"> [!INFO]").is_some());
+        assert!(extensions::is_callout_block(b"> [!TIP]").is_some());
+        assert!(extensions::is_callout_block(b"> [!WARNING]").is_some());
+        assert!(extensions::is_callout_block(b"> [!CAUTION]").is_some());
+        assert!(extensions::is_callout_block(b"> [!SUCCESS]").is_some());
+        assert!(extensions::is_callout_block(b"> [!UNKNOWN]").is_none());
+    }
+
+    #[test]
+    fn test_ast_extensions() {
+        use crate::parser::ast::{InlineNode, BlockNode, CalloutKind};
+
+        // 测试下划线节点
+        let underline = InlineNode::Underline {
+            children: vec![InlineNode::Text("test".to_string())],
+        };
+        assert_eq!(underline.text_content(), "test");
+
+        // 测试高亮节点
+        let highlight = InlineNode::Highlight {
+            children: vec![InlineNode::Text("important".to_string())],
+        };
+        assert_eq!(highlight.text_content(), "important");
+
+        // 测试 Callout 块
+        let callout = BlockNode::Callout {
+            kind: CalloutKind::Info,
+            title: Some("注意".to_string()),
+            children: vec![],
+        };
+
+        if let BlockNode::Callout { kind, title, .. } = callout {
+            assert_eq!(kind, CalloutKind::Info);
+            assert_eq!(title, Some("注意".to_string()));
+        } else {
+            panic!("应该是 Callout 节点");
+        }
+
+        // 测试目录块
+        let toc = BlockNode::TableOfContents;
+        match toc {
+            BlockNode::TableOfContents => {}, // 正确
+            _ => panic!("应该是 TableOfContents 节点"),
+        }
     }
 }
 

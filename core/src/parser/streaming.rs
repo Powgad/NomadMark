@@ -823,13 +823,13 @@ fn find_inline_math(text: &str) -> Option<(usize, usize)> {
 }
 
 /// 检测行是否为引用块行（以 > 开头）
-fn is_blockquote_line(line: &[u8]) -> bool {
+pub fn is_blockquote_line(line: &[u8]) -> bool {
     let trimmed = skip_leading_whitespace(line);
     !trimmed.is_empty() && trimmed[0] == b'>'
 }
 
 /// 计算引用块的嵌套层级
-fn count_blockquote_level(line: &[u8]) -> u8 {
+pub fn count_blockquote_level(line: &[u8]) -> u8 {
     let mut level = 0;
     let mut i = 0;
 

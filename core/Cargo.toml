@@ -26,6 +26,9 @@ font-types.workspace = true
 # Caching
 lru.workspace = true
 
+# Syntax highlighting
+syntect = "5.2"
+
 # Concurrency
 rayon.workspace = true
 
