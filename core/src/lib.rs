@@ -28,6 +28,7 @@ pub mod insert;
 pub mod history;
 pub mod search;
 pub mod replace;
+pub mod math;
 
 // 确保 JNI 桥接已链接（bridge::jni 模块按条件编译）
 use parser::streaming::StreamingParser;

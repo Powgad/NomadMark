@@ -14,6 +14,11 @@ name = "markdown_core"
 # Markdown parsing
 pulldown-cmark.workspace = true
 
+# Math formula rendering (RaTeX)
+ratex-types = "0.1"
+ratex-font = "0.1"
+ratex-svg = "0.1"
+
 # Text shaping & font handling
 rustybuzz.workspace = true
 font-types.workspace = true
