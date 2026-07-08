@@ -494,7 +494,7 @@ impl Layouter {
                         self.cursor_y,
                         text_width + 8.0,
                         math_height,
-                        Color::rgb(235, 245, 255),
+                        Color::rgb(240, 240, 240),  // 浅灰色背景（墨水屏友好）
                     ));
 
                     // 绘制占位符文本
@@ -507,7 +507,7 @@ impl Layouter {
                         },
                         &placeholder,
                         math_font,
-                        Color::rgb(0, 100, 200),
+                        Color::rgb(0, 0, 0),  // 黑色文字（墨水屏高对比度）
                     ));
 
                     self.cursor_x += text_width + 8.0;
@@ -676,13 +676,13 @@ impl Layouter {
         // 计算高度（数学公式通常比普通文本高）
         let formula_height = font_size * self.config.line_spacing * 2.0; // 2倍行高
 
-        // 绘制占位符背景（浅蓝色表示数学公式）
+        // 绘制占位符背景（浅灰色，墨水屏友好）
         result.push(RenderCommand::fill_rect(
             self.config.margin_left,
             self.cursor_y,
             self.config.content_width(),
             formula_height,
-            Color::rgb(235, 245, 255),  // 浅蓝色背景
+            Color::rgb(240, 240, 240),  // 浅灰色背景（墨水屏友好）
         ));
 
         // 绘制占位符文本
@@ -696,7 +696,7 @@ impl Layouter {
                 bold: false,
                 italic: true,  // 斜体表示数学公式
             },
-            Color::rgb(0, 100, 200),  // 深蓝色文字
+            Color::rgb(0, 0, 0),  // 黑色文字（墨水屏高对比度）
         ));
 
         self.cursor_y += formula_height + 8.0;  // 下边距
