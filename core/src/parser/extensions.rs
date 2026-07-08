@@ -10,7 +10,6 @@
 
 use super::ast::{InlineNode, BlockNode, CalloutKind};
 use crate::parser::streaming::{is_blockquote_line, count_blockquote_level};
-use std::collections::HashMap;
 
 /// 解析行内扩展语法（下划线、高亮）
 pub fn parse_inline_extensions(text: &str) -> Vec<InlineNode> {
@@ -149,7 +148,7 @@ pub fn is_callout_block(line: &[u8]) -> Option<CalloutKind> {
 /// ```
 pub fn parse_callout_block(lines: &[&str], kind: CalloutKind) -> BlockNode {
     // 跳过第一行的 [!TYPE] 标记
-    let content_lines: Vec<String> = lines.iter()
+    let _content_lines: Vec<String> = lines.iter()
         .skip(1)
         .map(|s| s.to_string())
         .collect();

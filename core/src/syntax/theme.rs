@@ -84,7 +84,7 @@ impl CodeHighlightTheme {
 
         match token_lower.as_str() {
             // 关键字
-            "keyword" | "keyword.control" | "keyword.declaration" | "keyword.operator" => self.keyword,
+            "keyword" | "keyword.control" | "keyword.declaration" => self.keyword,
 
             // 字符串
             "string" | "string.quoted" | "string.single" | "string.double" | "string.template" => self.string,
@@ -98,15 +98,12 @@ impl CodeHighlightTheme {
             // 变量
             "variable" | "variable.other" | "variable.parameter" => self.variable,
 
-            // 常量
-            "constant" | "constant.language" | "constant.numeric" | "constant.character" => self.constant,
+            // 常量（包括数字）
+            "constant" | "constant.language" | "constant.numeric" | "constant.character" | "constant.integer" | "constant.float" => self.constant,
 
             // 类型
             "entity.name.type" | "entity.name.class" | "entity.name.struct" | "entity.name.enum"
             | "storage.type" | "support.type" => self.type_name,
-
-            // 数字
-            "constant.numeric" | "constant.integer" | "constant.float" => self.number,
 
             // 操作符
             "keyword.operator" | "punctuation.operator" => self.operator,

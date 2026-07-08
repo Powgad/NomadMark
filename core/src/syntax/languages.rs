@@ -221,7 +221,8 @@ impl fmt::Display for SupportedLanguage {
 /// 语言选择器（用于匹配代码块语言标识符）
 #[derive(Debug, Clone)]
 pub struct LanguageSelector {
-    /// 语言列表
+    /// 语言列表（保留供未来扩展）
+    #[allow(dead_code)]
     languages: Vec<SupportedLanguage>,
 }
 
