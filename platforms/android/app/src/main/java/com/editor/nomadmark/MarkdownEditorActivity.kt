@@ -299,7 +299,7 @@ class MarkdownEditorActivity : android.app.Activity() {
             // 添加行内解析器（支持行内数学公式）
             .usePlugin(MarkwonInlineParserPlugin.create())
             // 数学公式渲染（JLatexMath）
-            .usePlugin(JLatexMathPlugin.create(14f, object : JLatexMathPlugin.BuilderConfigure {
+            .usePlugin(JLatexMathPlugin.create(32f, object : JLatexMathPlugin.BuilderConfigure {
                 override fun configureBuilder(builder: JLatexMathPlugin.Builder) {
                     // 启用行内公式（需要 $$...$$ 语法）
                     builder.inlinesEnabled(true)

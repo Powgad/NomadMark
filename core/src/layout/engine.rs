@@ -859,7 +859,7 @@ impl Layouter {
         // 简化实现：显示为占位符文本
         // 完整实现需要集成 LaTeX 渲染引擎
         let placeholder = format!("[公式: {}]", latex);
-        let font_size = 14.0;
+        let font_size = 18.0;  // 块级公式字体（原 14.0 → 16.0 → 18.0）
 
         // 计算高度（数学公式通常比普通文本高）
         let formula_height = font_size * self.config.line_spacing * 2.0; // 2倍行高
