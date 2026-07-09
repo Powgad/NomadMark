@@ -4,12 +4,14 @@ import android.app.AlertDialog
 import android.app.ProgressDialog
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.graphics.Typeface
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.text.Editable
 import android.text.Spannable
+import android.text.SpannableString
 import android.text.SpannableStringBuilder
 import android.text.TextWatcher
 import android.text.style.ForegroundColorSpan
@@ -62,6 +64,7 @@ class MarkdownEditorActivity : android.app.Activity() {
     // 顶部工具栏按钮
     private lateinit var btnBack: ImageButton
     private lateinit var btnToc: ImageButton
+    private lateinit var btnOpenFile: ImageButton
     private lateinit var textFilename: TextView
     private lateinit var btnPreviewToggle: ImageButton
     private lateinit var btnRevision: ImageButton
@@ -159,10 +162,33 @@ class MarkdownEditorActivity : android.app.Activity() {
     // private var useCoreSearch = false
 
     // =========================================================================
+    // 渲染引擎设置
+    // =========================================================================
+
+    /**
+     * 渲染引擎枚举
+     */
+    enum class RenderEngine {
+        /** Markwon 渲染引擎 */
+        MARKWON,
+        /** Rust Core 渲染引擎 */
+        RUST_CORE
+    }
+
+    /** 当前选择的渲染引擎 */
+    private var renderEngine: RenderEngine = RenderEngine.MARKWON
+
+    /** SharedPreferences 用于存储用户偏好 */
+    private lateinit var prefs: SharedPreferences
+
+    // =========================================================================
     // Markwon 渲染器
     // =========================================================================
 
     private lateinit var markwon: Markwon
+
+    /** Rust Core 文档句柄 */
+    private var rustCoreDocumentHandle: Long = 0L
 
     // =========================================================================
     // 状态变量
@@ -213,6 +239,12 @@ class MarkdownEditorActivity : android.app.Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_editor)
+
+        // 初始化 SharedPreferences
+        prefs = getSharedPreferences("NomadMarkPrefs", MODE_PRIVATE)
+
+        // 加载用户偏好设置
+        loadUserPreferences()
 
         // 初始化 Markwon 渲染器
         initMarkwon()
@@ -364,6 +396,7 @@ class MarkdownEditorActivity : android.app.Activity() {
         // 顶部工具栏
         btnBack = findViewById(R.id.btn_back)
         btnToc = findViewById(R.id.btn_toc)
+        btnOpenFile = findViewById(R.id.btn_open_file)
         textFilename = findViewById(R.id.text_filename)
         btnPreviewToggle = findViewById(R.id.btn_preview_toggle)
         btnRevision = findViewById(R.id.btn_revision)
@@ -510,6 +543,7 @@ class MarkdownEditorActivity : android.app.Activity() {
         // 顶部工具栏
         btnBack.setOnClickListener { finishWithSaveCheck() }
         btnToc.setOnClickListener { toggleToc() }
+        btnOpenFile.setOnClickListener { showOpenFileDialog() }
         // textFilename - 仅显示文件名，不可点击
         btnPreviewToggle.setOnClickListener { togglePreviewMode() }
         btnRevision.setOnClickListener { toggleRevisionMode() }
@@ -518,7 +552,7 @@ class MarkdownEditorActivity : android.app.Activity() {
         btnUndo.setOnClickListener { undo() }
         btnRedo.setOnClickListener { redo() }
         btnToolbarToggle.setOnClickListener { toggleBottomToolbar() }
-        // btnKeyboardSettings - 按键设置图标（功能待实现）
+        btnKeyboardSettings.setOnClickListener { showSettingsDialog() }
         btnSave.setOnClickListener { saveFile() }
 
         // 搜索栏
@@ -1519,16 +1553,30 @@ class MarkdownEditorActivity : android.app.Activity() {
     private fun updatePreview() {
         val content = getCurrentContent()
 
-        // 使用 Markwon 渲染 Markdown
-        if (isPreviewMode) {
-            markwon.setMarkdown(previewText, content)
-            // 移除下划线
-            removeUnderlines(previewText.text as Spanned)
-        }
-        if (isSplitMode) {
-            markwon.setMarkdown(splitPreviewText, content)
-            // 移除下划线
-            removeUnderlines(splitPreviewText.text as Spanned)
+        // 根据选择的渲染引擎进行渲染
+        when (renderEngine) {
+            RenderEngine.MARKWON -> {
+                // 使用 Markwon 渲染 Markdown
+                if (isPreviewMode) {
+                    markwon.setMarkdown(previewText, content)
+                    // 移除下划线
+                    removeUnderlines(previewText.text as Spanned)
+                }
+                if (isSplitMode) {
+                    markwon.setMarkdown(splitPreviewText, content)
+                    // 移除下划线
+                    removeUnderlines(splitPreviewText.text as Spanned)
+                }
+            }
+            RenderEngine.RUST_CORE -> {
+                // 使用 Rust Core 渲染 Markdown
+                if (isPreviewMode) {
+                    renderWithRustCore(content, previewText)
+                }
+                if (isSplitMode) {
+                    renderWithRustCore(content, splitPreviewText)
+                }
+            }
         }
     }
 
@@ -1810,5 +1858,353 @@ class MarkdownEditorActivity : android.app.Activity() {
 
             return view
         }
+    }
+
+    // =========================================================================
+    // 渲染引擎设置
+    // =========================================================================
+
+    /**
+     * 加载用户偏好设置
+     */
+    private fun loadUserPreferences() {
+        // 读取渲染引擎偏好，默认为 MARKWON
+        val engineName = prefs.getString("render_engine", "MARKWON") ?: "MARKWON"
+        renderEngine = try {
+            RenderEngine.valueOf(engineName)
+        } catch (e: IllegalArgumentException) {
+            RenderEngine.MARKWON
+        }
+
+        Log.d("MarkdownEditorActivity", "Loaded render engine: $renderEngine")
+    }
+
+    /**
+     * 保存用户偏好设置
+     */
+    private fun saveUserPreferences() {
+        prefs.edit()
+            .putString("render_engine", renderEngine.name)
+            .apply()
+
+        Log.d("MarkdownEditorActivity", "Saved render engine: $renderEngine")
+    }
+
+    /**
+     * 显示设置对话框
+     */
+    private fun showSettingsDialog() {
+        val engines = RenderEngine.entries.toTypedArray()
+        val engineNames = engines.map {
+            when (it) {
+                RenderEngine.MARKWON -> "Markwon (稳定)"
+                RenderEngine.RUST_CORE -> "Rust Core (实验性)"
+            }
+        }.toTypedArray()
+
+        val currentIndex = engines.indexOf(renderEngine)
+
+        AlertDialog.Builder(this)
+            .setTitle("选择渲染引擎")
+            .setSingleChoiceItems(engineNames, currentIndex) { dialog, which ->
+                // 保存选择
+                val selectedEngine = engines[which]
+                if (selectedEngine != renderEngine) {
+                    renderEngine = selectedEngine
+                    saveUserPreferences()
+
+                    // 刷新预览
+                    updatePreview()
+
+                    Toast.makeText(
+                        this,
+                        "已切换到 ${engineNames[which]}",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+                dialog.dismiss()
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    /**
+     * 使用 Rust Core 渲染 Markdown
+     */
+    private fun renderWithRustCore(content: String, textView: TextView) {
+        try {
+            // 释放之前的文档句柄
+            if (rustCoreDocumentHandle != 0L) {
+                MarkdownCore.nativeRelease(rustCoreDocumentHandle)
+                rustCoreDocumentHandle = 0L
+            }
+
+            // 创建新文档
+            rustCoreDocumentHandle = MarkdownCore.nativeCreate(content)
+
+            if (rustCoreDocumentHandle == 0L) {
+                // Rust Core 渲染失败，显示错误信息
+                textView.text = "Rust Core 渲染失败\n\n回退到 Markwon..."
+                Log.e("MarkdownEditorActivity", "Rust Core nativeCreate failed")
+                return
+            }
+
+            // 获取渲染命令
+            val outCommands = LongArray(2)      // [commands_ptr, commands_count]
+            val outDirtyRects = LongArray(8)    // [x, y, w, h, x, y, w, h]
+            val outTotalHeight = IntArray(1)   // [total_height]
+
+            val result = MarkdownCore.nativeLoadRange(
+                rustCoreDocumentHandle,
+                0,              // 从第 0 行开始
+                1000,           // 加载前 1000 行
+                outCommands,
+                outDirtyRects,
+                outTotalHeight
+            )
+
+            if (result == 0) {
+                val commandsPtr = outCommands[0]
+                val commandsCount = outCommands[1].toInt()
+
+                Log.d("MarkdownEditorActivity", "Rust Core rendered: commandsPtr=$commandsPtr, count=$commandsCount")
+
+                if (commandsPtr != 0L && commandsCount > 0) {
+                    // 将渲染命令转换为 SpannableString
+                    val spannable = convertCommandsToSpannable(commandsPtr, commandsCount)
+                    textView.text = spannable
+
+                    // 释放 Rust 分配的命令内存
+                    MarkdownCore.nativeFreeCommands(commandsPtr, commandsCount)
+                } else {
+                    // 没有渲染命令，显示原始内容
+                    textView.text = content
+                }
+            } else {
+                // 渲染失败
+                textView.text = "Rust Core 渲染失败 (错误代码: $result)\n\n$content"
+            }
+
+        } catch (e: Exception) {
+            Log.e("MarkdownEditorActivity", "Error rendering with Rust Core", e)
+            textView.text = "Rust Core 渲染异常: ${e.message}\n\n$content"
+        }
+    }
+
+    /**
+     * 将 Rust Core 渲染命令转换为 SpannableString
+     */
+    private fun convertCommandsToSpannable(commandsPtr: Long, commandsCount: Int): SpannableString {
+        // 读取命令数据
+        val commandSize = 48  // 每个命令 48 字节
+        val dataSize = commandsCount * commandSize
+        val bytes = MarkdownCore.nativeReadBytes(commandsPtr, dataSize)
+
+        // 构建纯文本内容（简化版本）
+        // 实际实现需要解析渲染命令并构建相应的 Span
+        val builder = StringBuilder()
+
+        // 临时实现：只提取文本命令的内容
+        java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.nativeOrder()).apply {
+            repeat(commandsCount) {
+                val cmdType = this.int
+                val x = this.float
+                val y = this.float
+                val width = this.float
+                val height = this.float
+                val color = this.int
+
+                when (cmdType) {
+                    0 -> {  // CMD_DRAW_TEXT
+                        val textPtr = this.long
+                        val textLen = this.int
+                        this.int  // 跳过 padding
+                        val fontSizePt = this.get().toInt()
+                        // 跳过剩余字节
+                        position(position() + 15)
+
+                        // 读取文本
+                        if (textPtr != 0L && textLen > 0) {
+                            val textBytes = MarkdownCore.nativeReadBytes(textPtr, textLen)
+                            val text = String(textBytes, Charsets.UTF_8)
+                            builder.append(text)
+                            // 添加换行（简化处理）
+                            builder.append("\n")
+                        }
+                    }
+                    else -> {
+                        // 跳过其他命令的 data 区域
+                        position(position() + 24)
+                    }
+                }
+            }
+        }
+
+        return SpannableString.valueOf(builder.toString())
+    }
+
+    // =========================================================================
+    // 文件打开功能
+    // =========================================================================
+
+    companion object {
+        private const val OPEN_FILE_REQUEST_CODE = 1001
+        private const val OPEN_SAMPLE_REQUEST_CODE = 1002
+    }
+
+    /**
+     * 显示打开文件对话框
+     */
+    private fun showOpenFileDialog() {
+        // 创建选择对话框
+        val options = arrayOf("选择文件", "打开测试文档")
+
+        AlertDialog.Builder(this)
+            .setTitle("打开文件")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> openFilePicker()
+                    1 -> openSampleDocument()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    /**
+     * 打开系统文件选择器
+     */
+    private fun openFilePicker() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "text/markdown"
+            // 也支持纯文本
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(
+                "text/markdown",
+                "text/plain",
+                "text/x-markdown"
+            ))
+        }
+        startActivityForResult(intent, OPEN_FILE_REQUEST_CODE)
+    }
+
+    /**
+     * 打开测试文档
+     */
+    private fun openSampleDocument() {
+        loadAssetSample()
+    }
+
+    /**
+     * 处理文件选择结果
+     */
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+
+        when (requestCode) {
+            OPEN_FILE_REQUEST_CODE -> {
+                if (resultCode == android.app.Activity.RESULT_OK && data != null) {
+                    data.data?.let { uri ->
+                        openFileFromUri(uri)
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 从 URI 打开文件
+     */
+    private fun openFileFromUri(uri: android.net.Uri) {
+        try {
+            // 请求持久化读取权限
+            contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+
+            // 读取文件内容
+            val content = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+
+            if (content != null) {
+                // 检查是否有未保存的修改
+                if (isModified) {
+                    showSaveBeforeOpenDialog(content, uri)
+                } else {
+                    loadContent(content, uri)
+                }
+            } else {
+                Toast.makeText(this, "无法读取文件", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: Exception) {
+            Log.e("MarkdownEditorActivity", "Error opening file", e)
+            Toast.makeText(this, "打开文件失败: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /**
+     * 在打开新文件前保存当前内容的对话框
+     */
+    private fun showSaveBeforeOpenDialog(newContent: String, uri: android.net.Uri) {
+        val displayName = fileName ?: "未命名.md"
+
+        AlertDialog.Builder(this)
+            .setTitle("保存修改？")
+            .setMessage("当前文档有未保存的修改，是否保存后打开新文件？")
+            .setPositiveButton("保存") { _, _ ->
+                saveFile()
+                loadContent(newContent, uri)
+            }
+            .setNegativeButton("放弃") { _, _ ->
+                loadContent(newContent, uri)
+            }
+            .setNeutralButton("取消", null)
+            .show()
+    }
+
+    /**
+     * 加载内容到编辑器
+     */
+    private fun loadContent(content: String, uri: android.net.Uri? = null) {
+        editorText.setText(content)
+        splitEditorText.setText(content)
+        lastSavedContent = content
+        isModified = false
+        updateSaveButton()
+
+        // 更新文件路径和名称
+        if (uri != null) {
+            filePath = uri.toString()
+            fileName = getFileNameFromUri(uri)
+            updateFilenameDisplay()
+        }
+
+        // 清空撤销重做栈并保存初始状态
+        undoStack.clear()
+        redoStack.clear()
+        undoStack.add(content)
+
+        Log.d("MarkdownEditorActivity", "Loaded file: $filePath, size: ${content.length}")
+    }
+
+    /**
+     * 从 URI 获取文件名
+     */
+    private fun getFileNameFromUri(uri: android.net.Uri): String {
+        var result = ""
+        if (uri.scheme == "content") {
+            contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (index >= 0) {
+                        result = cursor.getString(index)
+                    }
+                }
+            }
+        }
+        if (result.isEmpty()) {
+            result = uri.lastPathSegment ?: "未命名.md"
+        }
+        return result
     }
 }

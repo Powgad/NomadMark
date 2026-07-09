@@ -55,6 +55,18 @@
             android:scaleType="centerInside"
             android:padding="8dp" />
 
+        <!-- 2.5. 打开文件按钮 -->
+        <ImageButton
+            android:id="@+id/btn_open_file"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="2dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_open_file"
+            android:contentDescription="打开文件"
+            android:scaleType="centerInside"
+            android:padding="8dp" />
+
         <!-- 3. 文件名显示 -->
         <TextView
             android:id="@+id/text_filename"

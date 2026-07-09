@@ -16,9 +16,9 @@ use crate::bridge::types::TocEntry;
 
 // 编译此模块时始终包含 JNI
 #[cfg(feature = "jni")]
-use jni::sys::{jfloat, jint, jlong, jstring, jobject, jsize};
+use jni::sys::{jfloat, jint, jlong, jstring, jobject, jsize, jbyteArray, jlongArray, jintArray};
 #[cfg(feature = "jni")]
-use jni::{JNIEnv, objects::JString};
+use jni::{JNIEnv, objects::{JString, JLongArray, JIntArray}};
 
 // 简单的测试函数，用于验证 JNI 符号是否导出
 #[no_mangle]
@@ -357,16 +357,14 @@ pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeRenderToCanvas(
 #[cfg(feature = "jni")]
 #[no_mangle]
 pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeLoadRange(
-    _env: JNIEnv,
+    mut env: JNIEnv,
     _class: jobject,
     handle: jlong,
     start_line: jint,
     count: jint,
-    out_commands: jlong,
-    out_count: jint,
-    out_dirty_rects: jlong,
-    out_dirty_count: jint,
-    out_total_height: jlong,
+    out_commands: jlongArray,
+    out_dirty_rects: jlongArray,
+    out_total_height: jintArray,
 ) -> jint {
     if handle == 0 {
         return -1;
@@ -389,19 +387,29 @@ pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeLoadRange(
         );
 
         if result == 0 {
-            // 将输出值写入提供的指针（Kotlin 中的 LongArray）
-            if out_commands != 0 && out_count != 0 {
-                *(out_commands as *mut jlong) = commands_ptr as jlong;
-                *(out_count as *mut jint) = commands_count as jint;
-            }
-            if out_dirty_rects != 0 && out_dirty_count != 0 {
-                *(out_dirty_rects as *mut jlong) = dirty_ptr as jlong;
-                *(out_dirty_count as *mut jint) = dirty_count as jint;
-            }
-            // 估算总高度（目前每行 20px）
-            if out_total_height != 0 {
-                *(out_total_height as *mut jint) = (count * 20) as jint;
-            }
+            // 将输出值写入 Kotlin 数组
+            // out_commands: [commands_ptr, commands_count]
+            let commands_vals = [
+                commands_ptr as i64,
+                commands_count as i64,
+            ];
+            let commands_obj = JLongArray::from_raw(out_commands);
+            env.set_long_array_region(&commands_obj, 0, &commands_vals).unwrap();
+            std::mem::forget(commands_obj);
+
+            // out_dirty_rects: 目前为空（未使用）
+            let dirty_vals = [0i64, 0, 0, 0];
+            let dirty_obj = JLongArray::from_raw(out_dirty_rects);
+            env.set_long_array_region(&dirty_obj, 0, &dirty_vals).unwrap();
+            std::mem::forget(dirty_obj);
+
+            // out_total_height: [total_height]
+            let total_height = (count * 20) as jint;
+            let height_vals = [total_height];
+            let height_obj = JIntArray::from_raw(out_total_height);
+            env.set_int_array_region(&height_obj, 0, &height_vals).unwrap();
+            std::mem::forget(height_obj);
+
             0
         } else {
             -1
@@ -472,14 +480,17 @@ pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeReadBytes(
     size: jint,
 ) -> jbyteArray {
     if ptr == 0 || size <= 0 {
-        return env.new_byte_array(0).unwrap();
+        let arr = env.new_byte_array(0).unwrap();
+        return arr.into_raw();
     }
 
     unsafe {
         let bytes = std::slice::from_raw_parts(ptr as *const u8, size as usize);
         let jbyte_array = env.new_byte_array(size).unwrap();
-        env.set_byte_array_region(&jbyte_array, 0, bytes).unwrap();
-        jbyte_array
+        // 将 &[u8] 转换为 &[i8]
+        let bytes_i8: &[i8] = std::slice::from_raw_parts(bytes.as_ptr() as *const i8, bytes.len());
+        env.set_byte_array_region(&jbyte_array, 0, bytes_i8).unwrap();
+        jbyte_array.into_raw()
     }
 }
 

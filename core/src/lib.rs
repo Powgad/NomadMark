@@ -190,38 +190,18 @@ pub extern "C" fn md_document_create(
             Err(_) => return std::ptr::null_mut(),
         };
 
-        // 为 StreamingParser 创建临时文件
-        // (StreamingParser 需要文件路径用于 mmap)
-        use std::io::Write;
-        use std::time::{SystemTime, UNIX_EPOCH};
-
-        let temp_dir = std::env::temp_dir();
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let temp_file = temp_dir.join(format!("nomadmark_temp_{}.md", timestamp));
-
-        // 将内容写入临时文件
-        if let Ok(mut file) = std::fs::File::create(&temp_file) {
-            if file.write_all(bytes).is_ok() {
-                // 使用 StreamingParser 加载内容
-                match StreamingParser::new(&temp_file) {
-                    Ok(parser) => {
-                        // 删除临时文件（StreamingParser 已经 mmap 了它）
-                        let _ = std::fs::remove_file(&temp_file);
-                        let doc = Box::new(MarkdownDocument::from_streaming(parser));
-                        return Box::into_raw(doc);
-                    }
-                    Err(_) => {
-                        // 错误时清理
-                        let _ = std::fs::remove_file(&temp_file);
-                    }
-                }
+        // 方案 A：直接从内存解析，避免临时文件和 mmap
+        // 这解决了 Android 上临时目录和 mmap 的兼容性问题
+        match StreamingParser::from_bytes(bytes) {
+            Ok(parser) => {
+                let doc = Box::new(MarkdownDocument::from_streaming(parser));
+                return Box::into_raw(doc);
+            }
+            Err(_) => {
+                // 解析失败
+                return std::ptr::null_mut();
             }
         }
-
-        std::ptr::null_mut()
     }
 }
 

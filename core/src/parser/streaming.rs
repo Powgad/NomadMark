@@ -231,6 +231,8 @@ impl MmappedFile {
 pub struct StreamingParser {
     /// 内存映射文件（用于 >50MB 文件）
     mmap: Option<Arc<MmappedFile>>,
+    /// 原始字节存储（用于内存模式）
+    bytes_storage: Option<Vec<u8>>,
     /// 行索引
     line_index: LineIndex,
     /// 标题索引（用于目录）
@@ -255,10 +257,11 @@ impl StreamingParser {
 
         // 阶段 1：快速扫描以构建索引
         let (line_index, headings, refs, total_chars, total_lines) =
-            Self::quick_scan(mmap.clone(), total_size, &AtomicUsize::new(0))?;
+            Self::quick_scan_mmap(mmap.clone(), total_size, &AtomicUsize::new(0))?;
 
         Ok(Self {
             mmap: Some(mmap),
+            bytes_storage: None,
             line_index,
             headings,
             refs,
@@ -269,11 +272,54 @@ impl StreamingParser {
         })
     }
 
-    /// 快速扫描：构建行索引、标题索引、参考定义
+    /// 直接从内存字节创建解析器（用于小文件或内存中的内容）
+    ///
+    /// 避免 Android 上临时文件创建和 mmap 的问题
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
+        let total_size = bytes.len();
+
+        // 阶段 1：快速扫描以构建索引
+        let (line_index, headings, refs, total_chars, total_lines) =
+            Self::quick_scan_bytes(bytes, total_size, &AtomicUsize::new(0))?;
+
+        Ok(Self {
+            mmap: None,  // 没有文件 mmap
+            bytes_storage: Some(bytes.to_vec()),  // 存储字节副本
+            line_index,
+            headings,
+            refs,
+            total_chars,
+            total_lines,
+            scan_progress: AtomicUsize::new(total_size),  // 完成
+            total_size,
+        })
+    }
+
+    /// 快速扫描：构建行索引、标题索引、参考定义（使用 mmap）
     ///
     /// 性能：50MB 文件约需 50-100ms
-    fn quick_scan(
+    fn quick_scan_mmap(
         mmap: Arc<MmappedFile>,
+        total_size: usize,
+        progress: &AtomicUsize
+    ) -> Result<(LineIndex, Vec<TocEntry>, HashMap<String, (String, Option<String>)>, usize, usize), ParseError> {
+        Self::quick_scan_impl(mmap.as_bytes(), total_size, progress)
+    }
+
+    /// 快速扫描：构建行索引、标题索引、参考定义（使用字节切片）
+    ///
+    /// 用于内存中的内容，避免文件系统操作
+    fn quick_scan_bytes(
+        bytes: &[u8],
+        total_size: usize,
+        progress: &AtomicUsize
+    ) -> Result<(LineIndex, Vec<TocEntry>, HashMap<String, (String, Option<String>)>, usize, usize), ParseError> {
+        Self::quick_scan_impl(bytes, total_size, progress)
+    }
+
+    /// 快速扫描的通用实现
+    fn quick_scan_impl(
+        bytes: &[u8],
         total_size: usize,
         progress: &AtomicUsize
     ) -> Result<(LineIndex, Vec<TocEntry>, HashMap<String, (String, Option<String>)>, usize, usize), ParseError> {
@@ -289,7 +335,6 @@ impl StreamingParser {
         const PROGRESS_UPDATE_INTERVAL: usize = 1024 * 1024;  // 每隔 1MB 更新一次
 
         // 逐行扫描
-        let bytes = mmap.as_bytes();
 
         for (i, &byte) in bytes.iter().enumerate() {
             // 定期更新进度
@@ -351,12 +396,26 @@ impl StreamingParser {
         Ok((line_index, headings, refs, total_chars, line_number))
     }
 
+    /// 获取字节引用（支持 mmap 和内存模式）
+    fn get_bytes(&self) -> &[u8] {
+        if let Some(mmap) = &self.mmap {
+            mmap.as_bytes()
+        } else if let Some(storage) = &self.bytes_storage {
+            storage.as_slice()
+        } else {
+            &[]
+        }
+    }
+
     /// 解析特定行范围（按需）
     ///
     /// 仅用于渲染可见内容。
     /// 支持块引用解析（检测 > 开头的行）
     pub fn parse_range(&self, start_line: usize, count: usize) -> Result<Vec<BlockNode>, ParseError> {
-        let mmap = self.mmap.as_ref().ok_or(ParseError::NotMapped)?;
+        let bytes = self.get_bytes();
+        if bytes.is_empty() {
+            return Err(ParseError::NotMapped);
+        }
 
         let end_line = (start_line + count).min(self.line_index.len());
         let mut blocks = Vec::new();
@@ -364,7 +423,6 @@ impl StreamingParser {
         let mut i = start_line;
         while i < end_line {
             if let Some((offset, length)) = self.line_index.get(i) {
-                let bytes = mmap.as_bytes();
                 let line = &bytes[offset..offset + length];
                 let text = std::str::from_utf8(line).unwrap_or("");
                 let trimmed = text.trim();
@@ -383,7 +441,7 @@ impl StreamingParser {
                     i += 1;
                     while i < end_line {
                         if let Some((offset, length)) = self.line_index.get(i) {
-                            let content_line = &mmap.as_bytes()[offset..offset + length];
+                            let content_line = &bytes[offset..offset + length];
                             let content_text = std::str::from_utf8(content_line).unwrap_or("");
                             if content_text.trim().starts_with(fence) {
                                 i += 1;
@@ -419,7 +477,7 @@ impl StreamingParser {
 
                     while i < end_line {
                         if let Some((offset, length)) = self.line_index.get(i) {
-                            let quote_line = &mmap.as_bytes()[offset..offset + length];
+                            let quote_line = &bytes[offset..offset + length];
                             let level = count_blockquote_level(quote_line);
 
                             if level == 0 {
@@ -457,7 +515,7 @@ impl StreamingParser {
 
                     while i < end_line {
                         if let Some((offset, length)) = self.line_index.get(i) {
-                            let item_line = &mmap.as_bytes()[offset..offset + length];
+                            let item_line = &bytes[offset..offset + length];
                             let item_text = std::str::from_utf8(item_line).unwrap_or("");
                             let item_trimmed = item_text.trim();
 
@@ -520,7 +578,7 @@ impl StreamingParser {
                     // 收集公式内容，直到遇到结束的 $$
                     while i < end_line {
                         if let Some((offset, length)) = self.line_index.get(i) {
-                            let content_line = &mmap.as_bytes()[offset..offset + length];
+                            let content_line = &bytes[offset..offset + length];
                             let content_text = std::str::from_utf8(content_line).unwrap_or("");
 
                             if is_math_block_end(content_line) {
@@ -624,14 +682,10 @@ impl StreamingParser {
     /// 此函数读取整个内存映射文件并转换为 UTF-8
     /// 对于非常大的文件，考虑使用基于范围的操作
     pub fn get_content(&self) -> String {
-        if let Some(ref mmap) = self.mmap {
-            let bytes = mmap.as_bytes();
-            std::str::from_utf8(bytes)
-                .unwrap_or("")
-                .to_string()
-        } else {
-            String::new()
-        }
+        let bytes = self.get_bytes();
+        std::str::from_utf8(bytes)
+            .unwrap_or("")
+            .to_string()
     }
 
     /// 获取原始文件路径（如果可用）
