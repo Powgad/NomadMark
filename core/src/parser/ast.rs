@@ -295,7 +295,15 @@ impl InlineNode {
 // 文档根节点
 // -----------------------------------------------------------------------------
 
-/// 完整的 Markdown 文档
+/// 完整的 Markdown 文档（内部表示）
+///
+/// # FFI 边界
+/// 此类型用于 Rust 内部处理。跨 FFI 边界时，使用 `convert_toc_entry()` 等函数
+/// 转换为 FFI 兼容类型（`bridge::types::TocEntry`）。
+///
+/// # 与 FFI 类型的关系
+/// - `parser::ast::MarkdownDocument` - 内部表示，使用 Rust `String` 和 `Vec`
+/// - (通过 `MarkdownDocument` 句柄) - FFI 表示，使用不透明指针
 #[derive(Debug, Clone)]
 pub struct MarkdownDocument {
     /// 根块节点
@@ -319,12 +327,24 @@ pub struct DocumentMetadata {
     pub last_modified_offset: usize,
 }
 
-/// 目录条目
+/// 目录条目（内部表示）
+///
+/// # FFI 边界
+/// 跨 FFI 边界时使用 `bridge::types::TocEntry`，该类型使用原始指针
+/// 而非 `String` 以确保内存安全。
+///
+/// # 与 FFI 类型的关系
+/// - `parser::ast::TocEntry` - 内部表示，使用 `String`
+/// - `bridge::types::TocEntry` - FFI 表示，使用原始指针（`title_ptr`）
 #[derive(Debug, Clone)]
 pub struct TocEntry {
+    /// 标题级别（1-6）
     pub level: u8,
+    /// 标题文本
     pub title: String,
+    /// 源文件中的字节偏移
     pub byte_offset: usize,
+    /// 行号（从 0 开始）
     pub line_number: usize,
 }
 

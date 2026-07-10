@@ -132,7 +132,17 @@ pub struct FontSpec {
 // 文档元数据
 // =============================================================================
 
-/// 目录条目
+/// 目录条目（FFI 兼容版本）
+///
+/// # 生命周期
+/// `title_ptr` 指向使用 `Box::leak` 分配的内存，在调用 `md_free_toc` 之前保持有效。
+///
+/// # 与 parser::ast::TocEntry 的关系
+/// - `parser::ast::TocEntry` - 内部表示，使用 `String`
+/// - `bridge::types::TocEntry` - FFI 表示，使用原始指针
+///
+/// # 内存管理
+/// 调用者必须调用 `md_free_toc` 来释放此条目及其标题字符串的内存。
 #[repr(C)]
 #[derive(Clone, Debug)]
 pub struct TocEntry {
@@ -142,8 +152,9 @@ pub struct TocEntry {
     pub byte_offset: usize,
     /// 行号（从 0 开始）
     pub line_number: usize,
-    /// 标题文本（UTF-8）
+    /// 标题文本长度（UTF-8 字节数）
     pub title_len: usize,
+    /// 标题文本指针（使用 Box::leak 分配，调用 md_free_toc 释放）
     pub title_ptr: *const u8,
 }
 
@@ -165,41 +176,6 @@ pub struct DocumentMetadata {
     pub toc_ptr: *const TocEntry,
     /// 最后修改偏移（用于增量解析）
     pub last_modified_offset: usize,
-}
-
-// =============================================================================
-// 渲染命令（平台无关）
-// =============================================================================
-
-/// 渲染命令类型
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub enum RenderCommandType {
-    /// 在位置绘制文本
-    DrawText = 0,
-    /// 填充矩形（背景、高亮）
-    FillRect = 1,
-    /// 绘制线条（边框、下划线）
-    DrawLine = 2,
-    /// 绘制图像
-    DrawImage = 3,
-}
-
-/// 单个渲染命令（不透明指针）
-///
-/// 实际数据存储在本机内存中，避免序列化开销。
-/// 通过 FFI 函数提供访问器。
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct RenderCommand {
-    pub cmd_type: RenderCommandType,
-    pub x: f32,
-    pub y: f32,
-    pub width: f32,
-    pub height: f32,
-    pub color: Color,
-    pub data_len: usize,
-    pub data_ptr: *const u8,
 }
 
 // =============================================================================

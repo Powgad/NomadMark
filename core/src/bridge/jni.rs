@@ -14,17 +14,18 @@ use std::ffi::CStr;
 use crate::render::commands::RenderCommand;
 use crate::bridge::types::TocEntry;
 
+// 简单的测试函数，用于验证 JNI 符号是否导出
+// 不使用条件编译，始终包含此函数
+#[no_mangle]
+pub extern "C" fn test_jni_export() -> i32 {
+    42
+}
+
 // 编译此模块时始终包含 JNI
 #[cfg(feature = "jni")]
 use jni::sys::{jfloat, jint, jlong, jstring, jobject, jsize, jbyteArray, jlongArray, jintArray};
 #[cfg(feature = "jni")]
 use jni::{JNIEnv, objects::{JString, JLongArray, JIntArray}};
-
-// 简单的测试函数，用于验证 JNI 符号是否导出
-#[no_mangle]
-pub extern "C" fn test_jni_export() -> i32 {
-    42
-}
 
 // 从父 crate 导入 C FFI 函数
 extern "C" {
@@ -62,6 +63,9 @@ extern "C" {
 // =============================================================================
 
 /// JNI: Java_com_editor_nomadmark_MarkdownCore_nativeCreate
+///
+/// # 字符串生命周期
+/// 使用 JNI 安全 API 获取字符串内容，确保指针在转换期间有效。
 #[cfg(feature = "jni")]
 #[no_mangle]
 pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeCreate(
@@ -74,22 +78,31 @@ pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeCreate(
             return 0;
         }
 
-        let jstr = JString::from_raw(content);
-        let s = env.get_string(&jstr);
+        // 使用 get_string() 安全地获取 Java 字符串
+        // JString 引用在 j_str 生命周期内保持有效
+        let j_str = JString::from_raw(content);
+        let s = env.get_string(&j_str);
         if s.is_err() {
             return 0;
         }
-        let j_str = s.unwrap();
 
-        let c_str = CStr::from_ptr(j_str.as_ptr());
-        let bytes = c_str.to_bytes();
+        // 在 JNI 调用期间转换，此时字符串仍然有效
+        let rust_str = s.unwrap();
+        let bytes = rust_str.as_bytes();
         let handle = md_document_create(bytes.as_ptr() as *const i8, bytes.len());
+
+        // std::mem::forget 防止 j_str 过早释放（虽然这里不是必需的，
+        // 因为 s 已经包含内容，但保持一致性）
+        std::mem::forget(j_str);
 
         handle as jlong
     }
 }
 
 /// JNI: Java_com_editor_nomadmark_MarkdownCore_nativeCreateFromPath
+///
+/// # 字符串生命周期
+/// 使用 JNI 安全 API 获取字符串内容，确保指针在转换期间有效。
 #[cfg(feature = "jni")]
 #[no_mangle]
 pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeCreateFromPath(
@@ -102,15 +115,18 @@ pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeCreateFromPath(
             return 0;
         }
 
-        let jstr = JString::from_raw(path);
-        let s = env.get_string(&jstr);
+        // 使用 get_string() 安全地获取 Java 字符串
+        let j_str = JString::from_raw(path);
+        let s = env.get_string(&j_str);
         if s.is_err() {
             return 0;
         }
-        let j_str = s.unwrap();
 
-        let c_str = CStr::from_ptr(j_str.as_ptr());
-        let handle = md_document_create_from_path(c_str.as_ptr() as *const i8);
+        // 在 JNI 调用期间转换，此时字符串仍然有效
+        let rust_str = s.unwrap();
+        let handle = md_document_create_from_path(rust_str.as_ptr() as *const i8);
+
+        std::mem::forget(j_str);
 
         handle as jlong
     }
@@ -397,13 +413,18 @@ pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeLoadRange(
             env.set_long_array_region(&commands_obj, 0, &commands_vals).unwrap();
             std::mem::forget(commands_obj);
 
-            // out_dirty_rects: 目前为空（未使用）
-            let dirty_vals = [0i64, 0, 0, 0];
+            // out_dirty_rects: [dirty_ptr, dirty_count]
+            // dirty_count 是 i32 数组的元素数量（不是矩形数量）
+            let dirty_vals = [
+                dirty_ptr as i64,
+                dirty_count as i64,
+            ];
             let dirty_obj = JLongArray::from_raw(out_dirty_rects);
             env.set_long_array_region(&dirty_obj, 0, &dirty_vals).unwrap();
             std::mem::forget(dirty_obj);
 
             // out_total_height: [total_height]
+            // 使用实际计算的文档高度，简化为行数 * 每行高度
             let total_height = (count * 20) as jint;
             let height_vals = [total_height];
             let height_obj = JIntArray::from_raw(out_total_height);
@@ -491,6 +512,28 @@ pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeReadBytes(
         let bytes_i8: &[i8] = std::slice::from_raw_parts(bytes.as_ptr() as *const i8, bytes.len());
         env.set_byte_array_region(&jbyte_array, 0, bytes_i8).unwrap();
         jbyte_array.into_raw()
+    }
+}
+
+/// JNI: Java_com_editor_nomadmark_MarkdownCore_nativeCreateDirectByteBuffer
+/// 从 Rust 分配的内存创建 DirectByteBuffer（零拷贝）
+#[cfg(feature = "jni")]
+#[no_mangle]
+pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeCreateDirectByteBuffer(
+    mut env: JNIEnv,
+    _class: jobject,
+    ptr: jlong,
+    size: jint,
+) -> jobject {
+    if ptr == 0 || size <= 0 {
+        return std::ptr::null_mut();
+    }
+
+    unsafe {
+        let void_ptr = ptr as *mut std::ffi::c_void;
+        env.new_direct_byte_buffer(void_ptr as *mut u8, size as usize)
+            .map(|buf| buf.into_raw())
+            .unwrap_or(std::ptr::null_mut())
     }
 }
 

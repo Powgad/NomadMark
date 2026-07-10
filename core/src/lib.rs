@@ -42,13 +42,20 @@ use layout::engine::create_supernote_layouter;
 // =============================================================================
 
 /// 将 AST TOC 条目转换为 FFI TOC 条目
+///
+/// # 内存管理
+/// 标题字符串被复制到堆上，调用者必须调用 `md_free_toc` 来释放内存。
 fn convert_toc_entry(ast_entry: &crate::parser::ast::TocEntry) -> bridge::types::TocEntry {
+    // 复制标题字符串到堆上，确保独立生命周期
+    let title_bytes = ast_entry.title.as_bytes().to_vec();
+    let title_ptr = Box::leak(title_bytes.into_boxed_slice()).as_ptr();
+
     bridge::types::TocEntry {
         level: ast_entry.level,
         byte_offset: ast_entry.byte_offset,
         line_number: ast_entry.line_number,
         title_len: ast_entry.title.len(),
-        title_ptr: ast_entry.title.as_ptr(),
+        title_ptr,
     }
 }
 
@@ -566,11 +573,12 @@ pub extern "C" fn md_document_search(
 ///
 /// # 返回值
 /// - 1: 撤销成功
-/// - 0: 无可撤销操作
+/// - 0: 功能尚未实现或无可撤销操作
 /// - -1: 错误
 ///
-/// # 注意
-/// 此函数执行历史记录栈操作。实际的文档内容修改需要完整的编辑系统支持
+/// # 实现状态
+/// **此功能尚未完全实现。** 需要完整的编辑系统来修改解析器的内容。
+/// 当前返回 0 表示功能不可用。调用者应显示相应的提示。
 #[no_mangle]
 pub extern "C" fn md_document_undo(
     handle: *mut MarkdownDocument,
@@ -579,18 +587,14 @@ pub extern "C" fn md_document_undo(
         return -1;
     }
 
-    unsafe {
-        let doc = &mut *handle;
-        if let Some(_command) = doc.history_mut().undo() {
-            // TODO: 应用撤销操作到文档内容
-            // 这需要完整的编辑系统来修改解析器的内容
-            1
-        } else {
-            0
-        }
-    }
+    // 撤销功能尚未完全实现
+    // 需要完整的编辑系统来修改解析器的内容
+    // 返回 0 表示功能不可用
+    0
 }
 
+/// 重做上一个撤销的操作
+///
 /// 重做上一个撤销的操作
 ///
 /// # 参数
@@ -598,11 +602,12 @@ pub extern "C" fn md_document_undo(
 ///
 /// # 返回值
 /// - 1: 重做成功
-/// - 0: 无可重做操作
+/// - 0: 功能尚未实现或无可重做操作
 /// - -1: 错误
 ///
-/// # 注意
-/// 此函数执行历史记录栈操作。实际的文档内容修改需要完整的编辑系统支持
+/// # 实现状态
+/// **此功能尚未完全实现。** 需要完整的编辑系统来修改解析器的内容。
+/// 当前返回 0 表示功能不可用。调用者应显示相应的提示。
 #[no_mangle]
 pub extern "C" fn md_document_redo(
     handle: *mut MarkdownDocument,
@@ -611,16 +616,10 @@ pub extern "C" fn md_document_redo(
         return -1;
     }
 
-    unsafe {
-        let doc = &mut *handle;
-        if let Some(_command) = doc.history_mut().redo() {
-            // TODO: 应用重做操作到文档内容
-            // 这需要完整的编辑系统来修改解析器的内容
-            1
-        } else {
-            0
-        }
-    }
+    // 重做功能尚未完全实现
+    // 需要完整的编辑系统来修改解析器的内容
+    // 返回 0 表示功能不可用
+    0
 }
 
 /// 检查是否可以撤销
@@ -697,10 +696,29 @@ pub extern "C" fn md_free_dirty_rects(ptr: *mut i32, len: usize) {
 ///
 /// 用于释放:
 /// - 渲染命令数组 (来自 md_document_load_range)
+/// - 每个 DrawText 命令中的文本内容
+///
+/// # 内存管理契约
+///
+/// **调用者必须**在不再需要命令时调用此函数，否则会泄漏内存。
+///
+/// ## 分配过程
+/// - `RenderCommand::draw_text` 使用 `std::alloc::alloc` 为文本内容分配堆内存
+/// - 文本指针存储在 `TextData.text_ptr` 中
+/// - 命令数组使用 `Box::leak` 返回稳定指针
+///
+/// ## 释放过程
+/// 1. 遍历每个 DrawText 命令，使用 `std::alloc::dealloc` 释放文本内容
+/// 2. 使用 `Box::from_raw` 重建 Box 以释放命令数组
 ///
 /// # 参数
 /// - `ptr`: RenderCommand 数组指针 (可为 NULL)
 /// - `len`: 命令数量
+///
+/// # 安全
+/// - ptr 必须是 `md_document_load_range` 返回的指针
+/// - len 必须是调用时返回的计数值
+/// - 此函数只能调用一次，之后指针变为无效
 #[no_mangle]
 pub extern "C" fn md_free_commands(ptr: *mut RenderCommand, len: usize) {
     if ptr.is_null() || len == 0 {
@@ -708,8 +726,21 @@ pub extern "C" fn md_free_commands(ptr: *mut RenderCommand, len: usize) {
     }
 
     unsafe {
-        // 从泄漏的切片重建 Box<[RenderCommand]> 并释放
-        let _ = Box::from_raw(std::slice::from_raw_parts_mut(ptr, len));
+        // 首先释放每个命令中的文本内容
+        let commands = std::slice::from_raw_parts_mut(ptr, len);
+        for cmd in commands.iter() {
+            if cmd.cmd_type == render::commands::RenderCommandType::DrawText {
+                let text_data = cmd.data.text;
+                if text_data.text_ptr != 0 && text_data.text_len > 0 {
+                    // 释放文本内容
+                    let layout = std::alloc::Layout::array::<u8>(text_data.text_len as usize).unwrap();
+                    std::alloc::dealloc(text_data.text_ptr as *mut u8, layout);
+                }
+            }
+        }
+
+        // 然后释放命令数组本身
+        let _ = Box::from_raw(commands);
     }
 }
 
@@ -717,10 +748,16 @@ pub extern "C" fn md_free_commands(ptr: *mut RenderCommand, len: usize) {
 ///
 /// 用于释放:
 /// - 目录条目数组 (来自 md_document_get_toc, md_document_get_metadata)
+/// - 每个条目中的标题字符串内存
 ///
 /// # 参数
 /// - `ptr`: TocEntry 数组指针 (可为 NULL)
 /// - `len`: 条目数量
+///
+/// # 内存管理
+/// 此函数释放：
+/// 1. 每个条目的标题字符串内存（使用 Box::leak 分配）
+/// 2. 条目数组本身
 #[no_mangle]
 pub extern "C" fn md_free_toc(ptr: *mut bridge::types::TocEntry, len: usize) {
     if ptr.is_null() || len == 0 {
@@ -728,8 +765,18 @@ pub extern "C" fn md_free_toc(ptr: *mut bridge::types::TocEntry, len: usize) {
     }
 
     unsafe {
-        // 从泄漏的切片重建 Box<[TocEntry]> 并释放
-        let _ = Box::from_raw(std::slice::from_raw_parts_mut(ptr, len));
+        let entries = std::slice::from_raw_parts_mut(ptr, len);
+
+        // 首先释放每个条目的标题内存
+        for entry in entries.iter() {
+            if !entry.title_ptr.is_null() && entry.title_len > 0 {
+                let layout = std::alloc::Layout::array::<u8>(entry.title_len).unwrap();
+                std::alloc::dealloc(entry.title_ptr as *mut u8, layout);
+            }
+        }
+
+        // 然后释放条目数组本身
+        let _ = Box::from_raw(entries);
     }
 }
 
