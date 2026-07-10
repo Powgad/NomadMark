@@ -15,7 +15,7 @@
 // - 单屏渲染：<50ms
 // =============================================================================
 
-use super::ast::{BlockNode, InlineNode, DocumentMetadata, TocEntry};
+use super::ast::{BlockNode, InlineNode, DocumentMetadata, TocEntry, TableCellAlignment};
 use super::extensions::parse_inline_extensions;
 use crate::parser::error::ParseError;
 use memmap2::Mmap;
@@ -470,6 +470,77 @@ impl StreamingParser {
                     continue;
                 }
 
+                // 检测表格 (Table)
+                if is_table_row(line) {
+                    // 检查下一行是否是分隔行
+                    let is_table = if i + 1 < end_line {
+                        if let Some((next_offset, next_length)) = self.line_index.get(i + 1) {
+                            let next_line = &bytes[next_offset..next_offset + next_length];
+                            is_table_separator(next_line)
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
+
+                    if is_table {
+                        // 解析表头
+                        let text = std::str::from_utf8(line).unwrap_or("");
+                        let headers = parse_table_row(text);
+
+                        // 解析分隔行以获取对齐方式
+                        let alignments = if i + 1 < end_line {
+                            if let Some((next_offset, next_length)) = self.line_index.get(i + 1) {
+                                let next_line = &bytes[next_offset..next_offset + next_length];
+                                let next_text = std::str::from_utf8(next_line).unwrap_or("");
+                                Some(parse_table_alignments(next_text))
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+
+                        i += 2;  // 跳过表头和分隔行
+
+                        // 收集表格行
+                        let mut rows = Vec::new();
+                        while i < end_line {
+                            if let Some((offset, length)) = self.line_index.get(i) {
+                                let row_line = &bytes[offset..offset + length];
+                                let row_text = std::str::from_utf8(row_line).unwrap_or("");
+
+                                if !is_table_row(row_line) {
+                                    break;
+                                }
+
+                                let row = parse_table_row(row_text);
+                                if !row.is_empty() {
+                                    rows.push(row);
+                                }
+                                i += 1;
+                            } else {
+                                break;
+                            }
+                        }
+
+                        // 创建表格节点
+                        if !headers.is_empty() {
+                            let alignments = alignments.unwrap_or_else(|| {
+                                vec![TableCellAlignment::Unspecified; headers.len()]
+                            });
+
+                            blocks.push(BlockNode::Table {
+                                headers,
+                                rows,
+                                alignments,
+                            });
+                        }
+                        continue;
+                    }
+                }
+
                 // 检测引用块 (blockquote)
                 if is_blockquote_line(line) {
                     // 收集连续的引用块行
@@ -898,6 +969,118 @@ fn parse_blockquote_lines(lines: &[(u8, String)], max_level: u8) -> BlockNode {
     }
 }
 
+// =============================================================================
+// 表格解析
+// =============================================================================
+
+/// 检测行是否为表格行（以 `|` 开头或包含 `|`）
+fn is_table_row(line: &[u8]) -> bool {
+    // 去除行尾的换行符
+    let line = if line.ends_with(b"\n") {
+        &line[..line.len() - 1]
+    } else {
+        line
+    };
+    let line = if line.ends_with(b"\r") {
+        &line[..line.len() - 1]
+    } else {
+        line
+    };
+
+    let trimmed = skip_leading_whitespace(line);
+    if trimmed.is_empty() {
+        return false;
+    }
+
+    // 检查是否以 `|` 开头或包含 `|`
+    let has_pipe = trimmed.contains(&b'|');
+
+    // 排除代码块中的 `|`
+    if line.starts_with(b"```") || line.starts_with(b"    ") {
+        return false;
+    }
+
+    has_pipe
+}
+
+/// 检测行是否为表格分隔行（第二行，如 `|---|---|`）
+fn is_table_separator(line: &[u8]) -> bool {
+    // 去除行尾的换行符
+    let line = if line.ends_with(b"\n") {
+        &line[..line.len() - 1]
+    } else {
+        line
+    };
+    let line = if line.ends_with(b"\r") {
+        &line[..line.len() - 1]
+    } else {
+        line
+    };
+
+    let trimmed = skip_leading_whitespace(line);
+    if !trimmed.starts_with(b"|") {
+        return false;
+    }
+
+    // 检查是否只包含 `|`, `-`, `:`, 和空格
+    for &byte in trimmed.iter() {
+        if !matches!(byte, b'|' | b'-' | b':' | b' ') {
+            return false;
+        }
+    }
+
+    true
+}
+
+/// 解析表格分隔行的对齐方式
+fn parse_table_alignments(separator_line: &str) -> Vec<TableCellAlignment> {
+    // 去除行尾的换行符和回车符
+    let separator_line = separator_line.trim_end_matches('\n').trim_end_matches('\r');
+
+    // 分割单元格（跳过首尾的空 `|`）
+    let cells: Vec<&str> = separator_line.split('|')
+        .skip(1)  // 跳过第一个空单元格
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    cells.iter().map(|cell| {
+        let trimmed = cell.trim();
+        if trimmed.starts_with(':') && trimmed.ends_with(':') {
+            TableCellAlignment::Center
+        } else if trimmed.starts_with(':') {
+            TableCellAlignment::Left
+        } else if trimmed.ends_with(':') {
+            TableCellAlignment::Right
+        } else {
+            TableCellAlignment::Unspecified
+        }
+    }).collect()
+}
+
+/// 解析表格行（包含表头和数据行）
+fn parse_table_row(line: &str) -> Vec<Vec<InlineNode>> {
+    // 去除行尾的换行符和回车符
+    let line = line.trim_end_matches('\n').trim_end_matches('\r');
+
+    // 分割单元格（跳过首尾的空 `|`）
+    let all_cells: Vec<&str> = line.split('|').collect();
+
+    let cells: Vec<&str> = line.split('|')
+        .skip(1)  // 跳过第一个空单元格
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    cells.iter().map(|cell| {
+        // 解析单元格内容（使用行内解析器）
+        let cell_content = cell.trim();
+        if !cell_content.is_empty() {
+            parse_inline_extensions(cell_content)
+        } else {
+            vec![]
+        }
+    }).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1174,6 +1357,81 @@ mod tests {
                 }
             }
             _ => panic!("Expected Paragraph node"),
+        }
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[test]
+    fn test_is_table_row() {
+        assert!(is_table_row(b"| Header 1 | Header 2 |"));
+        assert!(is_table_row(b"| Cell 1 | Cell 2 |"));
+        assert!(!is_table_row(b"Not a table"));
+        assert!(!is_table_row(b"```"));
+        assert!(!is_table_row(b"    | code |"));
+    }
+
+    #[test]
+    fn test_is_table_separator() {
+        assert!(is_table_separator(b"|---|---|"));
+        assert!(is_table_separator(b"|:---|:---:|---:|"));
+        assert!(is_table_separator(b"|-----|"));
+        assert!(!is_table_separator(b"| Cell |"));
+        assert!(!is_table_separator(b"|---|Cell|"));
+    }
+
+    #[test]
+    fn test_parse_table_alignments() {
+        let alignments = parse_table_alignments("|:---|:---:|---:|---|");
+        assert_eq!(alignments.len(), 4);
+        assert_eq!(alignments[0], TableCellAlignment::Left);
+        assert_eq!(alignments[1], TableCellAlignment::Center);
+        assert_eq!(alignments[2], TableCellAlignment::Right);
+        assert_eq!(alignments[3], TableCellAlignment::Unspecified);
+    }
+
+    #[test]
+    fn test_parse_table_simple() {
+        let temp_dir = std::env::temp_dir();
+        let temp_file = temp_dir.join("test_table.md");
+        std::fs::write(&temp_file, "| Header 1 | Header 2 |\n|---|---|\n| Cell 1 | Cell 2 |").unwrap();
+
+        let parser = StreamingParser::new(&temp_file).unwrap();
+        let result = parser.parse_range(0, 10).unwrap();
+
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            BlockNode::Table { headers, rows, alignments } => {
+                assert_eq!(headers.len(), 2);
+                assert_eq!(rows.len(), 1);
+                assert_eq!(alignments.len(), 2);
+            }
+            _ => panic!("Expected Table node, got {:?}", result[0]),
+        }
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[test]
+    fn test_parse_table_with_alignment() {
+        let temp_dir = std::env::temp_dir();
+        let temp_file = temp_dir.join("test_table_alignment.md");
+        std::fs::write(&temp_file, "| Left | Center | Right |\n|:---|:---:|---:|\n| L | C | R |").unwrap();
+
+        let parser = StreamingParser::new(&temp_file).unwrap();
+        let result = parser.parse_range(0, 10).unwrap();
+
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            BlockNode::Table { headers, rows, alignments } => {
+                assert_eq!(headers.len(), 3);
+                assert_eq!(rows.len(), 1);
+                assert_eq!(alignments.len(), 3);
+                assert_eq!(alignments[0], TableCellAlignment::Left);
+                assert_eq!(alignments[1], TableCellAlignment::Center);
+                assert_eq!(alignments[2], TableCellAlignment::Right);
+            }
+            _ => panic!("Expected Table node"),
         }
 
         std::fs::remove_file(&temp_file).ok();

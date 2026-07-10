@@ -303,6 +303,9 @@ impl Layouter {
             BlockNode::List { ordered, start_number, items } => {
                 self.layout_list(*ordered, *start_number, items, &mut result);
             }
+            BlockNode::Table { headers, rows, alignments } => {
+                self.layout_table(headers, rows, alignments, &mut result);
+            }
             BlockNode::Blockquote { level, children } => {
                 self.layout_blockquote(*level, children, &mut result);
             }
@@ -753,6 +756,206 @@ impl Layouter {
             // 布局内容
             for block in &item.content {
                 self.layout_block(block);
+            }
+        }
+    }
+
+    /// 布局表格
+    fn layout_table(&mut self, headers: &[Vec<InlineNode>], rows: &[Vec<Vec<InlineNode>>], _alignments: &[crate::parser::ast::TableCellAlignment], result: &mut RenderResult) {
+        layout_log!("  📊 Table BEFORE: cursor_y={}", self.cursor_y);
+
+        let font = FontSpec {
+            family: FontFamily::Sans,
+            size_pt: 13.0,
+            bold: false,
+            italic: false,
+        };
+
+        let metrics = self.get_font_metrics(font);
+        let cell_padding = 8.0;
+        let border_width = 1.0;
+
+        // 计算列数（取表头和行的最大列数）
+        let num_columns = headers.len().max(rows.iter().map(|r| r.len()).max().unwrap_or(0));
+
+        // 计算每列的最大宽度
+        let mut column_widths = vec![0.0f32; num_columns];
+
+        // 处理表头
+        for (col_idx, header_cells) in headers.iter().enumerate() {
+            let mut max_width: f32 = 0.0;
+            for cell in header_cells {
+                let cell_text = cell.text_content();
+                let text_width = cell_text.len() as f32 * font.size_pt * 0.6;
+                max_width = max_width.max(text_width);
+            }
+            column_widths[col_idx] = column_widths[col_idx].max(max_width + cell_padding * 2.0);
+        }
+
+        // 处理数据行
+        for row in rows {
+            for (col_idx, cell) in row.iter().enumerate() {
+                if col_idx >= num_columns {
+                    break;
+                }
+                let mut max_width: f32 = 0.0;
+                for inline in cell {
+                    let cell_text = inline.text_content();
+                    let text_width = cell_text.len() as f32 * font.size_pt * 0.6;
+                    max_width = max_width.max(text_width);
+                }
+                column_widths[col_idx] = column_widths[col_idx].max(max_width + cell_padding * 2.0);
+            }
+        }
+
+        // 计算表格总宽度
+        let table_width: f32 = column_widths.iter().sum();
+
+        // 计算表格高度
+        let row_height = metrics.line_height + cell_padding * 2.0;
+        let table_height = row_height * (1 + rows.len()) as f32;
+
+        // 绘制表格背景
+        result.push(RenderCommand::fill_rect(
+            self.config.margin_left,
+            self.cursor_y,
+            table_width,
+            table_height,
+            Color::WHITE,
+        ));
+
+        // 绘制表头背景
+        result.push(RenderCommand::fill_rect(
+            self.config.margin_left,
+            self.cursor_y,
+            table_width,
+            row_height,
+            Color::rgb(240, 240, 240),  // 浅灰背景
+        ));
+
+        // 布局表头
+        let mut x = self.config.margin_left;
+        for (col_idx, header_cells) in headers.iter().enumerate() {
+            let column_width = column_widths[col_idx];
+
+            // 绘制表头文本
+            let header_font = FontSpec {
+                bold: true,
+                ..font
+            };
+
+            let cell_x = x + cell_padding;
+            let cell_y = self.cursor_y + cell_padding + metrics.ascent;
+
+            for cell in header_cells {
+                self.layout_inline_cell(cell, header_font, Color::BLACK, cell_x, cell_y, result);
+            }
+
+            // 绘制右边框
+            result.push(RenderCommand::fill_rect(
+                x + column_width,
+                self.cursor_y,
+                border_width,
+                table_height,
+                Color::rgb(221, 221, 221),  // 边框颜色
+            ));
+
+            x += column_width;
+        }
+
+        // 绘制表头底边框
+        result.push(RenderCommand::fill_rect(
+            self.config.margin_left,
+            self.cursor_y + row_height,
+            table_width,
+            border_width,
+            Color::rgb(221, 221, 221),
+        ));
+
+        // 布局数据行
+        let mut y = self.cursor_y + row_height;
+        for row in rows {
+            y += border_width;  // 上边框
+
+            let mut x = self.config.margin_left;
+            for (col_idx, cell) in row.iter().enumerate() {
+                if col_idx >= num_columns {
+                    break;
+                }
+
+                let column_width = column_widths[col_idx];
+                let cell_x = x + cell_padding;
+                let cell_y = y + cell_padding + metrics.ascent;
+
+                // 绘制单元格文本
+                for inline in cell {
+                    self.layout_inline_cell(inline, font, Color::BLACK, cell_x, cell_y, result);
+                }
+
+                // 绘制下边框
+                result.push(RenderCommand::fill_rect(
+                    x,
+                    y + row_height,
+                    column_width,
+                    border_width,
+                    Color::rgb(221, 221, 221),
+                ));
+
+                x += column_width;
+            }
+
+            y += row_height;
+        }
+
+        // 更新光标位置
+        self.cursor_y += table_height + self.config.paragraph_spacing;
+    }
+
+    /// 辅助函数：布局行内单元格（简化版本）
+    fn layout_inline_cell(&self, cell: &InlineNode, font: FontSpec, color: Color, x: f32, y: f32, result: &mut RenderResult) {
+        match cell {
+            InlineNode::Text(text) => {
+                result.push(RenderCommand::draw_text(
+                    x,
+                    y,
+                    text,
+                    font,
+                    color,
+                ));
+            }
+            InlineNode::Strong { children } => {
+                let bold_font = FontSpec {
+                    bold: true,
+                    ..font
+                };
+                for child in children {
+                    self.layout_inline_cell(child, bold_font, color, x, y, result);
+                }
+            }
+            InlineNode::Emphasis { children, .. } => {
+                let italic_font = FontSpec {
+                    italic: true,
+                    ..font
+                };
+                for child in children {
+                    self.layout_inline_cell(child, italic_font, color, x, y, result);
+                }
+            }
+            InlineNode::Code(text) => {
+                let code_font = FontSpec {
+                    family: FontFamily::Mono,
+                    ..font
+                };
+                result.push(RenderCommand::draw_text(
+                    x,
+                    y,
+                    text,
+                    code_font,
+                    Color::rgb(100, 100, 100),  // 代码颜色
+                ));
+            }
+            _ => {
+                // 其他行内节点类型暂不支持
             }
         }
     }

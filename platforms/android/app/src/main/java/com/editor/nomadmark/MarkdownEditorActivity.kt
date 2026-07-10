@@ -1894,7 +1894,7 @@ class MarkdownEditorActivity : android.app.Activity() {
      * 显示设置对话框
      */
     private fun showSettingsDialog() {
-        val engines = RenderEngine.entries.toTypedArray()
+        val engines = RenderEngine.values()
         val engineNames = engines.map {
             when (it) {
                 RenderEngine.MARKWON -> "Markwon (稳定)"
@@ -1994,23 +1994,24 @@ class MarkdownEditorActivity : android.app.Activity() {
     /**
      * 将 Rust Core 渲染命令转换为 SpannableString
      *
-     * Rust RenderCommand 结构（64位系统）：
+     * Rust RenderCommand 结构（C ABI）：
      * - cmd_type: i32 (4 bytes)
-     * - x, y, width, height: f32 (4 bytes each)
+     * - x, y, width, height: f32 (4 bytes each, 16 bytes total)
      * - color: Color {r,g,b,a} (4 bytes)
-     * - data: union (24 bytes)
+     * - data: RenderCommandData (24 bytes)
      *   对于 DrawText，data 包含 TextData：
-     *   - text_ptr: u64 (8 bytes) @ offset 24
-     *   - text_len: u32 (4 bytes) @ offset 32
+     *   - text_ptr: u64 (8 bytes) @ offset 24-31
+     *   - text_len: u32 (4 bytes) @ offset 32-35
      *   - font_family: u8 (1 byte) @ offset 36
      *   - font_size_pt: u8 (1 byte) @ offset 37
      *   - font_bold: u8 (1 byte) @ offset 38
      *   - font_italic: u8 (1 byte) @ offset 39
-     * 总计：40 bytes
+     *   - _pad: [u8; 8] (8 bytes) @ offset 40-47
+     * 总计：48 bytes
      */
     private fun convertCommandsToSpannable(commandsPtr: Long, commandsCount: Int): SpannableString {
         // 读取命令数据
-        val commandSize = 40  // 每个 RenderCommand 40 字节（64位系统）
+        val commandSize = 48  // 每个 RenderCommand 48 字节（C ABI）
         val dataSize = commandsCount * commandSize
 
         if (dataSize <= 0 || commandsPtr == 0L) {
@@ -2024,53 +2025,149 @@ class MarkdownEditorActivity : android.app.Activity() {
                 return SpannableString.valueOf("")
             }
 
-            // 构建纯文本内容（简化版本）
-            val builder = StringBuilder()
+            // 存储文本片段信息
+            data class TextSegment(
+                val text: String,
+                val x: Float,
+                val y: Float,
+                val color: Int,
+                val fontSizePt: Int,
+                val bold: Boolean,
+                val italic: Boolean
+            )
 
-            // 临时实现：只提取文本命令的内容
-            java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.nativeOrder()).apply {
-                repeat(commandsCount) {
-                    val cmdType = this.int
-                    val x = this.float
-                    val y = this.float
-                    val width = this.float
-                    val height = this.float
-                    val color = this.int  // RGBA as packed i32
+            val segments = mutableListOf<TextSegment>()
+            val buffer = java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.nativeOrder())
 
-                    when (cmdType) {
-                        0 -> {  // CMD_DRAW_TEXT (DrawText = 0)
-                            // TextData 结构：
-                            // text_ptr: u64 (8 bytes)
-                            // text_len: u32 (4 bytes)
-                            val textPtr = this.long   // text_ptr @ offset 24-31
-                            val textLen = this.int    // text_len @ offset 32-35
-                            // 跳过剩余字段 (font_family, font_size_pt, font_bold, font_italic)
-                            // 这些字段各 1 字节，总共 4 字节，已经在上面读取为 int
+            repeat(commandsCount) {
+                val startPos = buffer.position()
 
-                            // 读取文本
-                            if (textPtr != 0L && textLen > 0) {
-                                val textBytes = MarkdownCore.nativeReadBytes(textPtr, textLen)
-                                if (textBytes != null && textBytes.isNotEmpty()) {
-                                    val text = String(textBytes, Charsets.UTF_8)
-                                    builder.append(text)
-                                    // 添加换行（简化处理）
-                                    builder.append("\n")
-                                } else {
-                                    Log.e("MarkdownEditorActivity", "Failed to read text: ptr=$textPtr, len=$textLen")
-                                }
-                            } else {
-                                Log.d("MarkdownEditorActivity", "Empty text: ptr=$textPtr, len=$textLen")
+                val cmdType = buffer.int
+                val x = buffer.float
+                val y = buffer.float
+                val width = buffer.float
+                val height = buffer.float
+
+                // 读取颜色（RGBA 各 1 字节，打包成 i32）
+                val colorPacked = buffer.int
+                val a = (colorPacked shr 24) and 0xFF
+                val r = (colorPacked shr 16) and 0xFF
+                val g = (colorPacked shr 8) and 0xFF
+                val b = colorPacked and 0xFF
+                val color = android.graphics.Color.argb(a, r, g, b)
+
+                when (cmdType) {
+                    0 -> {  // CMD_DRAW_TEXT
+                        // TextData 结构（24 字节）
+                        val textPtr = buffer.long
+                        val textLen = buffer.int
+                        val fontFamily = buffer.get().toInt()
+                        val fontSizePt = buffer.get().toInt()
+                        val fontBold = buffer.get().toInt() != 0
+                        val fontItalic = buffer.get().toInt() != 0
+                        // 跳过 padding（8 字节）
+                        buffer.position(buffer.position() + 8)
+
+                        // 读取文本内容
+                        if (textPtr != 0L && textLen > 0) {
+                            val textBytes = MarkdownCore.nativeReadBytes(textPtr, textLen)
+                            if (textBytes != null && textBytes.isNotEmpty()) {
+                                val text = String(textBytes, Charsets.UTF_8)
+                                segments.add(TextSegment(text, x, y, color, fontSizePt, fontBold, fontItalic))
                             }
                         }
-                        else -> {
-                            // 跳过其他命令类型，它们的 data 段包含其他数据
-                            // FillRect = 1, DrawLine = 2, DrawImage = 3
-                        }
+                    }
+                    else -> {
+                        // 跳过 data 区域（24 字节）和前面的字段（24 字节）
+                        buffer.position(startPos + commandSize)
                     }
                 }
             }
 
-            return SpannableString.valueOf(builder.toString())
+            if (segments.isEmpty()) {
+                return SpannableString.valueOf("")
+            }
+
+            // 按位置排序（从上到下，从左到右）
+            segments.sortWith { a, b ->
+                val yDiff = a.y - b.y
+                if (kotlin.math.abs(yDiff) > 10f) {
+                    yDiff.compareTo(0f)
+                } else {
+                    a.x.compareTo(b.x)
+                }
+            }
+
+            // 构建文本和 Span 信息
+            val fullText = StringBuilder()
+
+            // 使用简单数据结构存储 Span 信息
+            data class SpanInfo(
+                val start: Int,
+                val end: Int,
+                val bold: Boolean,
+                val italic: Boolean,
+                val color: Int,
+                val fontSizePx: Int
+            )
+
+            val spanInfos = mutableListOf<SpanInfo>()
+
+            for (segment in segments) {
+                val start = fullText.length
+                fullText.append(segment.text)
+                val end = fullText.length
+
+                // 记录 Span 信息
+                spanInfos.add(SpanInfo(
+                    start = start,
+                    end = end,
+                    bold = segment.bold,
+                    italic = segment.italic,
+                    color = segment.color,
+                    fontSizePx = (segment.fontSizePt * 300 / 72).toInt() // pt to px at 300 DPI
+                ))
+
+                // 添加换行符（如果是新的行）
+                fullText.append("\n")
+            }
+
+            // 创建 SpannableString 并应用 Span
+            val spannable = SpannableString.valueOf(fullText.toString())
+            for (info in spanInfos) {
+                // 应用粗体
+                if (info.bold) {
+                    spannable.setSpan(
+                        StyleSpan(android.graphics.Typeface.BOLD),
+                        info.start, info.end,
+                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                    )
+                }
+                // 应用斜体
+                if (info.italic) {
+                    spannable.setSpan(
+                        StyleSpan(android.graphics.Typeface.ITALIC),
+                        info.start, info.end,
+                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                    )
+                }
+                // 应用颜色
+                spannable.setSpan(
+                    ForegroundColorSpan(info.color),
+                    info.start, info.end,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                // 应用字号
+                spannable.setSpan(
+                    android.text.style.AbsoluteSizeSpan(info.fontSizePx),
+                    info.start, info.end,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+            }
+
+            Log.d("MarkdownEditorActivity", "Created SpannableString with ${segments.size} segments")
+            return spannable
+
         } catch (e: Exception) {
             Log.e("MarkdownEditorActivity", "Error in convertCommandsToSpannable", e)
             return SpannableString.valueOf("")

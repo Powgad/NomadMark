@@ -199,7 +199,7 @@ class TocPanel @JvmOverloads constructor(
         if (documentHandle == 0L) return
 
         try {
-            val tocEntries = MarkdownCore.nativeGetToc(documentHandle)
+            val tocEntries = MarkdownCore.getTocEntries(documentHandle)
 
             // 初始化 Adapter (首次)
             if (!::adapter.isInitialized) {

@@ -96,9 +96,68 @@ object MarkdownCore {
      * 获取目录条目。
      *
      * @param handle 文档句柄
-     * @return 目录条目数组（标题级别、标题、位置）
+     * @param outEntries 输出参数：目录条目数组指针
+     * @param outCount 输出参数：条目数量
+     * @return 成功时返回 0，失败时返回 -1
      */
-    external fun nativeGetToc(handle: Long): Array<TocEntry>
+    external fun nativeGetToc(handle: Long, outEntries: LongArray, outCount: IntArray): Int
+
+    /**
+     * 便捷方法：获取目录条目数组。
+     *
+     * 此方法封装了 nativeGetToc 的底层调用，返回 Kotlin 友好的数组。
+     *
+     * @param handle 文档句柄
+     * @return 目录条目数组，失败时返回空数组
+     */
+    fun getTocEntries(handle: Long): Array<TocEntry> {
+        val outEntries = LongArray(2)    // [entries_ptr, entry_count]
+        val outCount = IntArray(1)       // [count]
+
+        val result = nativeGetToc(handle, outEntries, outCount)
+
+        if (result == 0) {
+            val entriesPtr = outEntries[0]
+            val count = outCount[0]
+
+            if (entriesPtr != 0L && count > 0) {
+                // 读取 TocEntry 数组
+                val entrySize = 24  // 每个 TocEntry 24 字节 (level: 1, title_ptr: 8, byte_offset: 4, line_number: 4, title_len: 4, padding: 4)
+                val dataSize = count * entrySize
+                val bytes = nativeReadBytes(entriesPtr, dataSize)
+
+                if (bytes != null && bytes.isNotEmpty()) {
+                    val entries = mutableListOf<TocEntry>()
+                    val buffer = java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.nativeOrder())
+
+                    repeat(count) {
+                        val level = buffer.get().toInt()
+                        buffer.position(buffer.position() + 3)  // 跳过 padding
+                        val titlePtr = buffer.long
+                        val byteOffset = buffer.int
+                        val lineNumber = buffer.int
+                        val titleLen = buffer.int
+
+                        // 读取标题字符串
+                        if (titlePtr != 0L && titleLen > 0) {
+                            val titleBytes = nativeReadBytes(titlePtr, titleLen)
+                            if (titleBytes != null) {
+                                val title = String(titleBytes, Charsets.UTF_8)
+                                entries.add(TocEntry(level, title, byteOffset, lineNumber))
+                            }
+                        }
+                    }
+
+                    // 释放 Rust 分配的内存
+                    nativeFreeToc(entriesPtr, count)
+
+                    return entries.toTypedArray()
+                }
+            }
+        }
+
+        return emptyArray()
+    }
 
     // =========================================================================
     // 搜索

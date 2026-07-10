@@ -739,7 +739,7 @@ class MarkdownEditorView @JvmOverloads constructor(
         canvas.drawColor(0xFAFAFA.toInt())
 
         // 获取目录数据
-        val tocEntries = MarkdownCore.nativeGetToc(documentHandle)
+        val tocEntries = MarkdownCore.getTocEntries(documentHandle)
 
         // 渲染目录条目
         // ... (具体目录渲染逻辑)

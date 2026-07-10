@@ -31,11 +31,55 @@ pub mod replace;
 pub mod math;
 pub mod syntax;
 
+// =============================================================================
+// 重新导出常用类型（简化外部使用）
+// =============================================================================
+
+// 解析器相关
+pub use parser::{
+    StreamingParser, BlockNode, InlineNode, ParseError,
+    DocumentMetadata, TocEntry, CalloutKind,
+};
+
+// 布局相关
+pub use layout::{
+    LayoutConfig, Layouter, FontMetrics, FontKey,
+    GlyphCacheSystem, GlyphKey, GlyphBitmap, GlyphMetrics,
+    create_supernote_layouter,
+};
+
+// 渲染相关
+pub use render::{
+    RenderCommand, RenderCommandType, RenderResult,
+    RenderCommandData, TextData, LineData, ImageData,
+    dirty_rects_to_ffi,
+};
+
+// 编辑功能
+pub use insert::{
+    insert_heading, insert_bold, insert_italic, insert_strikethrough,
+    insert_inline_code, insert_code_block, insert_link, insert_image,
+    insert_bullet_list, insert_ordered_list, insert_task_list,
+    insert_table, insert_horizontal_rule, insert_line_break,
+    insert_bold_italic,
+};
+
+pub use history::{EditCommand, History};
+pub use search::{Searcher, SearchResult, SearchOptions};
+pub use replace::{Replacer, ReplaceResult, ReplaceOptions, replace_first_quick, replace_all_quick};
+
+// 数学公式
+pub use math::{MathParser, MathFormula, MathMode, MathParseError};
+
+// 语法高亮
+pub use syntax::{
+    CodeHighlighter, HighlightToken, TokenType,
+    CodeHighlightTheme, SupportedLanguage, LanguageSelector,
+};
+
 // 确保 JNI 桥接已链接（bridge::jni 模块按条件编译）
-use parser::streaming::StreamingParser;
-use render::commands::RenderCommand;
-use render::{RenderResult, dirty_rects_to_ffi};
-use layout::engine::create_supernote_layouter;
+#[cfg(feature = "jni")]
+pub use bridge::jni;
 
 // =============================================================================
 // 辅助函数
