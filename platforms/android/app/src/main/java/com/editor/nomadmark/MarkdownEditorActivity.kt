@@ -5,6 +5,8 @@ import android.app.ProgressDialog
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.graphics.Canvas
+import android.graphics.Paint
 import android.graphics.Typeface
 import android.os.Bundle
 import android.os.Handler
@@ -15,6 +17,9 @@ import android.text.SpannableString
 import android.text.SpannableStringBuilder
 import android.text.TextWatcher
 import android.text.style.ForegroundColorSpan
+import android.text.style.LeadingMarginSpan
+import android.text.style.LineBackgroundSpan
+import android.text.style.ReplacementSpan
 import android.text.style.StyleSpan
 import android.util.Log
 import android.view.KeyEvent
@@ -240,6 +245,10 @@ class MarkdownEditorActivity : android.app.Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_editor)
 
+        // 获取屏幕宽度
+        val displayMetrics = resources.displayMetrics
+        screenWidth = displayMetrics.widthPixels
+
         // 初始化 SharedPreferences
         prefs = getSharedPreferences("NomadMarkPrefs", MODE_PRIVATE)
 
@@ -315,6 +324,293 @@ class MarkdownEditorActivity : android.app.Activity() {
                 }
             })
             .build()
+    }
+
+    /**
+     * 代码块边框信息
+     * 用于存储代码块的范围和绘制状态
+     */
+    private class CodeBlockInfo(
+        val blockStart: Int,    // 代码块在文本中的起始位置
+        val blockEnd: Int,      // 代码块在文本中的结束位置
+        val firstLine: Int,     // 第一行的行号
+        val lastLine: Int       // 最后一行的行号
+    )
+
+    /** 存储所有代码块的信息 */
+    private val codeBlockInfoList = mutableListOf<CodeBlockInfo>()
+
+    /** 屏幕宽度（用于计算代码块边框） */
+    private var screenWidth: Int = 0
+
+    /** 代码块边框的水平边距（dp） */
+    private val codeBlockHorizontalMarginDp = 48f  // 增加到 48dp 以防止滑动容器覆盖边框
+
+    /**
+     * 自定义代码块边框 Span
+     * 使用 LineBackgroundSpan 并根据屏幕宽度绘制完整边框
+     */
+    private class CodeBlockBorderSpan(
+        private val isFirstLine: Boolean,
+        private val isLastLine: Boolean,
+        private val screenWidth: Int,
+        private val horizontalMarginPx: Int
+    ) : LineBackgroundSpan {
+
+        override fun drawBackground(
+            canvas: Canvas,
+            paint: Paint,
+            left: Int,
+            right: Int,
+            top: Int,
+            baseline: Int,
+            bottom: Int,
+            text: CharSequence,
+            start: Int,
+            end: Int,
+            lineNumber: Int
+        ) {
+            val originalColor = paint.color
+            val originalStyle = paint.style
+            val originalWidth = paint.strokeWidth
+
+            // 设置边框样式
+            paint.color = android.graphics.Color.BLACK
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 3f  // 加粗边框使其更明显
+
+            val padding = 4
+            // 左边框：从文本左边减去 padding
+            val borderLeft = (left - padding).coerceAtLeast(0).toFloat()
+            // 右边框：始终使用屏幕宽度减去边距
+            val borderRight = (screenWidth - horizontalMarginPx).toFloat()
+            val borderTop = (top - padding).coerceAtLeast(0).toFloat()
+            val borderBottom = (bottom + padding).toFloat()
+
+            // 计算边框的绘制区域（确保在可见区域内）
+            val canvasWidth = canvas.width
+
+            // 确定行类型用于日志
+            val lineType = when {
+                isFirstLine && isLastLine -> "SINGLE"
+                isFirstLine -> "FIRST"
+                isLastLine -> "LAST"
+                else -> "MIDDLE"
+            }
+
+            android.util.Log.d("CodeBlockBorder", "Drawing $lineType line: left=$borderLeft, right=$borderRight, top=$borderTop, bottom=$borderBottom, screenWidth=$screenWidth, canvasWidth=$canvasWidth, textRight=$right")
+
+            if (canvasWidth > 0 && borderRight > canvasWidth) {
+                // 如果右边框超出 Canvas，调整到 Canvas 边缘
+                val adjustedBorderRight = (canvasWidth - padding).toFloat()
+                android.util.Log.d("CodeBlockBorder", "Adjusted right border from $borderRight to $adjustedBorderRight")
+                when {
+                    isFirstLine && isLastLine -> {
+                        canvas.drawRect(borderLeft, borderTop, adjustedBorderRight, borderBottom, paint)
+                    }
+                    isFirstLine -> {
+                        canvas.drawLine(borderLeft, borderTop, adjustedBorderRight, borderTop, paint)
+                        canvas.drawLine(borderLeft, borderTop, borderLeft, borderBottom, paint)
+                        canvas.drawLine(adjustedBorderRight, borderTop, adjustedBorderRight, borderBottom, paint)
+                    }
+                    isLastLine -> {
+                        canvas.drawLine(borderLeft, borderTop, borderLeft, borderBottom, paint)
+                        canvas.drawLine(adjustedBorderRight, borderTop, adjustedBorderRight, borderBottom, paint)
+                        canvas.drawLine(borderLeft, borderBottom, adjustedBorderRight, borderBottom, paint)
+                    }
+                    else -> {
+                        canvas.drawLine(borderLeft, borderTop.toFloat(), borderLeft, borderBottom.toFloat(), paint)
+                        canvas.drawLine(adjustedBorderRight, borderTop.toFloat(), adjustedBorderRight, borderBottom.toFloat(), paint)
+                    }
+                }
+            } else {
+                // 正常绘制
+                when {
+                    isFirstLine && isLastLine -> {
+                        android.util.Log.d("CodeBlockBorder", "Drawing single line rect")
+                        canvas.drawRect(borderLeft, borderTop, borderRight, borderBottom, paint)
+                    }
+                    isFirstLine -> {
+                        android.util.Log.d("CodeBlockBorder", "Drawing first line: top border + sides")
+                        canvas.drawLine(borderLeft, borderTop, borderRight, borderTop, paint)
+                        canvas.drawLine(borderLeft, borderTop, borderLeft, borderBottom, paint)
+                        canvas.drawLine(borderRight, borderTop, borderRight, borderBottom, paint)
+                    }
+                    isLastLine -> {
+                        android.util.Log.d("CodeBlockBorder", "Drawing last line: bottom border + sides")
+                        canvas.drawLine(borderLeft, borderTop, borderLeft, borderBottom, paint)
+                        canvas.drawLine(borderRight, borderTop, borderRight, borderBottom, paint)
+                        canvas.drawLine(borderLeft, borderBottom, borderRight, borderBottom, paint)
+                    }
+                    else -> {
+                        canvas.drawLine(borderLeft, borderTop.toFloat(), borderLeft, borderBottom.toFloat(), paint)
+                        canvas.drawLine(borderRight, borderTop.toFloat(), borderRight, borderBottom.toFloat(), paint)
+                    }
+                }
+            }
+
+            // 恢复原始样式
+            paint.color = originalColor
+            paint.style = originalStyle
+            paint.strokeWidth = originalWidth
+        }
+    }
+
+    /**
+     * 为渲染后的代码添加边框样式
+     * 需要在渲染后调用此方法
+     */
+    private fun applyCodeBlockBorder(spanned: Spanned) {
+        val spannable = spanned as Spannable
+        codeBlockInfoList.clear()
+
+        // 调试：打印所有 span 类型
+        val allSpans = (0 until spanned.length).flatMap { i ->
+            val spans = spannable.getSpans(i, i + 1, Any::class.java)
+            spans.map { it.javaClass.simpleName to it }
+        }.distinctBy { it.first }
+        Log.d("CodeBlockBorder", "All span types: ${allSpans.map { it.first }.distinct()}")
+
+        // 查找代码块相关的 span
+        var foundCodeBlocks = false
+
+        // 尝试查找 Markwon 的代码块 span
+        try {
+            val codeBlockSpanClass = Class.forName("io.noties.markwon.core.spans.CodeBlockSpan")
+            val codeSpans = spannable.getSpans(0, spanned.length, codeBlockSpanClass)
+            Log.d("CodeBlockBorder", "Found ${codeSpans.size} CodeBlockSpan")
+
+            for (span in codeSpans) {
+                val start = spannable.getSpanStart(span)
+                val end = spannable.getSpanEnd(span)
+                val flags = spannable.getSpanFlags(span)
+                Log.d("CodeBlockBorder", "CodeBlock at [$start-$end]")
+
+                // 为代码块的每一行应用边框
+                applyBorderToLines(spannable, start, end, flags)
+                foundCodeBlocks = true
+            }
+        } catch (e: ClassNotFoundException) {
+            Log.e("CodeBlockBorder", "CodeBlockSpan class not found", e)
+        }
+
+        // 查找 FencedCodeBlock 相关的 span
+        try {
+            val fencedCodeClass = Class.forName("io.noties.markwon.core.spans.FencedCodeBlockSpan")
+            val fencedSpans = spannable.getSpans(0, spanned.length, fencedCodeClass)
+            Log.d("CodeBlockBorder", "Found ${fencedSpans.size} FencedCodeBlockSpan")
+
+            for (span in fencedSpans) {
+                val start = spannable.getSpanStart(span)
+                val end = spannable.getSpanEnd(span)
+                val flags = spannable.getSpanFlags(span)
+                Log.d("CodeBlockBorder", "FencedCodeBlock at [$start-$end]")
+
+                // 为代码块的每一行应用边框
+                applyBorderToLines(spannable, start, end, flags)
+                foundCodeBlocks = true
+            }
+        } catch (e: ClassNotFoundException) {
+            Log.e("CodeBlockBorder", "FencedCodeBlockSpan class not found", e)
+        }
+
+        // 如果没找到专门的代码块 span，尝试使用背景色
+        if (!foundCodeBlocks) {
+            val bgSpans = spannable.getSpans(0, spanned.length, android.text.style.BackgroundColorSpan::class.java)
+            Log.d("CodeBlockBorder", "Found ${bgSpans.size} BackgroundColorSpan, using as code blocks")
+
+            // 将相邻的背景色 span 合并为代码块
+            mergeAdjacentBackgroundSpans(spannable, bgSpans)
+        }
+    }
+
+    /**
+     * 为代码块的每一行应用边框 Span
+     */
+    private fun applyBorderToLines(spannable: Spannable, blockStart: Int, blockEnd: Int, flags: Int) {
+        // 转换 dp 到 px
+        val density = resources.displayMetrics.density
+        val horizontalMarginPx = (codeBlockHorizontalMarginDp * density).toInt()
+
+        // 遍历代码块中的每一行
+        var currentPos = blockStart
+        var lineIndex = 0
+        val linePositions = mutableListOf<Pair<Int, Int>>() // 存储每行的起始和结束位置
+
+        while (currentPos < blockEnd) {
+            // 找到下一个换行符或块结束
+            val lineEnd = spannable.indexOf("\n", currentPos).let {
+                if (it == -1 || it > blockEnd) blockEnd else it + 1
+            }
+            linePositions.add(currentPos to lineEnd.coerceAtMost(blockEnd))
+            currentPos = lineEnd
+            lineIndex++
+        }
+
+        if (linePositions.isEmpty()) {
+            linePositions.add(blockStart to blockEnd)
+        }
+
+        // 为每一行应用边框，传递屏幕宽度和边距
+        for (i in linePositions.indices) {
+            val (lineStart, lineEnd) = linePositions[i]
+            val isFirstLine = (i == 0)
+            val isLastLine = (i == linePositions.size - 1)
+
+            spannable.setSpan(
+                CodeBlockBorderSpan(isFirstLine, isLastLine, screenWidth, horizontalMarginPx),
+                lineStart,
+                lineEnd,
+                flags
+            )
+        }
+
+        Log.d("CodeBlockBorder", "Applied border to ${linePositions.size} lines in range [$blockStart-$blockEnd], screenWidth=$screenWidth")
+    }
+
+    /**
+     * 合并相邻的背景色 span 并应用边框
+     */
+    private fun mergeAdjacentBackgroundSpans(spannable: Spannable, bgSpans: Array<android.text.style.BackgroundColorSpan>) {
+        if (bgSpans.isEmpty()) return
+
+        // 按起始位置排序
+        val sortedSpans = bgSpans.sortedBy { spannable.getSpanStart(it) }
+
+        // 合并相邻的 span
+        val mergedRanges = mutableListOf<Pair<Int, Int>>()
+        var currentStart = spannable.getSpanStart(sortedSpans[0])
+        var currentEnd = spannable.getSpanEnd(sortedSpans[0])
+
+        for (i in 1 until sortedSpans.size) {
+            val span = sortedSpans[i]
+            val start = spannable.getSpanStart(span)
+            val end = spannable.getSpanEnd(span)
+
+            // 检查是否相邻（间隔小于 2 个字符）
+            if (start - currentEnd <= 2) {
+                currentEnd = maxOf(currentEnd, end)
+            } else {
+                mergedRanges.add(currentStart to currentEnd)
+                currentStart = start
+                currentEnd = end
+            }
+        }
+        mergedRanges.add(currentStart to currentEnd)
+
+        // 移除所有背景色 span（避免覆盖边框）
+        for (bgSpan in bgSpans) {
+            spannable.removeSpan(bgSpan)
+        }
+        Log.d("CodeBlockBorder", "Removed ${bgSpans.size} BackgroundColorSpan to avoid border overlap")
+
+        // 为每个合并后的范围应用边框
+        for ((start, end) in mergedRanges) {
+            val flags = Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            applyBorderToLines(spannable, start, end, flags)
+        }
+
+        Log.d("CodeBlockBorder", "Merged ${bgSpans.size} BackgroundColorSpan into ${mergedRanges.size} code blocks")
     }
 
     /**
@@ -1561,11 +1857,15 @@ class MarkdownEditorActivity : android.app.Activity() {
                     markwon.setMarkdown(previewText, content)
                     // 移除下划线
                     removeUnderlines(previewText.text as Spanned)
+                    // 应用代码块边框
+                    applyCodeBlockBorder(previewText.text as Spanned)
                 }
                 if (isSplitMode) {
                     markwon.setMarkdown(splitPreviewText, content)
                     // 移除下划线
                     removeUnderlines(splitPreviewText.text as Spanned)
+                    // 应用代码块边框
+                    applyCodeBlockBorder(splitPreviewText.text as Spanned)
                 }
             }
             RenderEngine.RUST_CORE -> {
