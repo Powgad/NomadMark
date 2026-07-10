@@ -1,7 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Notification permission for crash reports (API 33+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Permission to read logcat for crash diagnostics -->
+    <uses-permission android:name="android.permission.READ_LOGS"
+        android:maxSdkVersion="15" />
+
     <application
+        android:name="com.editor.nomadmark.NomadMarkApplication"
         android:allowBackup="true"
         android:label="NomadMark"
         android:supportsRtl="true"

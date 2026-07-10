@@ -1,5 +1,7 @@
 package com.editor.nomadmark
 
+import java.nio.ByteBuffer
+
 /**
  * MarkdownCore - 到 Rust Core (libmarkdown_core.so) 的 FFI 桥接
  *
@@ -168,11 +170,27 @@ object MarkdownCore {
     /**
      * 从 Rust 分配的内存读取字节数组。
      *
+     * 注意：此方法会复制内存。对于大数组，使用 [nativeCreateDirectByteBuffer] 代替。
+     *
      * @param ptr Rust 内存指针
      * @param size 要读取的字节数
      * @return 字节数组
      */
     external fun nativeReadBytes(ptr: Long, size: Int): ByteArray
+
+    /**
+     * 从 Rust 分配的内存创建 DirectByteBuffer（零拷贝）。
+     *
+     * 用于高效访问 Rust 分配的渲染命令数组。
+     * 返回的 ByteBuffer 直接在 Rust 内存上操作，无需复制。
+     *
+     * 注意：返回的 ByteBuffer 必须在释放 Rust 内存之前使用完毕。
+     *
+     * @param ptr Rust 内存指针
+     * @param size 缓冲区大小（字节）
+     * @return DirectByteBuffer，如果 ptr 或 size 无效则返回 null
+     */
+    external fun nativeCreateDirectByteBuffer(ptr: Long, size: Int): ByteBuffer?
 
     /**
      * 释放由 Rust 分配的目录条目。

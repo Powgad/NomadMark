@@ -51,11 +51,11 @@ cd "$CORE_DIR"
 
 # Build for arm64-v8a (64-bit, preferred)
 echo "Building for arm64-v8a..."
-cargo ndk -t arm64-v8a build --release
+cargo ndk -t arm64-v8a build --release --features android
 
 # Build for armeabi-v7a (32-bit, legacy)
 echo "Building for armeabi-v7a..."
-cargo ndk -t armeabi-v7a build --release
+cargo ndk -t armeabi-v7a build --release --features android
 
 echo "✅ Rust Core build complete"
 echo ""

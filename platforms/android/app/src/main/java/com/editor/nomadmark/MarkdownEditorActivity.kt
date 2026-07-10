@@ -1993,54 +1993,88 @@ class MarkdownEditorActivity : android.app.Activity() {
 
     /**
      * 将 Rust Core 渲染命令转换为 SpannableString
+     *
+     * Rust RenderCommand 结构（64位系统）：
+     * - cmd_type: i32 (4 bytes)
+     * - x, y, width, height: f32 (4 bytes each)
+     * - color: Color {r,g,b,a} (4 bytes)
+     * - data: union (24 bytes)
+     *   对于 DrawText，data 包含 TextData：
+     *   - text_ptr: u64 (8 bytes) @ offset 24
+     *   - text_len: u32 (4 bytes) @ offset 32
+     *   - font_family: u8 (1 byte) @ offset 36
+     *   - font_size_pt: u8 (1 byte) @ offset 37
+     *   - font_bold: u8 (1 byte) @ offset 38
+     *   - font_italic: u8 (1 byte) @ offset 39
+     * 总计：40 bytes
      */
     private fun convertCommandsToSpannable(commandsPtr: Long, commandsCount: Int): SpannableString {
         // 读取命令数据
-        val commandSize = 48  // 每个命令 48 字节
+        val commandSize = 40  // 每个 RenderCommand 40 字节（64位系统）
         val dataSize = commandsCount * commandSize
-        val bytes = MarkdownCore.nativeReadBytes(commandsPtr, dataSize)
 
-        // 构建纯文本内容（简化版本）
-        // 实际实现需要解析渲染命令并构建相应的 Span
-        val builder = StringBuilder()
+        if (dataSize <= 0 || commandsPtr == 0L) {
+            return SpannableString.valueOf("")
+        }
 
-        // 临时实现：只提取文本命令的内容
-        java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.nativeOrder()).apply {
-            repeat(commandsCount) {
-                val cmdType = this.int
-                val x = this.float
-                val y = this.float
-                val width = this.float
-                val height = this.float
-                val color = this.int
+        try {
+            val bytes = MarkdownCore.nativeReadBytes(commandsPtr, dataSize)
+            if (bytes == null || bytes.isEmpty()) {
+                Log.e("MarkdownEditorActivity", "nativeReadBytes returned null or empty")
+                return SpannableString.valueOf("")
+            }
 
-                when (cmdType) {
-                    0 -> {  // CMD_DRAW_TEXT
-                        val textPtr = this.long
-                        val textLen = this.int
-                        this.int  // 跳过 padding
-                        val fontSizePt = this.get().toInt()
-                        // 跳过剩余字节
-                        position(position() + 15)
+            // 构建纯文本内容（简化版本）
+            val builder = StringBuilder()
 
-                        // 读取文本
-                        if (textPtr != 0L && textLen > 0) {
-                            val textBytes = MarkdownCore.nativeReadBytes(textPtr, textLen)
-                            val text = String(textBytes, Charsets.UTF_8)
-                            builder.append(text)
-                            // 添加换行（简化处理）
-                            builder.append("\n")
+            // 临时实现：只提取文本命令的内容
+            java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.nativeOrder()).apply {
+                repeat(commandsCount) {
+                    val cmdType = this.int
+                    val x = this.float
+                    val y = this.float
+                    val width = this.float
+                    val height = this.float
+                    val color = this.int  // RGBA as packed i32
+
+                    when (cmdType) {
+                        0 -> {  // CMD_DRAW_TEXT (DrawText = 0)
+                            // TextData 结构：
+                            // text_ptr: u64 (8 bytes)
+                            // text_len: u32 (4 bytes)
+                            val textPtr = this.long   // text_ptr @ offset 24-31
+                            val textLen = this.int    // text_len @ offset 32-35
+                            // 跳过剩余字段 (font_family, font_size_pt, font_bold, font_italic)
+                            // 这些字段各 1 字节，总共 4 字节，已经在上面读取为 int
+
+                            // 读取文本
+                            if (textPtr != 0L && textLen > 0) {
+                                val textBytes = MarkdownCore.nativeReadBytes(textPtr, textLen)
+                                if (textBytes != null && textBytes.isNotEmpty()) {
+                                    val text = String(textBytes, Charsets.UTF_8)
+                                    builder.append(text)
+                                    // 添加换行（简化处理）
+                                    builder.append("\n")
+                                } else {
+                                    Log.e("MarkdownEditorActivity", "Failed to read text: ptr=$textPtr, len=$textLen")
+                                }
+                            } else {
+                                Log.d("MarkdownEditorActivity", "Empty text: ptr=$textPtr, len=$textLen")
+                            }
                         }
-                    }
-                    else -> {
-                        // 跳过其他命令的 data 区域
-                        position(position() + 24)
+                        else -> {
+                            // 跳过其他命令类型，它们的 data 段包含其他数据
+                            // FillRect = 1, DrawLine = 2, DrawImage = 3
+                        }
                     }
                 }
             }
-        }
 
-        return SpannableString.valueOf(builder.toString())
+            return SpannableString.valueOf(builder.toString())
+        } catch (e: Exception) {
+            Log.e("MarkdownEditorActivity", "Error in convertCommandsToSpannable", e)
+            return SpannableString.valueOf("")
+        }
     }
 
     // =========================================================================

@@ -47,7 +47,7 @@ memmap2.workspace = true
 # FFI
 libc.workspace = true
 
-[target.'cfg(target_os = "android")'.dependencies]
+# JNI dependencies (needed for Android build even when cross-compiling)
 jni = { workspace = true, optional = true }
 
 [features]

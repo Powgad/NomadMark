@@ -596,38 +596,18 @@ class MarkdownEditorView @JvmOverloads constructor(
         canvas.drawColor(0xFFFFFFFF.toInt())
 
         canvas.save()
-        // 不再使用 clipRect，直接渲染到全屏
-        // canvas.clipRect(editorRect)
-
-        val paint = android.graphics.Paint().apply {
-            color = 0xFF000000.toInt()
-            textSize = 32f
-            isAntiAlias = true
-            isFakeBoldText = true
-        }
-
-        // 显示状态信息
-        val y = 150f
-        canvas.drawText("=== EDIT MODE ===", 50f, y - 80, paint)
-
-        paint.textSize = 28f
-        canvas.drawText("NomadMark Markdown Editor", 50f, y, paint)
-
-        paint.textSize = 20f
-        paint.color = 0xFF666666.toInt()
-        canvas.drawText("Document handle: $documentHandle", 50f, y + 40, paint)
-        canvas.drawText("Layout: ${layoutMode.name}", 50f, y + 70, paint)
-        canvas.drawText("Input: ${inputMode.name}", 50f, y + 100, paint)
 
         if (documentHandle == 0L) {
-            paint.color = 0xFFFF0000.toInt()
-            canvas.drawText("No document loaded", 50f, y + 140, paint)
+            // 没有文档时显示欢迎界面
+            renderWelcomeScreen(canvas)
         } else {
-            paint.color = 0xFF00AA00.toInt()
-            canvas.drawText("Document loaded - Rendering with Rust Core...", 50f, y + 140, paint)
+            // 使用 Rust Core 渲染 Markdown 内容
+            // 计算可见行数 (基于屏幕高度和行高)
+            val lineHeight = 40  // 预估行高（像素）
+            val visibleLines = (height / lineHeight) + 10  // 多渲染一些行用于滚动
 
-            // 使用 Rust Core 渲染命令
-            renderFromRustCore(canvas, 0, 100)  // 渲染前 100 行
+            android.util.Log.d("MarkdownEditorView", "Rendering with Rust Core: startLine=0, lineCount=$visibleLines")
+            renderFromRustCore(canvas, 0, visibleLines)
         }
 
         canvas.restore()

@@ -94,7 +94,61 @@ cargo ndk -t armeabi-v7a -o "../platforms/android/app/src/main/jniLibs" build --
 
 ---
 
-## 问题 4: .gitignore 错误忽略 jniLibs .so 文件
+## 问题 5: JNI 函数未找到 (UnsatisfiedLinkError)
+
+### 症状
+```
+java.lang.UnsatisfiedLinkError: No implementation found for long com.editor.nomadmark.MarkdownCore.nativeCreate(java.lang.String)
+(tried Java_com_editor_nomadmark_MarkdownCore_nativeCreate and Java_com_editor_nomadmark_MarkdownCore_nativeCreate__Ljava_lang_String_2)
+```
+
+### 原因
+**最常见原因**: `core/Cargo.toml` 中 jni 依赖被限定在 `target.'cfg(target_os = "android")'` 下，导致在 Windows 上交叉编译时 jni 依赖不可用。
+
+**错误配置**:
+```toml
+[target.'cfg(target_os = "android")'.dependencies]
+jni = { workspace = true, optional = true }
+```
+
+### 解决方法
+
+#### 1. 修复 Cargo.toml
+
+将 jni 依赖移到顶层 dependencies：
+
+```toml
+# JNI dependencies (needed for Android build even when cross-compiling)
+jni = { workspace = true, optional = true }
+
+[features]
+android = ["jni"]
+jni = ["dep:jni"]
+```
+
+#### 2. 编译时启用 android feature
+
+```bash
+cd core
+CARGO_ENCODED_ARGS='["--features","android"]' cargo ndk -t arm64-v8a -o "../platforms/android/app/src/main/jniLibs" build --release
+CARGO_ENCODED_ARGS='["--features","android"]' cargo ndk -t armeabi-v7a -o "../platforms/android/app/src/main/jniLibs" build --release
+```
+
+#### 3. 验证 jni 是否被启用
+
+```bash
+cd core
+cargo tree -f "{p} {f}" --features android | grep jni
+# 应该看到 jni 被启用
+```
+
+### 验证方法
+1. 检查日志确认没有 `UnsatisfiedLinkError`
+2. 安装 APK 后测试预览功能
+
+---
+
+## 问题 6: .gitignore 错误忽略 jniLibs .so 文件
 
 ### 症状
 预编译的 `.so` 文件被 Git 忽略。
@@ -148,17 +202,19 @@ git add -f scripts/build/
 export ANDROID_NDK_HOME="/d/sdk_android/ndk/29.0.13846066"
 ```
 
-### 2. 编译 Rust Core
+### 2. 编译 Rust Core（重要：启用 android feature）
 ```bash
 cd e:/Projects/NomadMark/core
-cargo ndk -t arm64-v8a -o "../platforms/android/app/src/main/jniLibs" build --release
-cargo ndk -t armeabi-v7a -o "../platforms/android/app/src/main/jniLibs" build --release
+CARGO_ENCODED_ARGS='["--features","android"]' cargo ndk -t arm64-v8a -o "../platforms/android/app/src/main/jniLibs" build --release
+CARGO_ENCODED_ARGS='["--features","android"]' cargo ndk -t armeabi-v7a -o "../platforms/android/app/src/main/jniLibs" build --release
 ```
 
 ### 3. 编译 Android APK
 ```bash
 cd e:/Projects/NomadMark/platforms/android
 ./gradlew.bat assembleDebug
+# 或 release 版本
+./gradlew.bat assembleRelease
 ```
 
 ### 4. 验证输出

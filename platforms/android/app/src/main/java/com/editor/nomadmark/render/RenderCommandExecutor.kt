@@ -57,7 +57,6 @@ class RenderCommandExecutor {
     // =========================================================================
 
     private val tempRect = RectF()
-    private val colorBuffer = ByteArray(256) // 用于读取文本
 
     // =========================================================================
     // 调试统计
@@ -93,8 +92,12 @@ class RenderCommandExecutor {
 
         android.util.Log.d("RenderCommandExecutor", "Executing $count commands")
 
-        // 将指针转换为 ByteBuffer 读取
-        val buffer = createBuffer(commandsPtr, count * COMMAND_SIZE)
+        // 使用 DirectByteBuffer 直接在 Rust 内存上操作（零拷贝）
+        val buffer = createDirectBuffer(commandsPtr, count * COMMAND_SIZE)
+            ?: run {
+                android.util.Log.e("RenderCommandExecutor", "Failed to create direct buffer")
+                return
+            }
 
         repeat(count) {
             executeCommand(buffer, canvas)
@@ -109,24 +112,24 @@ class RenderCommandExecutor {
      */
     private fun executeCommand(buffer: ByteBuffer, canvas: Canvas) {
         // 读取命令类型
-        val cmdType = buffer.getInt()
+        val cmdType = buffer.int
 
         // 读取位置和尺寸
-        val x = buffer.getFloat()
-        val y = buffer.getFloat()
-        val width = buffer.getFloat()
-        val height = buffer.getFloat()
+        val x = buffer.float
+        val y = buffer.float
+        val width = buffer.float
+        val height = buffer.float
 
         // 读取颜色
-        val color = buffer.getInt()
+        val color = buffer.int
 
         // 根据命令类型执行
         when (cmdType) {
             CMD_DRAW_TEXT -> {
                 textCmdCount++
                 // 读取 data 区域 (24 字节)
-                val textPtr = buffer.getLong()
-                val textLen = buffer.getInt()
+                val textPtr = buffer.long
+                val textLen = buffer.int
                 buffer.getInt() // 跳过 4 字节填充
                 val fontSizePt = buffer.get().toInt()
                 // 跳过剩余字节
@@ -196,6 +199,8 @@ class RenderCommandExecutor {
 
     /**
      * 从 Rust 分配的内存读取文本
+     *
+     * 注意：此方法仍需复制文本内容，因为 String 是 Java 对象
      */
     private fun readTextFromRust(ptr: Long, len: Int): String {
         if (ptr == 0L || len <= 0) return ""
@@ -204,16 +209,16 @@ class RenderCommandExecutor {
             val bytes = MarkdownCore.nativeReadBytes(ptr, len)
             String(bytes, Charsets.UTF_8)
         } catch (e: Exception) {
+            android.util.Log.e("RenderCommandExecutor", "Failed to read text from Rust", e)
             ""
         }
     }
 
     /**
-     * 创建指向 Rust 内存的 ByteBuffer
+     * 创建指向 Rust 内存的 DirectByteBuffer（零拷贝）
      */
-    private fun createBuffer(ptr: Long, size: Int): ByteBuffer {
-        val bytes = MarkdownCore.nativeReadBytes(ptr, size)
-        return ByteBuffer.wrap(bytes).order(ByteOrder.nativeOrder())
+    private fun createDirectBuffer(ptr: Long, size: Int): ByteBuffer? {
+        return MarkdownCore.nativeCreateDirectByteBuffer(ptr, size)?.order(ByteOrder.nativeOrder())
     }
 
     // =========================================================================

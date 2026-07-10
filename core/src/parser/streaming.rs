@@ -16,6 +16,7 @@
 // =============================================================================
 
 use super::ast::{BlockNode, InlineNode, DocumentMetadata, TocEntry};
+use super::extensions::parse_inline_extensions;
 use crate::parser::error::ParseError;
 use memmap2::Mmap;
 use std::collections::HashMap;
@@ -608,36 +609,9 @@ impl StreamingParser {
                         children: vec![InlineNode::Text(title.trim().to_string())],
                     });
                 } else if !trimmed.is_empty() {
-                    // 检测行内数学公式 ($...$)
-                    if let Some((start, end)) = find_inline_math(trimmed) {
-                        let mut children = Vec::new();
-
-                        // 添加 $ 之前的文本
-                        if start > 0 {
-                            children.push(InlineNode::Text(trimmed[..start].to_string()));
-                        }
-
-                        // 添加数学公式
-                        let latex = &trimmed[start + 1..end];
-                        if !latex.is_empty() {
-                            children.push(InlineNode::Math {
-                                display_mode: false,
-                                latex: latex.to_string(),
-                            });
-                        }
-
-                        // 添加 $ 之后的文本
-                        if end + 1 < trimmed.len() {
-                            children.push(InlineNode::Text(trimmed[end + 1..].to_string()));
-                        }
-
-                        blocks.push(BlockNode::Paragraph { children });
-                    } else {
-                        // 普通段落
-                        blocks.push(BlockNode::Paragraph {
-                            children: vec![InlineNode::Text(trimmed.to_string())],
-                        });
-                    }
+                    // 解析行内扩展语法（删除线、下划线、高亮、数学公式）
+                    let children = parse_inline_extensions(trimmed);
+                    blocks.push(BlockNode::Paragraph { children });
                 }
             }
             i += 1;

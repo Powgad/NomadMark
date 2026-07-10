@@ -519,6 +519,124 @@ impl Layouter {
 
                     self.cursor_x += text_width + 8.0;
                 }
+                InlineNode::Strikethrough { children } => {
+                    // 记录起始位置
+                    let start_x = self.cursor_x;
+
+                    // 递归布局子节点
+                    self.layout_inline(children, font, color, result);
+
+                    // 计算结束位置并绘制删除线
+                    let end_x = self.cursor_x;
+                    let line_y = self.cursor_y + metrics.ascent / 2.0;
+
+                    result.push(RenderCommand::draw_line(
+                        start_x,
+                        line_y,
+                        end_x,
+                        line_y,
+                        1.5,  // 线宽
+                        Color::rgb(120, 120, 120),  // 深灰色（墨水屏友好）
+                    ));
+                }
+                InlineNode::Underline { children } => {
+                    // 记录起始位置
+                    let start_x = self.cursor_x;
+
+                    // 递归布局子节点
+                    self.layout_inline(children, font, color, result);
+
+                    // 计算结束位置并绘制下划线
+                    let end_x = self.cursor_x;
+                    let line_y = self.cursor_y + metrics.ascent + 2.0;
+
+                    result.push(RenderCommand::draw_line(
+                        start_x,
+                        line_y,
+                        end_x,
+                        line_y,
+                        1.0,  // 线宽
+                        Color::rgb(80, 80, 80),  // 深灰色（墨水屏友好）
+                    ));
+                }
+                InlineNode::Highlight { children } => {
+                    // 记录起始位置
+                    let start_x = self.cursor_x;
+                    let start_y = self.cursor_y;
+
+                    // 递归布局子节点
+                    self.layout_inline(children, font, color, result);
+
+                    // 计算结束位置并绘制高亮背景
+                    let end_x = self.cursor_x;
+                    let end_y = self.cursor_y + self.current_line_height;
+
+                    result.push(RenderCommand::fill_rect(
+                        start_x,
+                        start_y,
+                        end_x - start_x,
+                        end_y - start_y,
+                        Color::rgb(255, 255, 200),  // 浅黄色背景（墨水屏友好）
+                    ));
+
+                    // 重新绘制文本以确保它在背景之上
+                    self.cursor_x = start_x;
+                    self.layout_inline(children, font, color, result);
+                }
+                InlineNode::Link { dest: _, title: _, children } => {
+                    // 记录起始位置
+                    let start_x = self.cursor_x;
+
+                    // 使用深灰色（墨水屏友好）表示链接
+                    let link_color = Color::rgb(80, 80, 80);
+
+                    // 递归布局子节点
+                    self.layout_inline(children, font, link_color, result);
+
+                    // 计算结束位置并绘制下划线
+                    let end_x = self.cursor_x;
+                    let line_y = self.cursor_y + metrics.ascent + 2.0;
+
+                    result.push(RenderCommand::draw_line(
+                        start_x,
+                        line_y,
+                        end_x,
+                        line_y,
+                        1.0,  // 线宽
+                        link_color,
+                    ));
+                }
+                InlineNode::Image { dest: _, title: _, alt } => {
+                    // 简化实现：显示为占位符
+                    let alt_text = alt.iter().map(|n| n.text_content()).collect::<String>();
+                    let placeholder = if alt_text.is_empty() {
+                        "[图片]".to_string()
+                    } else {
+                        format!("[图片: {}]", alt_text)
+                    };
+
+                    let text_width = placeholder.len() as f32 * metrics.avg_char_width;
+
+                    // 绘制图片占位符背景
+                    result.push(RenderCommand::fill_rect(
+                        self.cursor_x,
+                        self.cursor_y,
+                        text_width + 16.0,
+                        self.current_line_height,
+                        Color::rgb(240, 240, 240),  // 浅灰色背景
+                    ));
+
+                    // 绘制占位符文本
+                    result.push(RenderCommand::draw_text(
+                        self.cursor_x + 8.0,
+                        self.cursor_y + metrics.ascent,
+                        &placeholder,
+                        font,
+                        Color::rgb(120, 120, 120),  // 深灰色
+                    ));
+
+                    self.cursor_x += text_width + 16.0;
+                }
                 _ => {
                     // 其他内联节点尚未实现
                 }

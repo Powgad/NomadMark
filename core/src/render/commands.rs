@@ -70,30 +70,28 @@ pub struct TextData {
     pub text_ptr: u64,
     /// 文本字节长度
     pub text_len: u32,
-    /// 填充
-    pub _pad: u32,
-    /// 字体规格（16 字节）
-    pub font: FontSpecData,
+    /// 字体家族
+    pub font_family: u8,
+    /// 字体大小（点）
+    pub font_size_pt: u8,
+    /// 字体粗体
+    pub font_bold: u8,
+    /// 字体斜体
+    pub font_italic: u8,
+    /// 填充（对齐到 24 字节）
+    pub _pad: [u8; 8],
 }
 
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct FontSpecData {
-    pub family: u8,      // FontFamily 枚举
-    pub size_pt: u8,     // 点大小（0-255，有限范围）
-    pub bold: u8,
-    pub italic: u8,
-    pub _pad: [u8; 12],
-}
-
-impl From<FontSpec> for FontSpecData {
-    fn from(spec: FontSpec) -> Self {
+impl From<&crate::bridge::types::FontSpec> for TextData {
+    fn from(spec: &crate::bridge::types::FontSpec) -> Self {
         Self {
-            family: spec.family as u8,
-            size_pt: spec.size_pt as u8,
-            bold: spec.bold as u8,
-            italic: spec.italic as u8,
-            _pad: [0; 12],
+            text_ptr: 0,
+            text_len: 0,
+            font_family: spec.family as u8,
+            font_size_pt: spec.size_pt as u8,
+            font_bold: spec.bold as u8,
+            font_italic: spec.italic as u8,
+            _pad: [0; 8],
         }
     }
 }
@@ -210,20 +208,43 @@ impl QuantizedRect {
 impl RenderCommand {
     /// 创建 DrawText 命令
     pub fn draw_text(x: f32, y: f32, text: &str, font: FontSpec, color: Color) -> Self {
+        // 分配文本内容到堆上，并通过 FFI 传递指针
+        // 注意：调用者负责释放此内存
+        let text_bytes = text.as_bytes();
+        let text_len = text_bytes.len();
+
+        // 分配内存并复制文本内容
+        let text_ptr = if text_len > 0 {
+            let layout = std::alloc::Layout::array::<u8>(text_len).unwrap();
+            unsafe {
+                let ptr = std::alloc::alloc(layout);
+                if !ptr.is_null() {
+                    std::ptr::copy_nonoverlapping(text_bytes.as_ptr(), ptr, text_len);
+                    ptr as u64
+                } else {
+                    0
+                }
+            }
+        } else {
+            0
+        };
+
+        let text_data = {
+            let mut td = TextData::from(&font);
+            td.text_ptr = text_ptr;
+            td.text_len = text_len as u32;
+            td
+        };
+
         Self {
             cmd_type: RenderCommandType::DrawText,
             x,
             y,
-            width: 0.0,  // 将由 layouter 计算
+            width: 0.0,  // 将由 layout器 计算
             height: 0.0,
             color,
             data: RenderCommandData {
-                text: TextData {
-                    text_ptr: 0,  // 由渲染器设置
-                    text_len: text.len() as u32,
-                    _pad: 0,
-                    font: FontSpecData::from(font),
-                },
+                text: text_data,
             },
         }
     }

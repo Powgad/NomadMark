@@ -9,6 +9,10 @@
 | Skill | File | Description |
 |-------|------|-------------|
 | **android-build-troubleshooting** | [.claude/skills/android-build-troubleshooting.md](android-build-troubleshooting.md) | Windows 上编译 Android Rust Core 项目的常见问题与解决方法 |
+| **crash-log-collection** | [.claude/skills/crash-log-collection.md](crash-log-collection.md) | Android 错误日志自动收集系统（崩溃捕获、设备信息、日志上传） |
+| **rust-core-roadmap** | [docs/rust-core-roadmap.md](../docs/rust-core-roadmap.md) | Rust Core 渲染引擎开发路线图（阶段规划、功能清单、技术架构） |
+| **rust-core-rendering-troubleshooting** | [.claude/skills/rust-core-rendering-troubleshooting.md](rust-core-rendering-troubleshooting.md) | Rust Core 渲染异常排查（内存布局、JNI 接口、nativeReadBytes 问题） |
+| **rust-core-review** | [.claude/skills/rust-core-review.md](rust-core-review.md) | Rust Core 代码审查报告（内存安全、设计问题、性能优化、架构建议） |
 | **supernote-device-dev** | [docs/skills.md](../docs/skills.md) | Supernote/Ratta 墨水屏设备开发指南（E-Ink UI、系统签名、手写 SDK、Scoped Storage） |
 
 ---
