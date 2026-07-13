@@ -607,6 +607,179 @@ pub extern "C" fn md_document_search(
 }
 
 // =============================================================================
+// FFI: 替换功能
+// =============================================================================
+
+/// 替换第一个匹配项
+///
+/// # 参数
+/// - `handle`: 文档句柄
+/// - `query`: 搜索字符串指针
+/// - `query_len`: 搜索字符串长度
+/// - `replacement`: 替换字符串指针
+/// - `replacement_len`: 替换字符串长度
+/// - `out_content`: 输出替换后的内容指针
+/// - `out_len`: 输出内容的长度
+///
+/// # 返回
+/// - 0: 成功
+/// - -1: 失败（参数无效）
+/// - -2: 未找到匹配项
+#[no_mangle]
+pub extern "C" fn md_document_replace_first(
+	handle: *mut MarkdownDocument,
+	query: *const c_char,
+	query_len: usize,
+	replacement: *const c_char,
+	replacement_len: usize,
+	out_content: *mut *const c_char,
+	out_len: *mut usize,
+) -> i32 {
+	if handle.is_null() || query.is_null() || replacement.is_null()
+		|| out_content.is_null() || out_len.is_null() {
+		return -1;
+	}
+
+	unsafe {
+		let doc = &*handle;
+		let parser = doc.parser();
+
+		// 转换查询字符串
+		let query_str = match str::from_utf8(slice::from_raw_parts(query as *const u8, query_len)) {
+			Ok(s) => s,
+			Err(_) => return -1,
+		};
+
+		// 转换替换字符串
+		let replacement_str = match str::from_utf8(
+			slice::from_raw_parts(replacement as *const u8, replacement_len)
+		) {
+			Ok(s) => s,
+			Err(_) => return -1,
+		};
+
+		// 获取文档内容
+		let content = parser.get_content();
+
+		// 使用 Replacer 执行替换
+		let mut replacer = replace::Replacer::new(content.to_string());
+		let options = replace::ReplaceOptions {
+			search_options: search::SearchOptions::default(),
+			record_history: false, // FFI 层不记录历史
+		};
+
+		let result = replacer.replace_first(
+			query_str,
+			replacement_str,
+			&options,
+			None // 不传入 history
+		);
+
+		if !result.has_changes {
+			return -2; // 未找到匹配项
+		}
+
+		// 将新内容泄漏到堆并返回指针
+		let new_content = result.new_content;
+		*out_len = new_content.len();
+		*out_content = new_content.as_bytes().as_ptr();
+		std::mem::forget(new_content);
+
+		0
+	}
+}
+
+/// 替换所有匹配项
+///
+/// # 参数同 md_document_replace_first
+///
+/// # 返回
+/// - 0: 成功
+/// - -1: 失败（参数无效）
+/// - -2: 未找到匹配项
+#[no_mangle]
+pub extern "C" fn md_document_replace_all(
+	handle: *mut MarkdownDocument,
+	query: *const c_char,
+	query_len: usize,
+	replacement: *const c_char,
+	replacement_len: usize,
+	out_content: *mut *const c_char,
+	out_len: *mut usize,
+) -> i32 {
+	if handle.is_null() || query.is_null() || replacement.is_null()
+		|| out_content.is_null() || out_len.is_null() {
+		return -1;
+	}
+
+	unsafe {
+		let doc = &*handle;
+		let parser = doc.parser();
+
+		// 转换查询字符串
+		let query_str = match str::from_utf8(slice::from_raw_parts(query as *const u8, query_len)) {
+			Ok(s) => s,
+			Err(_) => return -1,
+		};
+
+		// 转换替换字符串
+		let replacement_str = match str::from_utf8(
+			slice::from_raw_parts(replacement as *const u8, replacement_len)
+		) {
+			Ok(s) => s,
+			Err(_) => return -1,
+		};
+
+		// 获取文档内容
+		let content = parser.get_content();
+
+		// 使用 Replacer 执行替换
+		let mut replacer = replace::Replacer::new(content.to_string());
+		let options = replace::ReplaceOptions {
+			search_options: search::SearchOptions::default(),
+			record_history: false,
+		};
+
+		let result = replacer.replace_all(
+			query_str,
+			replacement_str,
+			&options,
+			None
+		);
+
+		if !result.has_changes {
+			return -2;
+		}
+
+		// 将新内容泄漏到堆并返回指针
+		let new_content = result.new_content;
+		*out_len = new_content.len();
+		*out_content = new_content.as_bytes().as_ptr();
+		std::mem::forget(new_content);
+
+		0
+	}
+}
+
+/// 释放替换后分配的内容
+///
+/// # 参数
+/// - `ptr`: 内容指针
+/// - `len`: 内容长度
+#[no_mangle]
+pub extern "C" fn md_free_replaced_content(ptr: *const c_char, len: usize) {
+	if !ptr.is_null() {
+		unsafe {
+			let _ = String::from_raw_parts(
+				ptr as *mut u8,
+				len,
+				len, // capacity == len for String created from bytes
+			);
+		}
+	}
+}
+
+// =============================================================================
 // FFI: 历史记录（撤销/重做）
 // =============================================================================
 

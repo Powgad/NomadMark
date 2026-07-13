@@ -160,7 +160,7 @@ object MarkdownCore {
     }
 
     // =========================================================================
-    // 搜索
+    // 搜索和替换
     // =========================================================================
 
     /**
@@ -168,12 +168,41 @@ object MarkdownCore {
      *
      * @param handle 文档句柄
      * @param query 搜索查询字符串
-     * @return 带有行/列位置的搜索结果数组
+     * @return LongArray，每个匹配项占 3 个元素: [start, end, line_number, ...]
+     *         如果没有匹配项返回 null
      */
     external fun nativeSearch(
         handle: Long,
         query: String
-    ): Array<SearchResult>
+    ): LongArray?
+
+    /**
+     * 替换第一个匹配项。
+     *
+     * @param handle 文档句柄
+     * @param query 搜索字符串
+     * @param replacement 替换字符串
+     * @return 替换后的完整内容，如果没有匹配项返回 null
+     */
+    external fun nativeReplaceFirst(
+        handle: Long,
+        query: String,
+        replacement: String
+    ): String?
+
+    /**
+     * 替换所有匹配项。
+     *
+     * @param handle 文档句柄
+     * @param query 搜索字符串
+     * @param replacement 替换字符串
+     * @return 替换后的完整内容，如果没有匹配项返回 null
+     */
+    external fun nativeReplaceAll(
+        handle: Long,
+        query: String,
+        replacement: String
+    ): String?
 
     // =========================================================================
     // 历史记录（撤销/重做）

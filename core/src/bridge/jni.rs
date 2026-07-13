@@ -56,6 +56,35 @@ extern "C" {
     fn md_free_commands(ptr: *mut RenderCommand, len: usize);
     fn md_free_toc(ptr: *mut TocEntry, len: usize);
     fn md_free_dirty_rects(ptr: *mut i32, len: usize);
+
+    // 搜索和替换函数
+    use crate::bridge::types::SearchResult;
+    fn md_document_search(
+        handle: *mut crate::MarkdownDocument,
+        query: *const i8,
+        query_len: usize,
+        out_results: *mut *const SearchResult,
+        out_count: *mut usize,
+    ) -> i32;
+    fn md_document_replace_first(
+        handle: *mut crate::MarkdownDocument,
+        query: *const i8,
+        query_len: usize,
+        replacement: *const i8,
+        replacement_len: usize,
+        out_content: *mut *const i8,
+        out_len: *mut usize,
+    ) -> i32;
+    fn md_document_replace_all(
+        handle: *mut crate::MarkdownDocument,
+        query: *const i8,
+        query_len: usize,
+        replacement: *const i8,
+        replacement_len: usize,
+        out_content: *mut *const i8,
+        out_len: *mut usize,
+    ) -> i32;
+    fn md_free_replaced_content(ptr: *const i8, len: usize);
 }
 
 // =============================================================================
@@ -477,17 +506,219 @@ pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeGetToc(
 }
 
 /// JNI: Java_com_editor_nomadmark_MarkdownCore_nativeSearch
-/// TODO: 实现搜索功能
+/// 搜索文档中的所有匹配项
+///
+/// # 返回
+/// LongArray，每个匹配项占 3 个元素: [start, end, line_number, ...]
+/// 如果没有匹配项返回 null
 #[cfg(feature = "jni")]
 #[no_mangle]
 pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeSearch(
-    _env: JNIEnv,
+    mut env: JNIEnv,
     _class: jobject,
-    _handle: jlong,
-    _query: jstring,
-) -> jlong {
-    // TODO: 实现搜索功能
-    0
+    handle: jlong,
+    query: jstring,
+) -> jlongArray {
+    if handle == 0 || query.is_null() {
+        return std::ptr::null_mut();
+    }
+
+    unsafe {
+        // 获取查询字符串
+        let j_str = JString::from_raw(query);
+        let rust_query = match env.get_string(&j_str) {
+            Ok(s) => s,
+            Err(_) => return std::ptr::null_mut(),
+        };
+
+        // 调用 C FFI 搜索函数
+        let mut out_results: *const SearchResult = std::ptr::null();
+        let mut out_count: usize = 0;
+
+        let result = md_document_search(
+            handle as *mut crate::MarkdownDocument,
+            rust_query.as_ptr() as *const i8,
+            rust_query.len(),
+            &mut out_results as *mut _ as *mut _,
+            &mut out_count as *mut _ as *mut _,
+        );
+
+        std::mem::forget(j_str);
+
+        if result != 0 || out_count == 0 {
+            return std::ptr::null_mut();
+        }
+
+        // 创建 Java long 数组存储结果
+        // 每个 SearchResult 3 个 long: [start, end, line_number]
+        let jarray = match env.new_long_array((out_count * 3) as jsize) {
+            Ok(arr) => arr,
+            Err(_) => return std::ptr::null_mut(),
+        };
+
+        // 填充数组
+        let results_slice = std::slice::from_raw_parts(out_results, out_count);
+        let mut jbuffer = Vec::with_capacity(out_count * 3);
+        for r in results_slice {
+            jbuffer.push(r.start as jlong);
+            jbuffer.push(r.end as jlong);
+            jbuffer.push(r.line_number as jlong);
+        }
+
+        let jobj = JLongArray::from_raw(jarray);
+        env.set_long_array_region(&jobj, 0, &jbuffer).unwrap();
+        std::mem::forget(jobj);
+
+        // 释放 Rust 分配的搜索结果
+        let _ = Box::from_raw(out_results as *mut SearchResult);
+
+        jarray.into_raw()
+    }
+}
+
+/// JNI: Java_com_editor_nomadmark_MarkdownCore_nativeReplaceFirst
+/// 替换第一个匹配项
+///
+/// # 返回
+/// 替换后的完整内容 String，如果没有匹配项返回 null
+#[cfg(feature = "jni")]
+#[no_mangle]
+pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeReplaceFirst(
+    mut env: JNIEnv,
+    _class: jobject,
+    handle: jlong,
+    query: jstring,
+    replacement: jstring,
+) -> jstring {
+    if handle == 0 || query.is_null() || replacement.is_null() {
+        return std::ptr::null_mut();
+    }
+
+    unsafe {
+        // 获取查询字符串
+        let j_query = JString::from_raw(query);
+        let rust_query = match env.get_string(&j_query) {
+            Ok(s) => s,
+            Err(_) => return std::ptr::null_mut(),
+        };
+
+        // 获取替换字符串
+        let j_replacement = JString::from_raw(replacement);
+        let rust_replacement = match env.get_string(&j_replacement) {
+            Ok(s) => s,
+            Err(_) => {
+                std::mem::forget(j_query);
+                return std::ptr::null_mut();
+            }
+        };
+
+        // 准备输出参数
+        let mut out_content: *const i8 = std::ptr::null();
+        let mut out_len: usize = 0;
+
+        // 调用 C FFI 替换函数
+        let result = md_document_replace_first(
+            handle as *mut crate::MarkdownDocument,
+            rust_query.as_ptr() as *const i8,
+            rust_query.len(),
+            rust_replacement.as_ptr() as *const i8,
+            rust_replacement.len(),
+            &mut out_content as *mut _ as *mut _,
+            &mut out_len as *mut _ as *mut _,
+        );
+
+        std::mem::forget(j_query);
+        std::mem::forget(j_replacement);
+
+        if result != 0 {
+            // 返回 null 表示失败
+            return std::ptr::null_mut();
+        }
+
+        // 将结果转换为 Java String
+        let content_bytes = std::slice::from_raw_parts(out_content as *const u8, out_len);
+        let jresult = env.new_string(String::from_utf8_lossy(content_bytes).to_string());
+
+        // 释放 Rust 分配的内存
+        md_free_replaced_content(out_content, out_len);
+
+        match jresult {
+            Ok(s) => s.into_raw(),
+            Err(_) => std::ptr::null_mut(),
+        }
+    }
+}
+
+/// JNI: Java_com_editor_nomadmark_MarkdownCore_nativeReplaceAll
+/// 替换所有匹配项
+///
+/// # 返回
+/// 替换后的完整内容 String，如果没有匹配项返回 null
+#[cfg(feature = "jni")]
+#[no_mangle]
+pub extern "C" fn Java_com_editor_nomadmark_MarkdownCore_nativeReplaceAll(
+    mut env: JNIEnv,
+    _class: jobject,
+    handle: jlong,
+    query: jstring,
+    replacement: jstring,
+) -> jstring {
+    if handle == 0 || query.is_null() || replacement.is_null() {
+        return std::ptr::null_mut();
+    }
+
+    unsafe {
+        // 获取查询字符串
+        let j_query = JString::from_raw(query);
+        let rust_query = match env.get_string(&j_query) {
+            Ok(s) => s,
+            Err(_) => return std::ptr::null_mut(),
+        };
+
+        // 获取替换字符串
+        let j_replacement = JString::from_raw(replacement);
+        let rust_replacement = match env.get_string(&j_replacement) {
+            Ok(s) => s,
+            Err(_) => {
+                std::mem::forget(j_query);
+                return std::ptr::null_mut();
+            }
+        };
+
+        // 准备输出参数
+        let mut out_content: *const i8 = std::ptr::null();
+        let mut out_len: usize = 0;
+
+        // 调用 C FFI 替换函数
+        let result = md_document_replace_all(
+            handle as *mut crate::MarkdownDocument,
+            rust_query.as_ptr() as *const i8,
+            rust_query.len(),
+            rust_replacement.as_ptr() as *const i8,
+            rust_replacement.len(),
+            &mut out_content as *mut _ as *mut _,
+            &mut out_len as *mut _ as *mut _,
+        );
+
+        std::mem::forget(j_query);
+        std::mem::forget(j_replacement);
+
+        if result != 0 {
+            return std::ptr::null_mut();
+        }
+
+        // 将结果转换为 Java String
+        let content_bytes = std::slice::from_raw_parts(out_content as *const u8, out_len);
+        let jresult = env.new_string(String::from_utf8_lossy(content_bytes).to_string());
+
+        // 释放 Rust 分配的内存
+        md_free_replaced_content(out_content, out_len);
+
+        match jresult {
+            Ok(s) => s.into_raw(),
+            Err(_) => std::ptr::null_mut(),
+        }
+    }
 }
 
 /// JNI: Java_com_editor_nomadmark_MarkdownCore_nativeReadBytes

@@ -477,7 +477,7 @@ class MarkdownEditorActivity : android.app.Activity() {
 
         // 尝试查找 Markwon 的代码块 span
         try {
-            val codeBlockSpanClass = Class.forName("io.noties.markwon.core.spans.CodeBlockSpan")
+            val codeBlockSpanClass = Class.forName(CODE_BLOCK_SPAN)
             val codeSpans = spannable.getSpans(0, spanned.length, codeBlockSpanClass)
             Log.d("CodeBlockBorder", "Found ${codeSpans.size} CodeBlockSpan")
 
@@ -497,7 +497,7 @@ class MarkdownEditorActivity : android.app.Activity() {
 
         // 查找 FencedCodeBlock 相关的 span
         try {
-            val fencedCodeClass = Class.forName("io.noties.markwon.core.spans.FencedCodeBlockSpan")
+            val fencedCodeClass = Class.forName(FENCED_CODE_BLOCK_SPAN)
             val fencedSpans = spannable.getSpans(0, spanned.length, fencedCodeClass)
             Log.d("CodeBlockBorder", "Found ${fencedSpans.size} FencedCodeBlockSpan")
 
@@ -630,28 +630,44 @@ class MarkdownEditorActivity : android.app.Activity() {
 
         // 处理 Markwon 的 LinkSpan（Markwon 4.6.2 使用自定义 LinkSpan）
         try {
-            val linkSpanClass = Class.forName("io.noties.markwon.core.span.LinkSpan")
+            val linkSpanClass = Class.forName(LINK_SPAN)
             val linkSpans = spannable.getSpans(0, spanned.length, linkSpanClass)
-            Log.d("removeUnderlines", "Found ${linkSpans.size} LinkSpans")
-            for (span in linkSpans) {
-                val start = spannable.getSpanStart(span)
-                val end = spannable.getSpanEnd(span)
-                val flags = spannable.getSpanFlags(span)
-                spannable.removeSpan(span)
+            if (linkSpans.isNotEmpty()) {
+                Log.d("removeUnderlines", "Found ${linkSpans.size} LinkSpans")
+                // 获取 destination 方法用于提取 URL
+                val destinationMethod = linkSpanClass.getDeclaredMethod("destination")
+                destinationMethod.isAccessible = true
 
-                // 创建不带下划线的自定义 Span
-                val noUnderlineSpan = object : android.text.style.URLSpan("about:blank") {
-                    override fun updateDrawState(ds: android.text.TextPaint) {
-                        super.updateDrawState(ds)
-                        ds.isUnderlineText = false
-                        // 保留原始链接颜色
-                        ds.color = ds.linkColor
+                for (span in linkSpans) {
+                    val start = spannable.getSpanStart(span)
+                    val end = spannable.getSpanEnd(span)
+                    val flags = spannable.getSpanFlags(span)
+                    spannable.removeSpan(span)
+
+                    // 从原始 LinkSpan 中提取 URL
+                    val url = try {
+                        destinationMethod.invoke(span) as? String ?: "about:blank"
+                    } catch (e: Exception) {
+                        Log.e("removeUnderlines", "Failed to extract URL from LinkSpan", e)
+                        "about:blank"
                     }
+
+                    // 创建不带下划线的自定义 Span，保留原始 URL
+                    val noUnderlineSpan = object : android.text.style.URLSpan(url) {
+                        override fun updateDrawState(ds: android.text.TextPaint) {
+                            super.updateDrawState(ds)
+                            ds.isUnderlineText = false
+                            // 保留原始链接颜色
+                            ds.color = ds.linkColor
+                        }
+                    }
+                    spannable.setSpan(noUnderlineSpan, start, end, flags)
                 }
-                spannable.setSpan(noUnderlineSpan, start, end, flags)
             }
         } catch (e: ClassNotFoundException) {
             Log.e("removeUnderlines", "LinkSpan class not found", e)
+        } catch (e: NoSuchMethodException) {
+            Log.e("removeUnderlines", "LinkSpan.destination method not found", e)
         }
 
         // 处理标准 URLSpan（兼容处理）
@@ -680,12 +696,20 @@ class MarkdownEditorActivity : android.app.Activity() {
         }
 
         // 确保分割线可见 - 检查 ThematicBreakSpan
-        val thematicBreakSpans = spanned.getSpans(0, spanned.length, io.noties.markwon.core.spans.ThematicBreakSpan::class.java)
-        Log.d("removeUnderlines", "Found ${thematicBreakSpans.size} ThematicBreakSpans")
-        for (span in thematicBreakSpans) {
-            val start = spanned.getSpanStart(span)
-            val end = spanned.getSpanEnd(span)
-            Log.d("removeUnderlines", "ThematicBreakSpan at [$start-$end]")
+        try {
+            val thematicBreakClass = Class.forName(THEMATIC_BREAK_SPAN)
+            @Suppress("UNCHECKED_CAST")
+            val thematicBreakSpans = spanned.getSpans(0, spanned.length, thematicBreakClass) as Array<Any>
+            if (thematicBreakSpans.isNotEmpty()) {
+                Log.d("removeUnderlines", "Found ${thematicBreakSpans.size} ThematicBreakSpans")
+                for (span in thematicBreakSpans) {
+                    val start = spanned.getSpanStart(span)
+                    val end = spanned.getSpanEnd(span)
+                    Log.d("removeUnderlines", "ThematicBreakSpan at [$start-$end]")
+                }
+            }
+        } catch (e: ClassNotFoundException) {
+            // ThematicBreakSpan 不存在，跳过
         }
     }
 
@@ -2996,6 +3020,12 @@ class MarkdownEditorActivity : android.app.Activity() {
     companion object {
         private const val OPEN_FILE_REQUEST_CODE = 1001
         private const val OPEN_SAMPLE_REQUEST_CODE = 1002
+
+        // Markwon 内部类名常量（用于反射访问）
+        private const val CODE_BLOCK_SPAN = "io.noties.markwon.core.spans.CodeBlockSpan"
+        private const val FENCED_CODE_BLOCK_SPAN = "io.noties.markwon.core.spans.FencedCodeBlockSpan"
+        private const val LINK_SPAN = "io.noties.markwon.core.span.LinkSpan"
+        private const val THEMATIC_BREAK_SPAN = "io.noties.markwon.core.spans.ThematicBreakSpan"
     }
 
     /**
