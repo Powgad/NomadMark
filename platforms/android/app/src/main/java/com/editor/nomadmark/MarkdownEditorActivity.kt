@@ -46,6 +46,8 @@ import io.noties.markwon.image.ImagesPlugin
 import android.text.Spanned
 import android.text.style.URLSpan
 import android.text.style.UnderlineSpan
+import com.editor.nomadmark.format.ThematicBreakFormatter
+import com.editor.nomadmark.markwon.StrictThematicBreakPlugin
 
 /**
  * Markdown Editor Activity
@@ -239,6 +241,20 @@ class MarkdownEditorActivity : android.app.Activity() {
     private var isUndoingOrRedoing = false
 
     // =========================================================================
+    // 分隔线自动格式化
+    // =========================================================================
+
+    /** 编辑器的分隔线格式化器 */
+    private val editorThematicBreakFormatter by lazy {
+        ThematicBreakFormatter { getCurrentEditor() }
+    }
+
+    /** 分屏编辑器的分隔线格式化器 */
+    private val splitEditorThematicBreakFormatter by lazy {
+        ThematicBreakFormatter { splitEditorText }
+    }
+
+    // =========================================================================
     // 生命周期
     // =========================================================================
 
@@ -316,6 +332,12 @@ class MarkdownEditorActivity : android.app.Activity() {
                     builder.inlinesEnabled(true)
                 }
             }))
+            // 添加分隔线渲染插件
+            .usePlugin(StrictThematicBreakPlugin.builder()
+                .color(Color.rgb(80, 80, 80))  // 深灰色，墨水屏友好
+                .height(2)                        // 2dp 高度
+                .padding(24, 24)                 // 上下各 24dp 间距
+                .build())
             // 添加自定义主题配置，移除标题下方的分隔线
             .usePlugin(object : AbstractMarkwonPlugin() {
                 override fun configureTheme(builder: MarkwonTheme.Builder) {
@@ -855,6 +877,10 @@ class MarkdownEditorActivity : android.app.Activity() {
         editorText.addTextChangedListener(textWatcher)
         splitEditorText.addTextChangedListener(textWatcher)
 
+        // 添加分隔线自动格式化监听器
+        editorText.addTextChangedListener(editorThematicBreakFormatter)
+        splitEditorText.addTextChangedListener(splitEditorThematicBreakFormatter)
+
         // 同步两个编辑器的内容
         syncEditors()
 
@@ -869,7 +895,7 @@ class MarkdownEditorActivity : android.app.Activity() {
         btnList.setOnClickListener { insertLine("- ") }
         btnQuote.setOnClickListener { insertLine("> ") }
         btnTable.setOnClickListener { insertTable() }
-        btnHr.setOnClickListener { insertLine("---\n") }
+        btnHr.setOnClickListener { insertThematicBreak() }
         btnFormula.setOnClickListener { insertFormula() }
 
         // 目录关闭
@@ -2255,6 +2281,44 @@ class MarkdownEditorActivity : android.app.Activity() {
                 }
             }
             .show()
+    }
+
+    /**
+     * 插入分隔线
+     *
+     * 自动添加前后空行，并将光标定位到新行
+     */
+    private fun insertThematicBreak() {
+        val editor = getCurrentEditor()
+        val position = editor.selectionStart
+        val text = editor.text
+
+        // 检查前面是否需要添加空行
+        val needsLeadingBlank = if (position == 0) {
+            false
+        } else {
+            val prevChar = text[position - 1]
+            prevChar != '\n'
+        }
+
+        // 构建分隔线文本
+        val sb = StringBuilder()
+        if (needsLeadingBlank) {
+            sb.append("\n")
+        }
+        sb.append("---\n\n")
+
+        // 插入文本
+        text.insert(position, sb.toString())
+
+        // 设置光标位置
+        val newPosition = position + sb.length
+        editor.setSelection(newPosition.coerceAtMost(text.length))
+
+        markAsModified()
+
+        // 立即更新预览
+        updatePreview()
     }
 
     private fun changeHeading(delta: Int) {
