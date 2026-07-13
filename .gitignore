@@ -32,6 +32,7 @@ platforms/ios/DerivedData/
 /target/
 **/*.rs.bk
 Cargo.lock
+*.pdb
 
 # =============================================================================
 # Android
