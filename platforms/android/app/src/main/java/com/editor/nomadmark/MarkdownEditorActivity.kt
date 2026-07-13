@@ -2415,13 +2415,90 @@ class MarkdownEditorActivity : android.app.Activity() {
         val text = editor.text.toString()
         val lines = text.split("\n")
 
-        if (lineNumber < lines.size) {
-            var position = 0
+        if (lineNumber >= lines.size) return
+
+        // 获取目标行的标题文本（去除 # 符号和前导空格）
+        val targetLine = lines[lineNumber].trim()
+        val headingText = when {
+            targetLine.startsWith("###### ") -> targetLine.removePrefix("###### ").trim()
+            targetLine.startsWith("##### ") -> targetLine.removePrefix("##### ").trim()
+            targetLine.startsWith("#### ") -> targetLine.removePrefix("#### ").trim()
+            targetLine.startsWith("### ") -> targetLine.removePrefix("### ").trim()
+            targetLine.startsWith("## ") -> targetLine.removePrefix("## ").trim()
+            targetLine.startsWith("# ") -> targetLine.removePrefix("# ").trim()
+            else -> targetLine
+        }
+
+        // ============ 编辑模式/分屏编辑区：滚动到标题出现在第一行 ============
+        if (!isPreviewMode || isSplitMode) {
+            var charPosition = 0
             for (i in 0 until lineNumber) {
-                position += lines[i].length + 1
+                charPosition += lines[i].length + 1
             }
-            editor.setSelection(position)
-            getCurrentScrollView().smoothScrollTo(0, position)
+
+            val layout = editor.layout
+            if (layout != null) {
+                // 获取目标行的精确像素位置
+                val targetLineIndex = layout.getLineForOffset(charPosition)
+                val lineTop = layout.getLineTop(targetLineIndex)
+
+                // 滚动使目标行位于页面顶部（第一行）
+                if (isSplitMode) {
+                    splitEditorScroll.smoothScrollTo(0, lineTop.toInt())
+                } else {
+                    editorLayer.smoothScrollTo(0, lineTop.toInt())
+                }
+
+                // 设置光标位置
+                editor.setSelection(charPosition)
+            } else {
+                // 降级方案：如果 layout 不可用
+                editor.setSelection(charPosition)
+                getCurrentScrollView().smoothScrollTo(0, charPosition)
+            }
+        }
+
+        // ============ 预览模式/分屏预览区：搜索标题并滚动到第一行 ============
+        if (isPreviewMode || isSplitMode) {
+            val targetView: TextView
+            val targetScrollView: ScrollView
+
+            if (isPreviewMode) {
+                if (!::previewText.isInitialized) return
+                targetView = previewText
+                targetScrollView = previewLayer
+            } else {
+                // 分屏模式
+                if (!::splitPreviewText.isInitialized) return
+                targetView = splitPreviewText
+                targetScrollView = splitPreviewScroll
+            }
+
+            val previewSpannable = targetView.text as? android.text.Spannable ?: return
+
+            // 在预览文本中搜索标题
+            val previewContent = previewSpannable.toString()
+            val searchIndex = previewContent.indexOf(headingText, ignoreCase = true)
+
+            if (searchIndex >= 0) {
+                val previewLayout = targetView.layout
+                if (previewLayout != null) {
+                    // 获取标题在预览中的行位置
+                    val targetLineIndex = previewLayout.getLineForOffset(searchIndex)
+                    val lineTop = previewLayout.getLineTop(targetLineIndex)
+
+                    // 滚动使标题位于页面顶部（第一行）
+                    targetScrollView.post {
+                        targetScrollView.smoothScrollTo(0, lineTop.toInt())
+                    }
+                } else {
+                    // 降级方案：基于字符位置估算（假设每行约 40px）
+                    val estimatedY = (searchIndex / 50) * 40
+                    targetScrollView.post {
+                        targetScrollView.smoothScrollTo(0, estimatedY)
+                    }
+                }
+            }
         }
     }
 
