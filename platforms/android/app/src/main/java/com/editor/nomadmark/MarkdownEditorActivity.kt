@@ -311,17 +311,17 @@ class MarkdownEditorActivity : android.app.Activity() {
             // 数学公式渲染（JLatexMath）
             .usePlugin(JLatexMathPlugin.create(32f, object : JLatexMathPlugin.BuilderConfigure {
                 override fun configureBuilder(builder: JLatexMathPlugin.Builder) {
-                    // 启用行内公式（需要 $$...$$ 语法）
+                    // 启用行内数学公式（使用 $...$ 语法）
+                    // 块级数学公式使用 $$...$$ 语法
                     builder.inlinesEnabled(true)
                 }
             }))
-            // 添加自定义主题配置，移除标题下划线和链接下划线
+            // 添加自定义主题配置，移除标题下方的分隔线
             .usePlugin(object : AbstractMarkwonPlugin() {
                 override fun configureTheme(builder: MarkwonTheme.Builder) {
-                    // 移除 H1 和 H2 标题下方的分隔线（"下划线"效果）
+                    // 移除 H1 和 H2 标题下方的分隔线
                     builder.headingBreakHeight(0)
-                    // 禁用链接下划线
-                    builder.isLinkUnderlined(false)
+                    // 注：链接下划线由 removeUnderlines() 后处理统一管理
                 }
             })
             .build()
@@ -391,20 +391,9 @@ class MarkdownEditorActivity : android.app.Activity() {
             // 计算边框的绘制区域（确保在可见区域内）
             val canvasWidth = canvas.width
 
-            // 确定行类型用于日志
-            val lineType = when {
-                isFirstLine && isLastLine -> "SINGLE"
-                isFirstLine -> "FIRST"
-                isLastLine -> "LAST"
-                else -> "MIDDLE"
-            }
-
-            android.util.Log.d("CodeBlockBorder", "Drawing $lineType line: left=$borderLeft, right=$borderRight, top=$borderTop, bottom=$borderBottom, screenWidth=$screenWidth, canvasWidth=$canvasWidth, textRight=$right")
-
             if (canvasWidth > 0 && borderRight > canvasWidth) {
                 // 如果右边框超出 Canvas，调整到 Canvas 边缘
                 val adjustedBorderRight = (canvasWidth - padding).toFloat()
-                android.util.Log.d("CodeBlockBorder", "Adjusted right border from $borderRight to $adjustedBorderRight")
                 when {
                     isFirstLine && isLastLine -> {
                         canvas.drawRect(borderLeft, borderTop, adjustedBorderRight, borderBottom, paint)
@@ -428,17 +417,14 @@ class MarkdownEditorActivity : android.app.Activity() {
                 // 正常绘制
                 when {
                     isFirstLine && isLastLine -> {
-                        android.util.Log.d("CodeBlockBorder", "Drawing single line rect")
                         canvas.drawRect(borderLeft, borderTop, borderRight, borderBottom, paint)
                     }
                     isFirstLine -> {
-                        android.util.Log.d("CodeBlockBorder", "Drawing first line: top border + sides")
                         canvas.drawLine(borderLeft, borderTop, borderRight, borderTop, paint)
                         canvas.drawLine(borderLeft, borderTop, borderLeft, borderBottom, paint)
                         canvas.drawLine(borderRight, borderTop, borderRight, borderBottom, paint)
                     }
                     isLastLine -> {
-                        android.util.Log.d("CodeBlockBorder", "Drawing last line: bottom border + sides")
                         canvas.drawLine(borderLeft, borderTop, borderLeft, borderBottom, paint)
                         canvas.drawLine(borderRight, borderTop, borderRight, borderBottom, paint)
                         canvas.drawLine(borderLeft, borderBottom, borderRight, borderBottom, paint)
@@ -465,13 +451,6 @@ class MarkdownEditorActivity : android.app.Activity() {
         val spannable = spanned as Spannable
         codeBlockInfoList.clear()
 
-        // 调试：打印所有 span 类型
-        val allSpans = (0 until spanned.length).flatMap { i ->
-            val spans = spannable.getSpans(i, i + 1, Any::class.java)
-            spans.map { it.javaClass.simpleName to it }
-        }.distinctBy { it.first }
-        Log.d("CodeBlockBorder", "All span types: ${allSpans.map { it.first }.distinct()}")
-
         // 查找代码块相关的 span
         var foundCodeBlocks = false
 
@@ -479,46 +458,41 @@ class MarkdownEditorActivity : android.app.Activity() {
         try {
             val codeBlockSpanClass = Class.forName(CODE_BLOCK_SPAN)
             val codeSpans = spannable.getSpans(0, spanned.length, codeBlockSpanClass)
-            Log.d("CodeBlockBorder", "Found ${codeSpans.size} CodeBlockSpan")
 
             for (span in codeSpans) {
                 val start = spannable.getSpanStart(span)
                 val end = spannable.getSpanEnd(span)
                 val flags = spannable.getSpanFlags(span)
-                Log.d("CodeBlockBorder", "CodeBlock at [$start-$end]")
 
                 // 为代码块的每一行应用边框
                 applyBorderToLines(spannable, start, end, flags)
                 foundCodeBlocks = true
             }
-        } catch (e: ClassNotFoundException) {
-            Log.e("CodeBlockBorder", "CodeBlockSpan class not found", e)
+        } catch (e: Exception) {
+            Log.e("CodeBlockBorder", "Error processing CodeBlockSpan", e)
         }
 
         // 查找 FencedCodeBlock 相关的 span
         try {
             val fencedCodeClass = Class.forName(FENCED_CODE_BLOCK_SPAN)
             val fencedSpans = spannable.getSpans(0, spanned.length, fencedCodeClass)
-            Log.d("CodeBlockBorder", "Found ${fencedSpans.size} FencedCodeBlockSpan")
 
             for (span in fencedSpans) {
                 val start = spannable.getSpanStart(span)
                 val end = spannable.getSpanEnd(span)
                 val flags = spannable.getSpanFlags(span)
-                Log.d("CodeBlockBorder", "FencedCodeBlock at [$start-$end]")
 
                 // 为代码块的每一行应用边框
                 applyBorderToLines(spannable, start, end, flags)
                 foundCodeBlocks = true
             }
-        } catch (e: ClassNotFoundException) {
-            Log.e("CodeBlockBorder", "FencedCodeBlockSpan class not found", e)
+        } catch (e: Exception) {
+            Log.e("CodeBlockBorder", "Error processing FencedCodeBlockSpan", e)
         }
 
         // 如果没找到专门的代码块 span，尝试使用背景色
         if (!foundCodeBlocks) {
             val bgSpans = spannable.getSpans(0, spanned.length, android.text.style.BackgroundColorSpan::class.java)
-            Log.d("CodeBlockBorder", "Found ${bgSpans.size} BackgroundColorSpan, using as code blocks")
 
             // 将相邻的背景色 span 合并为代码块
             mergeAdjacentBackgroundSpans(spannable, bgSpans)
@@ -621,19 +595,11 @@ class MarkdownEditorActivity : android.app.Activity() {
     private fun removeUnderlines(spanned: Spanned) {
         val spannable = spanned as android.text.Spannable
 
-        // 获取所有 span 类型用于调试
-        val allSpans = (0 until spanned.length).flatMap { i ->
-            val spans = spanned.getSpans(i, i + 1, Any::class.java)
-            spans.map { it.javaClass.name }
-        }.distinct()
-        Log.d("removeUnderlines", "All span types: $allSpans")
-
         // 处理 Markwon 的 LinkSpan（Markwon 4.6.2 使用自定义 LinkSpan）
         try {
             val linkSpanClass = Class.forName(LINK_SPAN)
             val linkSpans = spannable.getSpans(0, spanned.length, linkSpanClass)
             if (linkSpans.isNotEmpty()) {
-                Log.d("removeUnderlines", "Found ${linkSpans.size} LinkSpans")
                 // 获取 destination 方法用于提取 URL
                 val destinationMethod = linkSpanClass.getDeclaredMethod("destination")
                 destinationMethod.isAccessible = true
@@ -672,7 +638,6 @@ class MarkdownEditorActivity : android.app.Activity() {
 
         // 处理标准 URLSpan（兼容处理）
         val urlSpans = spannable.getSpans(0, spanned.length, android.text.style.URLSpan::class.java)
-        Log.d("removeUnderlines", "Found ${urlSpans.size} URLSpans")
         for (span in urlSpans) {
             val start = spannable.getSpanStart(span)
             val end = spannable.getSpanEnd(span)
@@ -690,7 +655,6 @@ class MarkdownEditorActivity : android.app.Activity() {
 
         // 移除 UnderlineSpan
         val underlineSpans = spannable.getSpans(0, spanned.length, android.text.style.UnderlineSpan::class.java)
-        Log.d("removeUnderlines", "Found ${underlineSpans.size} UnderlineSpans")
         for (span in underlineSpans) {
             spannable.removeSpan(span)
         }
@@ -701,11 +665,9 @@ class MarkdownEditorActivity : android.app.Activity() {
             @Suppress("UNCHECKED_CAST")
             val thematicBreakSpans = spanned.getSpans(0, spanned.length, thematicBreakClass) as Array<Any>
             if (thematicBreakSpans.isNotEmpty()) {
-                Log.d("removeUnderlines", "Found ${thematicBreakSpans.size} ThematicBreakSpans")
                 for (span in thematicBreakSpans) {
-                    val start = spanned.getSpanStart(span)
-                    val end = spanned.getSpanEnd(span)
-                    Log.d("removeUnderlines", "ThematicBreakSpan at [$start-$end]")
+                    spanned.getSpanStart(span)
+                    spanned.getSpanEnd(span)
                 }
             }
         } catch (e: ClassNotFoundException) {
