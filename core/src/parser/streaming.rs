@@ -462,14 +462,6 @@ impl StreamingParser {
                     continue;
                 }
 
-                // 检测分割线 (ThematicBreak) - 必须在列表检测之前
-                // 因为 --- 和 *** 可能被误识别为列表项
-                if is_thematic_break(line) {
-                    blocks.push(BlockNode::ThematicBreak);
-                    i += 1;
-                    continue;
-                }
-
                 // 检测表格 (Table)
                 if is_table_row(line) {
                     // 检查下一行是否是分隔行
@@ -781,38 +773,6 @@ fn skip_leading_whitespace(line: &[u8]) -> &[u8] {
 }
 
 
-/// 检测行是否为分割线（ThematicBreak）
-///
-/// 分割线是由 3 个或更多相同字符组成的行：
-/// - `***` (星号)
-/// - `---` (减号)
-/// - `___` (下划线)
-/// 字符之间可以有空格，但不能有其他字符
-fn is_thematic_break(line: &[u8]) -> bool {
-    let trimmed = skip_leading_whitespace(line);
-    if trimmed.len() < 3 {
-        return false;
-    }
-
-    // 检查是否全是相同的字符（*, -, _）
-    let first_char = trimmed[0];
-    if !matches!(first_char, b'*' | b'-' | b'_') {
-        return false;
-    }
-
-    // 检查剩余字符是否都是同一个字符（允许空格）
-    let mut char_count = 0;
-    for &byte in trimmed.iter() {
-        if byte == first_char {
-            char_count += 1;
-        } else if !byte.is_ascii_whitespace() {
-            return false;
-        }
-    }
-
-    char_count >= 3
-}
-
 /// 从行首检测标题级别
 fn detect_heading_level(line: &[u8]) -> Option<u8> {
     if !line.starts_with(b"#") {
@@ -1063,8 +1023,6 @@ fn parse_table_row(line: &str) -> Vec<Vec<InlineNode>> {
     let line = line.trim_end_matches('\n').trim_end_matches('\r');
 
     // 分割单元格（跳过首尾的空 `|`）
-    let all_cells: Vec<&str> = line.split('|').collect();
-
     let cells: Vec<&str> = line.split('|')
         .skip(1)  // 跳过第一个空单元格
         .filter(|s| !s.is_empty())

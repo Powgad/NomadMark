@@ -23,7 +23,6 @@ class RenderCommandExecutor {
         /** 渲染命令类型枚举 */
         private const val CMD_DRAW_TEXT = 0
         private const val CMD_FILL_RECT = 1
-        private const val CMD_DRAW_LINE = 2
         private const val CMD_DRAW_IMAGE = 3
 
         /** 渲染命令结构大小 (字节) */
@@ -46,12 +45,6 @@ class RenderCommandExecutor {
         style = Paint.Style.FILL
     }
 
-    private val linePaint = Paint().apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 3f
-        strokeCap = Paint.Cap.ROUND
-    }
-
     // =========================================================================
     // 临时缓冲区（复用以减少分配）
     // =========================================================================
@@ -65,7 +58,6 @@ class RenderCommandExecutor {
     private var cmdCount = 0
     private var textCmdCount = 0
     private var fillCmdCount = 0
-    private var lineCmdCount = 0
 
     // =========================================================================
     // 公开 API
@@ -88,7 +80,6 @@ class RenderCommandExecutor {
         cmdCount = 0
         textCmdCount = 0
         fillCmdCount = 0
-        lineCmdCount = 0
 
         android.util.Log.d("RenderCommandExecutor", "Executing $count commands")
 
@@ -104,7 +95,7 @@ class RenderCommandExecutor {
             cmdCount++
         }
 
-        android.util.Log.d("RenderCommandExecutor", "Command stats: total=$cmdCount, text=$textCmdCount, fill=$fillCmdCount, line=$lineCmdCount")
+        android.util.Log.d("RenderCommandExecutor", "Command stats: total=$cmdCount, text=$textCmdCount, fill=$fillCmdCount")
     }
 
     /**
@@ -120,8 +111,8 @@ class RenderCommandExecutor {
         val width = buffer.float
         val height = buffer.float
 
-        // 读取颜色
-        val color = buffer.int
+        // 读取颜色（Rust Color 结构体是 RGBA，需要转换为 Android 的 ARGB）
+        val color = readColorFromBuffer(buffer)
 
         // 根据命令类型执行
         when (cmdType) {
@@ -141,18 +132,6 @@ class RenderCommandExecutor {
                 // 跳过 data 区域 (24 字节)
                 buffer.position(buffer.position() + 24)
                 executeFillRect(x, y, width, height, color, canvas)
-            }
-            CMD_DRAW_LINE -> {
-                lineCmdCount++
-                // 读取 data.line 区域 (24 字节)
-                val lineWidth = buffer.float
-                val x1 = buffer.float
-                val y1 = buffer.float
-                val x2 = buffer.float
-                val y2 = buffer.float
-                buffer.getInt() // 跳过 padding
-                android.util.Log.d("RenderCommandExecutor", "DrawLine: x1=$x1, y1=$y1, x2=$x2, y2=$y2, width=$lineWidth, color=0x${color.toString(16)}")
-                executeDrawLine(x1, y1, x2, y2, lineWidth, color, canvas)
             }
             else -> {
                 android.util.Log.w("RenderCommandExecutor", "Unknown command type: $cmdType")
@@ -187,17 +166,6 @@ class RenderCommandExecutor {
     }
 
     /**
-     * 执行绘制线条命令
-     */
-    private fun executeDrawLine(x1: Float, y1: Float, x2: Float, y2: Float, lineWidth: Float, color: Int, canvas: Canvas) {
-        linePaint.color = color
-        linePaint.strokeWidth = lineWidth
-
-        // 绘制线条
-        canvas.drawLine(x1, y1, x2, y2, linePaint)
-    }
-
-    /**
      * 从 Rust 分配的内存读取文本
      *
      * 注意：此方法仍需复制文本内容，因为 String 是 Java 对象
@@ -212,6 +180,23 @@ class RenderCommandExecutor {
             android.util.Log.e("RenderCommandExecutor", "Failed to read text from Rust", e)
             ""
         }
+    }
+
+    /**
+     * 从缓冲区读取颜色值
+     *
+     * Rust 的 Color 结构体内存布局是 RGBA (r, g, b, a)，需要转换为 Android 的 ARGB 格式。
+     * 由于字节序问题，需要逐字节读取并重新组合。
+     */
+    private fun readColorFromBuffer(buffer: ByteBuffer): Int {
+        // 读取 4 个字节 (r, g, b, a)
+        val r = buffer.get().toInt() and 0xFF
+        val g = buffer.get().toInt() and 0xFF
+        val b = buffer.get().toInt() and 0xFF
+        val a = buffer.get().toInt() and 0xFF
+
+        // 组合为 Android 的 ARGB 格式 (0xAARRGGBB)
+        return (a shl 24) or (r shl 16) or (g shl 8) or b
     }
 
     /**
@@ -235,9 +220,5 @@ class RenderCommandExecutor {
 
         fillPaint.reset()
         fillPaint.style = Paint.Style.FILL
-
-        linePaint.reset()
-        linePaint.style = Paint.Style.STROKE
-        linePaint.strokeCap = Paint.Cap.ROUND
     }
 }

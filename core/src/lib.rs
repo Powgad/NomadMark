@@ -60,7 +60,7 @@ pub use insert::{
     insert_heading, insert_bold, insert_italic, insert_strikethrough,
     insert_inline_code, insert_code_block, insert_link, insert_image,
     insert_bullet_list, insert_ordered_list, insert_task_list,
-    insert_table, insert_horizontal_rule, insert_line_break,
+    insert_table, insert_line_break,
     insert_bold_italic,
 };
 
@@ -682,7 +682,7 @@ pub extern "C" fn md_document_replace_first(
 		// 将新内容泄漏到堆并返回指针
 		let new_content = result.new_content;
 		*out_len = new_content.len();
-		*out_content = new_content.as_bytes().as_ptr();
+		*out_content = new_content.as_bytes().as_ptr() as *const c_char;
 		std::mem::forget(new_content);
 
 		0
@@ -754,7 +754,7 @@ pub extern "C" fn md_document_replace_all(
 		// 将新内容泄漏到堆并返回指针
 		let new_content = result.new_content;
 		*out_len = new_content.len();
-		*out_content = new_content.as_bytes().as_ptr();
+		*out_content = new_content.as_bytes().as_ptr() as *const c_char;
 		std::mem::forget(new_content);
 
 		0
@@ -1621,61 +1621,6 @@ console.log(`Fibonacci: ${result}`);
         // 检查是否有 FillRect 命令（用于引用块背景）
         let has_fill_rect = commands.iter().any(|cmd| cmd.cmd_type == render::commands::RenderCommandType::FillRect);
         assert!(has_fill_rect, "应该有 FillRect 命令用于引用块背景");
-
-        // 检查是否有 DrawLine 命令（用于分割线）
-        let has_draw_line = commands.iter().any(|cmd| cmd.cmd_type == render::commands::RenderCommandType::DrawLine);
-        assert!(has_draw_line, "应该有 DrawLine 命令用于分割线");
-
-        // 清理
-        if !commands_ptr.is_null() && count > 0 {
-            md_free_commands(commands_ptr as *mut RenderCommand, count);
-        }
-        if !dirty_ptr.is_null() && dirty_count > 0 {
-            md_free_dirty_rects(dirty_ptr as *mut i32, dirty_count);
-        }
-        md_document_release(ptr);
-    }
-
-    #[test]
-    fn test_thematic_break_variations() {
-        // 测试三种分割线变体
-        let content = r#"---
-
-***
-
-___
-"#;
-
-        let ptr = md_document_create(
-            content.as_ptr() as *const c_char,
-            content.len(),
-        );
-        assert!(!ptr.is_null());
-
-        let mut commands_ptr: *const RenderCommand = std::ptr::null();
-        let mut count: usize = 0;
-        let mut dirty_ptr: *const i32 = std::ptr::null();
-        let mut dirty_count: usize = 0;
-
-        let result = md_document_load_range(
-            ptr,
-            0,
-            10,
-            &mut commands_ptr as *mut _ as *mut _,
-            &mut count as *mut _ as *mut _,
-            &mut dirty_ptr as *mut _ as *mut _,
-            &mut dirty_count as *mut _ as *mut _,
-        );
-
-        assert_eq!(result, 0);
-
-        let commands = unsafe { std::slice::from_raw_parts(commands_ptr, count) };
-
-        // 应该有3条 DrawLine 命令（三个分割线）
-        let line_count = commands.iter()
-            .filter(|cmd| cmd.cmd_type == render::commands::RenderCommandType::DrawLine)
-            .count();
-        assert_eq!(line_count, 3, "应该有3条分割线");
 
         // 清理
         if !commands_ptr.is_null() && count > 0 {

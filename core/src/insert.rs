@@ -11,7 +11,6 @@
 // - insert_link/image: 链接和图片
 // - insert_list: 无序/有序/任务列表
 // - insert_table: 表格
-// - insert_horizontal_rule: 水平分隔线
 // =============================================================================
 
 /// 插入指定级别的标题
@@ -210,16 +209,6 @@ pub fn insert_table(headers: &[&str], rows: &[Vec<&str>]) -> String {
     result
 }
 
-/// 插入水平分隔线
-///
-/// # 示例
-/// ```
-/// assert_eq!(insert_horizontal_rule(), "---\n");
-/// ```
-pub fn insert_horizontal_rule() -> String {
-    "---\n".to_string()
-}
-
 /// 插入换行符（硬换行）
 ///
 /// # 示例
@@ -298,7 +287,6 @@ mod tests {
 
     #[test]
     fn test_other() {
-        assert_eq!(insert_horizontal_rule(), "---\n");
         assert_eq!(insert_line_break(), "  \n");
     }
 }

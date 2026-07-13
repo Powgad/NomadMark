@@ -309,9 +309,6 @@ impl Layouter {
             BlockNode::Blockquote { level, children } => {
                 self.layout_blockquote(*level, children, &mut result);
             }
-            BlockNode::ThematicBreak => {
-                self.layout_thematic_break(&mut result);
-            }
             BlockNode::MathBlock { latex } => {
                 self.layout_math_block(latex, &mut result);
             }
@@ -1149,28 +1146,6 @@ impl Layouter {
         self.cursor_y += self.config.paragraph_spacing;
 
         layout_log!("  📑 TOC AFTER: cursor_y={}", self.cursor_y);
-    }
-
-    /// 布局分割线
-    fn layout_thematic_break(&mut self, result: &mut RenderResult) {
-        layout_log!("  ➖ ThematicBreak BEFORE: cursor_y={}", self.cursor_y);
-
-        let line_y = self.cursor_y + self.current_line_height / 2.0;
-
-        // 绘制分割线（1px 实线）
-        result.push(RenderCommand::draw_line(
-            self.config.margin_left,
-            line_y,
-            self.config.margin_left + self.config.content_width(),
-            line_y,
-            1.0,
-            Color::rgb(221, 221, 221),  // 分割线颜色
-        ));
-
-        // 上下边距各 16px
-        self.cursor_y += self.current_line_height + 16.0;
-
-        layout_log!("  ➖ ThematicBreak AFTER: cursor_y={}", self.cursor_y);
     }
 
     /// 布局数学公式块

@@ -120,8 +120,6 @@ pub enum BlockNode {
         rows: Vec<Vec<Vec<InlineNode>>>,
         alignments: Vec<TableCellAlignment>,
     },
-    /// 主题分隔线（水平线）
-    ThematicBreak,
     /// HTML 块
     HtmlBlock {
         content: String,
