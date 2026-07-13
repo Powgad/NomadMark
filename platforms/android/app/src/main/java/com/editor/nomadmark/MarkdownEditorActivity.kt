@@ -30,6 +30,7 @@ import java.io.File
 
 import com.editor.nomadmark.GestureType
 import com.editor.nomadmark.SearchHighlightSpan
+import com.editor.nomadmark.SearchHighlightBackgroundSpan
 
 import io.noties.markwon.Markwon
 import io.noties.markwon.core.CorePlugin
@@ -154,17 +155,17 @@ class MarkdownEditorActivity : android.app.Activity() {
     private var scrollSyncManager: ScrollSyncManager? = null
 
     // =========================================================================
-    // Core 文档集成（暂时禁用）
+    // Core 文档集成
     // =========================================================================
-    // Core 层 JNI 接口尚未完全实现，暂时使用本地实现
-    // 待实现以下函数后可重新启用：
-    // - Java_com_editor_MarkdownCore_nativeSearch (需返回 Java 数组)
-    // - 文档内容获取 API
-    //
-    // /** Core 文档句柄 */
-    // private var coreDocumentHandle: Long = 0L
-    // /** 是否使用 Core 层搜索 */
-    // private var useCoreSearch = false
+
+    /** Core 文档句柄 */
+    private var rustCoreDocumentHandle: Long = 0L
+
+    /** 是否使用 Rust Core 搜索/替换 */
+    private var useRustCoreSearch = true
+
+    /** 当前搜索的文档内容（用于计算上下文） */
+    private var currentSearchContent: String = ""
 
     // =========================================================================
     // 渲染引擎设置
@@ -191,9 +192,6 @@ class MarkdownEditorActivity : android.app.Activity() {
     // =========================================================================
 
     private lateinit var markwon: Markwon
-
-    /** Rust Core 文档句柄 */
-    private var rustCoreDocumentHandle: Long = 0L
 
     // =========================================================================
     // 状态变量
@@ -230,6 +228,9 @@ class MarkdownEditorActivity : android.app.Activity() {
     /** 搜索结果列表 */
     private var searchResults = mutableListOf<Pair<Int, Int>>() // start, end
     private var currentSearchIndex = 0
+
+    /** 预览层中的实际匹配项数量（可能与 searchResults.size 不同） */
+    private var previewMatchCount = 0
 
     /** 当前搜索模式：true=单个搜索，false=全部搜索 */
     private var isSingleSearchMode = true
@@ -1410,11 +1411,66 @@ class MarkdownEditorActivity : android.app.Activity() {
             return
         }
 
-        // 使用本地搜索实现（Core 层 JNI 接口未完全实现）
-        performLocalSearch(query, singleMode)
+        // 保存当前内容用于上下文计算
+        currentSearchContent = getCurrentContent()
+
+        // 使用 Rust Core 搜索
+        if (useRustCoreSearch && rustCoreDocumentHandle != 0L) {
+            performRustCoreSearch(query, singleMode)
+        } else {
+            // 回退到本地搜索
+            performLocalSearch(query, singleMode)
+        }
 
         // 显示替换选项
         replaceRow.visibility = View.VISIBLE
+    }
+
+    /**
+     * 使用 Rust Core 执行搜索
+     */
+    private fun performRustCoreSearch(query: String, singleMode: Boolean) {
+        searchResults.clear()
+        currentSearchIndex = 0
+        isSingleSearchMode = singleMode
+
+        // 先清除旧的高亮
+        clearSearchHighlights()
+
+        try {
+            // 调用 Rust Core 搜索
+            val results = MarkdownCore.nativeSearch(rustCoreDocumentHandle, query)
+
+            if (results == null || results.isEmpty()) {
+                Toast.makeText(this, "未找到匹配项", Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            // 解析结果: [start, end, line_number, ...]
+            var index = 0
+            while (index + 2 < results.size) {
+                val start = results[index].toInt()
+                val end = results[index + 1].toInt()
+                val lineNumber = results[index + 2].toInt()
+                searchResults.add(Pair(start, end))
+                index += 3
+            }
+
+            // 应用高亮
+            if (singleMode) {
+                currentSearchIndex = 0
+                highlightSingleResult(0)
+                Toast.makeText(this, "已定位到第 1 个匹配项", Toast.LENGTH_SHORT).show()
+            } else {
+                applyAllHighlights()
+                Toast.makeText(this, "找到 ${searchResults.size} 个匹配项", Toast.LENGTH_SHORT).show()
+            }
+
+        } catch (e: Exception) {
+            Log.e("MarkdownEditorActivity", "Rust Core search failed", e)
+            // 回退到本地搜索
+            performLocalSearch(query, singleMode)
+        }
     }
 
     /**
@@ -1458,9 +1514,10 @@ class MarkdownEditorActivity : android.app.Activity() {
     }
 
     /**
-     * 清除搜索高亮
+     * 清除搜索高亮（编辑层和预览层）
      */
     private fun clearSearchHighlights() {
+        // 清除编辑层高亮
         val editor = getCurrentEditor()
         val text = editor.text as? android.text.Spannable ?: return
 
@@ -1469,6 +1526,209 @@ class MarkdownEditorActivity : android.app.Activity() {
         for (span in spans) {
             text.removeSpan(span)
         }
+
+        // 清除预览层高亮
+        clearPreviewHighlights()
+    }
+
+    /**
+     * 清除预览层搜索高亮
+     */
+    private fun clearPreviewHighlights() {
+        // 清除预览层高亮
+        if (isPreviewMode && ::previewText.isInitialized) {
+            val previewSpannable = previewText.text as? android.text.Spannable ?: return
+            val previewSpans = previewSpannable.getSpans(0, previewSpannable.length, SearchHighlightBackgroundSpan::class.java)
+            for (span in previewSpans) {
+                previewSpannable.removeSpan(span)
+            }
+        }
+
+        // 清除分屏预览层高亮
+        if (isSplitMode && ::splitPreviewText.isInitialized) {
+            val splitPreviewSpannable = splitPreviewText.text as? android.text.Spannable ?: return
+            val splitPreviewSpans = splitPreviewSpannable.getSpans(0, splitPreviewSpannable.length, SearchHighlightBackgroundSpan::class.java)
+            for (span in splitPreviewSpans) {
+                splitPreviewSpannable.removeSpan(span)
+            }
+        }
+    }
+
+    /**
+     * 预览层单个搜索模式：只高亮指定索引的匹配项
+     *
+     * 注意：由于预览文本是渲染后的结果，与原始文本位置无法直接映射，
+     * 我们直接在预览文本中搜索相同的查询字符串，并跳过前 index 个匹配项，
+     * 定位到第 (index + 1) 个匹配项进行高亮。
+     * 这确保了预览模式和编辑模式的搜索逻辑一致。
+     */
+    private fun applyPreviewHighlightSingle(query: String, index: Int) {
+        if (query.isEmpty()) return
+
+        // 清除预览层现有高亮
+        clearPreviewHighlights()
+
+        // 计算预览层中的实际匹配项数量
+        previewMatchCount = countPreviewMatches(query)
+
+        // 使用模运算确保索引在预览层匹配项范围内
+        val safeIndex = if (previewMatchCount > 0) index % previewMatchCount else 0
+
+        // 在预览层中查找并高亮第 (safeIndex + 1) 个匹配项（使用深灰色边框）
+        if (isPreviewMode && ::previewText.isInitialized) {
+            highlightNthInTextView(previewText, query, safeIndex, true)
+        }
+
+        if (isSplitMode && ::splitPreviewText.isInitialized) {
+            highlightNthInTextView(splitPreviewText, query, safeIndex, true)
+        }
+
+        // 滚动预览层到匹配项位置（使用安全索引）
+        scrollPreviewToMatch(query, safeIndex)
+    }
+
+    /**
+     * 预览层全部搜索模式：高亮所有匹配项
+     *
+     * 注意：由于预览文本是渲染后的结果，与原始文本位置无法直接映射，
+     * 我们直接在预览文本中搜索相同的查询字符串来定位所有匹配项。
+     * 这确保了预览模式和编辑模式的搜索逻辑一致。
+     */
+    private fun applyPreviewHighlightsAll(query: String) {
+        if (query.isEmpty()) return
+
+        // 清除预览层现有高亮
+        clearPreviewHighlights()
+
+        // 在预览层中查找并高亮所有匹配项（使用灰色边框，第一项使用深灰色）
+        if (isPreviewMode && ::previewText.isInitialized) {
+            highlightAllInTextView(previewText, query)
+        }
+
+        if (isSplitMode && ::splitPreviewText.isInitialized) {
+            highlightAllInTextView(splitPreviewText, query)
+        }
+    }
+
+    /**
+     * 在 TextView 中高亮指定的文本（单个搜索模式）
+     * @param textView 目标 TextView
+     * @param searchText 要高亮的文本
+     * @param startIndex 开始搜索的索引
+     * @param isSingleMode 是否为单个模式（使用深灰色边框）
+     */
+    private fun highlightInTextView(
+        textView: TextView,
+        searchText: String,
+        startIndex: Int,
+        isSingleMode: Boolean
+    ) {
+        val spannable = textView.text as? android.text.Spannable ?: return
+        val text = spannable.toString()
+        val ignoreCase = true
+
+        // 查找第一个匹配项
+        val foundIndex = text.indexOf(searchText, startIndex, ignoreCase = ignoreCase)
+        if (foundIndex >= 0) {
+            spannable.setSpan(
+                SearchHighlightBackgroundSpan(
+                    borderColor = if (isSingleMode) {
+                        SearchHighlightBackgroundSpan.CURRENT_BORDER_COLOR
+                    } else {
+                        SearchHighlightBackgroundSpan.ALL_SEARCH_BORDER_COLOR
+                    },
+                    isCurrent = isSingleMode
+                ),
+                foundIndex,
+                foundIndex + searchText.length,
+                android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
+    }
+
+    /**
+     * 在 TextView 中高亮所有匹配项（全部搜索模式）
+     * @param textView 目标 TextView
+     * @param searchText 要高亮的文本
+     */
+    private fun highlightAllInTextView(textView: TextView, searchText: String) {
+        val spannable = textView.text as? android.text.Spannable ?: return
+        val text = spannable.toString()
+        val ignoreCase = true
+        var isFirst = true
+
+        // 查找所有匹配项
+        var searchIndex = 0
+        while (searchIndex < text.length) {
+            val foundIndex = text.indexOf(searchText, searchIndex, ignoreCase = ignoreCase)
+            if (foundIndex < 0) break
+
+            spannable.setSpan(
+                SearchHighlightBackgroundSpan(
+                    borderColor = if (isFirst) {
+                        SearchHighlightBackgroundSpan.CURRENT_BORDER_COLOR
+                    } else {
+                        SearchHighlightBackgroundSpan.ALL_SEARCH_BORDER_COLOR
+                    },
+                    isCurrent = isFirst
+                ),
+                foundIndex,
+                foundIndex + searchText.length,
+                android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+
+            isFirst = false
+            searchIndex = foundIndex + searchText.length
+        }
+    }
+
+    /**
+     * 在 TextView 中高亮第 N 个匹配项（单个搜索模式导航用）
+     * @param textView 目标 TextView
+     * @param searchText 要高亮的文本
+     * @param nthIndex 要高亮的匹配项索引（0-based）
+     * @param isSingleMode 是否为单个模式（使用深灰色边框）
+     */
+    private fun highlightNthInTextView(
+        textView: TextView,
+        searchText: String,
+        nthIndex: Int,
+        isSingleMode: Boolean
+    ) {
+        val spannable = textView.text as? android.text.Spannable ?: return
+        val text = spannable.toString()
+        val ignoreCase = true
+
+        // 跳过前 nthIndex 个匹配项，高亮第 (nthIndex + 1) 个
+        var searchIndex = 0
+        var count = 0
+
+        while (searchIndex < text.length) {
+            val foundIndex = text.indexOf(searchText, searchIndex, ignoreCase = ignoreCase)
+            if (foundIndex < 0) break
+
+            if (count == nthIndex) {
+                // 找到第 N 个匹配项，进行高亮
+                spannable.setSpan(
+                    SearchHighlightBackgroundSpan(
+                        borderColor = if (isSingleMode) {
+                            SearchHighlightBackgroundSpan.CURRENT_BORDER_COLOR
+                        } else {
+                            SearchHighlightBackgroundSpan.ALL_SEARCH_BORDER_COLOR
+                        },
+                        isCurrent = isSingleMode
+                    ),
+                    foundIndex,
+                    foundIndex + searchText.length,
+                    android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                return  // 只高亮这一个匹配项
+            }
+
+            count++
+            searchIndex = foundIndex + searchText.length
+        }
+        // 如果没找到第 N 个匹配项（理论上不应该发生），则不进行高亮
     }
 
     private fun findNext() {
@@ -1494,7 +1754,7 @@ class MarkdownEditorActivity : android.app.Activity() {
     }
 
     /**
-     * 单个搜索模式：只高亮当前一个匹配项
+     * 单个搜索模式：只高亮当前一个匹配项（编辑层和预览层）
      */
     private fun highlightSingleResult(index: Int) {
         if (searchResults.isEmpty() || index < 0 || index >= searchResults.size) return
@@ -1506,7 +1766,7 @@ class MarkdownEditorActivity : android.app.Activity() {
         // 清除所有高亮
         clearSearchHighlights()
 
-        // 只高亮当前项（深灰色边框）
+        // 编辑层：只高亮当前项（深灰色边框）
         text.setSpan(
             SearchHighlightSpan(
                 borderColor = SearchHighlightSpan.CURRENT_BORDER_COLOR,
@@ -1520,12 +1780,18 @@ class MarkdownEditorActivity : android.app.Activity() {
         editor.setSelection(start, end)
         scrollToPosition(start)
 
+        // 预览层：高亮当前匹配项
+        val query = searchInput.text.toString()
+        if (query.isNotEmpty()) {
+            applyPreviewHighlightSingle(query, index)
+        }
+
         // 显示当前匹配项位置
         Toast.makeText(this, "第 ${index + 1} / ${searchResults.size} 个匹配项", Toast.LENGTH_SHORT).show()
     }
 
     /**
-     * 全部搜索模式：高亮所有匹配项，当前项使用深灰色
+     * 全部搜索模式：高亮所有匹配项，当前项使用深灰色（编辑层和预览层）
      */
     private fun applyAllHighlights() {
         if (searchResults.isEmpty()) return
@@ -1533,7 +1799,7 @@ class MarkdownEditorActivity : android.app.Activity() {
         val editor = getCurrentEditor()
         val text = editor.text as? android.text.Spannable ?: return
 
-        // 高亮所有匹配项（灰色），第一项使用深灰色
+        // 编辑层：高亮所有匹配项（灰色），第一项使用深灰色
         searchResults.forEachIndexed { index, (start, end) ->
             text.setSpan(
                 SearchHighlightSpan(
@@ -1553,6 +1819,12 @@ class MarkdownEditorActivity : android.app.Activity() {
         val (start, end) = searchResults[0]
         editor.setSelection(start, end)
         scrollToPosition(start)
+
+        // 预览层：高亮所有匹配项
+        val query = searchInput.text.toString()
+        if (query.isNotEmpty()) {
+            applyPreviewHighlightsAll(query)
+        }
     }
 
     /**
@@ -1621,6 +1893,108 @@ class MarkdownEditorActivity : android.app.Activity() {
         scrollView.smoothScrollTo(0, scrollY.coerceAtLeast(0))
     }
 
+    /**
+     * 计算预览层中的实际匹配项数量
+     * @param query 搜索查询字符串
+     * @return 预览层中的匹配项数量
+     */
+    private fun countPreviewMatches(query: String): Int {
+        if (query.isEmpty()) return 0
+
+        val previewTextView = if (isPreviewMode && ::previewText.isInitialized) {
+            previewText
+        } else if (isSplitMode && ::splitPreviewText.isInitialized) {
+            splitPreviewText
+        } else {
+            return 0
+        }
+
+        val text = previewTextView.text.toString()
+        val ignoreCase = true
+        var count = 0
+        var searchIndex = 0
+
+        while (searchIndex < text.length) {
+            val foundIndex = text.indexOf(query, searchIndex, ignoreCase = ignoreCase)
+            if (foundIndex < 0) break
+            count++
+            searchIndex = foundIndex + query.length
+        }
+
+        return count
+    }
+
+    /**
+     * 滚动预览层到匹配项位置
+     * @param query 搜索查询字符串
+     * @param index 匹配项索引（第 N 个匹配项）
+     */
+    private fun scrollPreviewToMatch(query: String, index: Int) {
+        if (query.isEmpty()) return
+
+        // 获取预览 TextView 和 ScrollView
+        val previewTextView = if (isPreviewMode && ::previewText.isInitialized) {
+            previewText
+        } else if (isSplitMode && ::splitPreviewText.isInitialized) {
+            splitPreviewText
+        } else {
+            return
+        }
+
+        val scrollView = if (isPreviewMode) {
+            previewLayer
+        } else if (isSplitMode) {
+            splitPreviewScroll
+        } else {
+            return
+        }
+
+        val spannable = previewTextView.text as? android.text.Spannable ?: return
+        val text = spannable.toString()
+        val ignoreCase = true
+
+        // 查找第 N 个匹配项的位置
+        var searchIndex = 0
+        var count = 0
+        var targetPosition = -1
+
+        while (searchIndex < text.length) {
+            val foundIndex = text.indexOf(query, searchIndex, ignoreCase = ignoreCase)
+            if (foundIndex < 0) break
+
+            if (count == index) {
+                targetPosition = foundIndex
+                break
+            }
+
+            count++
+            searchIndex = foundIndex + query.length
+        }
+
+        if (targetPosition < 0) return
+
+        // 获取文本布局信息
+        val layout = previewTextView.layout ?: return
+        val line = layout.getLineForOffset(targetPosition)
+
+        // 使用 layout.getLineTop() 获取准确的行位置
+        val lineTop = layout.getLineTop(line)
+
+        // 计算滚动位置（居中显示）
+        val scrollY = lineTop - scrollView.height / 2
+
+        // 确保滚动位置不小于 0
+        val clampedScrollY = scrollY.coerceAtLeast(0)
+        // 确保滚动位置不超过最大可滚动范围
+        val maxScrollY = previewTextView.height - scrollView.height
+        val finalScrollY = clampedScrollY.coerceAtMost(maxScrollY)
+
+        // 使用 post 确保在 UI 线程中执行滚动
+        scrollView.post {
+            scrollView.smoothScrollTo(0, finalScrollY)
+        }
+    }
+
     private fun replaceOne() {
         if (searchResults.isEmpty()) return
 
@@ -1632,14 +2006,80 @@ class MarkdownEditorActivity : android.app.Activity() {
             return
         }
 
+        val query = searchInput.text.toString()
         val replaceText = replaceInput.text.toString()
+
+        if (query.isEmpty()) {
+            Toast.makeText(this, "请输入搜索内容", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // 使用 Rust Core 替换
+        if (useRustCoreSearch && rustCoreDocumentHandle != 0L) {
+            performRustCoreReplaceFirst(query, replaceText)
+        } else {
+            // 回退到本地替换
+            performLocalReplaceOne(query, replaceText)
+        }
+    }
+
+    /**
+     * 使用 Rust Core 替换第一个匹配项
+     */
+    private fun performRustCoreReplaceFirst(query: String, replacement: String) {
+        try {
+            val newContent = MarkdownCore.nativeReplaceFirst(
+                rustCoreDocumentHandle,
+                query,
+                replacement
+            )
+
+            if (newContent == null) {
+                Toast.makeText(this, "未找到匹配项", Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            // 更新编辑器内容
+            getCurrentEditor().setText(newContent)
+
+            // 更新预览（如果是预览或分屏模式）
+            if (isPreviewMode || isSplitMode) {
+                updatePreview()
+            }
+
+            // 重新搜索以更新匹配项位置（这会同时更新编辑层和预览层的高亮）
+            performSearch(isSingleSearchMode)
+
+            Toast.makeText(this, "已替换 1 处", Toast.LENGTH_SHORT).show()
+
+        } catch (e: Exception) {
+            Log.e("MarkdownEditorActivity", "Rust Core replace first failed", e)
+            // 回退到本地替换
+            performLocalReplaceOne(query, replacement)
+        }
+    }
+
+    /**
+     * 本地替换第一个匹配项（回退实现）
+     */
+    private fun performLocalReplaceOne(query: String, replacement: String) {
+        if (searchResults.isEmpty()) return
+
+        // 确保索引在有效范围内
+        if (currentSearchIndex >= searchResults.size) {
+            currentSearchIndex = 0
+        }
+        if (currentSearchIndex < 0 || searchResults.isEmpty()) {
+            return
+        }
+
         val (start, end) = searchResults[currentSearchIndex]
 
         val editor = getCurrentEditor()
         val content = editor.text.toString()
-        val newContent = content.substring(0, start) + replaceText + content.substring(end)
+        val newContent = content.substring(0, start) + replacement + content.substring(end)
         editor.setText(newContent)
-        editor.setSelection(start + replaceText.length)
+        editor.setSelection(start + replacement.length)
 
         // 移除当前结果
         searchResults.removeAt(currentSearchIndex)
@@ -1647,26 +2087,101 @@ class MarkdownEditorActivity : android.app.Activity() {
         // 调整索引指向下一个结果
         if (searchResults.isEmpty()) {
             currentSearchIndex = 0
+            clearSearchHighlights()  // 清除所有高亮
             Toast.makeText(this, "已完成替换", Toast.LENGTH_SHORT).show()
         } else {
             // 如果移除的是最后一个，指向前一个
             if (currentSearchIndex >= searchResults.size) {
                 currentSearchIndex = searchResults.size - 1
             }
+            // 重新应用高亮以保持编辑和预览一致
+            if (isSingleSearchMode) {
+                highlightSingleResult(currentSearchIndex)
+            } else {
+                highlightAllResults(currentSearchIndex)
+            }
         }
     }
 
     private fun replaceAll() {
         if (searchResults.isEmpty()) return
-        val replaceText = replaceInput.text.toString()
+
         val query = searchInput.text.toString()
+        val replaceText = replaceInput.text.toString()
+
+        if (query.isEmpty()) {
+            Toast.makeText(this, "请输入搜索内容", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // 使用 Rust Core 替换
+        if (useRustCoreSearch && rustCoreDocumentHandle != 0L) {
+            performRustCoreReplaceAll(query, replaceText)
+        } else {
+            // 回退到本地替换
+            performLocalReplaceAll(query, replaceText)
+        }
+    }
+
+    /**
+     * 使用 Rust Core 替换所有匹配项
+     */
+    private fun performRustCoreReplaceAll(query: String, replacement: String) {
+        try {
+            val newContent = MarkdownCore.nativeReplaceAll(
+                rustCoreDocumentHandle,
+                query,
+                replacement
+            )
+
+            if (newContent == null) {
+                Toast.makeText(this, "未找到匹配项", Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            val count = searchResults.size
+
+            // 更新编辑器内容
+            getCurrentEditor().setText(newContent)
+
+            // 更新预览（如果是预览或分屏模式）
+            if (isPreviewMode || isSplitMode) {
+                updatePreview()
+            }
+
+            // 清除搜索结果和高亮（编辑层和预览层）
+            searchResults.clear()
+            currentSearchIndex = 0
+            clearSearchHighlights()
+
+            Toast.makeText(this, "已替换 $count 处", Toast.LENGTH_SHORT).show()
+
+        } catch (e: Exception) {
+            Log.e("MarkdownEditorActivity", "Rust Core replace all failed", e)
+            // 回退到本地替换
+            performLocalReplaceAll(query, replacement)
+        }
+    }
+
+    /**
+     * 本地替换所有匹配项（回退实现）
+     */
+    private fun performLocalReplaceAll(query: String, replacement: String) {
+        if (searchResults.isEmpty()) return
 
         val editor = getCurrentEditor()
-        val newContent = editor.text.toString().replace(query, replaceText, ignoreCase = true)
+        val newContent = editor.text.toString().replace(query, replacement, ignoreCase = true)
         editor.setText(newContent)
+
+        // 更新预览（如果是预览或分屏模式）
+        if (isPreviewMode || isSplitMode) {
+            updatePreview()
+        }
 
         Toast.makeText(this, "已替换 ${searchResults.size} 处", Toast.LENGTH_SHORT).show()
         searchResults.clear()
+        currentSearchIndex = 0
+        clearSearchHighlights()  // 清除所有高亮
     }
 
     // =========================================================================
