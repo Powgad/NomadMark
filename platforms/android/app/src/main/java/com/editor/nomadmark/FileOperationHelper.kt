@@ -10,7 +10,7 @@ import java.io.File
 /**
  * 文件操作辅助类
  */
-class FileOperationHelper(private val context: Context) {
+class FileOperationHelper(private val context: Context, private val keyboardDetector: KeyboardDetector? = null) {
 
     /**
      * 显示新建文件对话框
@@ -41,8 +41,42 @@ class FileOperationHelper(private val context: Context) {
         builder.setNegativeButton("取消", null)
         builder.show()
 
-        // 自动弹出软键盘
-        input.requestFocus()
+        // 不自动弹出键盘，等待用户点击输入框
+        // 当用户点击输入框时，检测键盘类型并显示相应的标识或软键盘
+        input.setOnClickListener {
+            handleInputFocus(input)
+        }
+
+        // 同时处理焦点变化（当输入框获得焦点时）
+        input.setOnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) {
+                handleInputFocus(input)
+            }
+        }
+    }
+
+    /**
+     * 处理输入框获得焦点时的逻辑
+     * 检测键盘类型并显示相应的标识或软键盘
+     */
+    private fun handleInputFocus(input: EditText) {
+        val hasPhysicalKeyboard = keyboardDetector?.hasPhysicalKeyboard() ?: false
+
+        if (hasPhysicalKeyboard) {
+            // 有外接键盘，显示键盘标识（不弹出软键盘）
+            val keyboardType = keyboardDetector?.detectKeyboardType()
+            val labelText = when (keyboardType) {
+                KeyboardType.F11_PHYSICAL -> "📟 F11"
+                KeyboardType.SOFT_KEYBOARD -> "⌨️ 软键盘"
+                else -> "⌨️"
+            }
+            Toast.makeText(context, "$labelText 外接键盘已连接", Toast.LENGTH_SHORT).show()
+            // 不弹出软键盘，用户可以直接用物理键盘输入
+        } else {
+            // 没有外接键盘，弹出软键盘
+            val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+            imm.showSoftInput(input, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+        }
     }
 
     /**

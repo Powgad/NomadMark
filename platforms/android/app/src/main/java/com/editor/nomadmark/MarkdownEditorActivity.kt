@@ -150,8 +150,11 @@ class MarkdownEditorActivity : android.app.Activity() {
     /** 键盘检测器 */
     private val keyboardDetector: KeyboardDetector by lazy { KeyboardDetector(this) }
 
+    /** 按键绑定管理器 */
+    private val keyBindingManager: KeyBindingManager by lazy { KeyBindingManager(this) }
+
     /** 文件操作辅助 */
-    private val fileOperationHelper: FileOperationHelper by lazy { FileOperationHelper(this) }
+    private val fileOperationHelper: FileOperationHelper by lazy { FileOperationHelper(this, keyboardDetector) }
 
     /** 滚动同步管理器 */
     private var scrollSyncManager: ScrollSyncManager? = null
@@ -829,7 +832,7 @@ class MarkdownEditorActivity : android.app.Activity() {
         btnRedo.setOnClickListener { redo() }
         btnToolbarToggle.setOnClickListener { toggleBottomToolbar() }
         btnKeyboardSettings.setOnClickListener {
-            Toast.makeText(this, "键盘设置功能开发中", Toast.LENGTH_SHORT).show()
+            KeyBindingSettingsDialog(this).show()
         }
         btnSave.setOnClickListener { saveFile() }
 
@@ -1163,16 +1166,236 @@ class MarkdownEditorActivity : android.app.Activity() {
     }
 
     /**
-     * 按键监听 - 处理 F11 等功能键
+     * 按键监听 - 处理快捷键
+     *
+     * 使用 KeyBindingManager 查找自定义或默认的快捷键绑定并执行相应操作。
+     *
+     * 默认快捷键包括：
+     * - Ctrl+B: 加粗, Ctrl+I: 斜体, Ctrl+U: 删除线
+     * - Ctrl+S: 保存, Ctrl+Z: 撤销, Ctrl+Shift+Z/Ctrl+Y: 重做
+     * - Ctrl+F: 搜索, Ctrl+H: 搜索并替换
+     * - Ctrl+1~6: 标题级别, Ctrl+0: 清除标题
+     * - Ctrl+K: 链接, Ctrl+Shift+K: 行内公式
+     * - Ctrl+Shift+C: 代码块, Ctrl+Shift+X: 行内代码
+     * - Ctrl+Shift+L: 无序列表, Ctrl+Alt+L: 有序列表
+     * - Ctrl+T: 目录, Ctrl+Shift+T: 表格
+     * - Ctrl+Shift+Q: 引用, Ctrl+Shift+-: 分隔线
+     * - F11: 切换显示模式
+     *
+     * 用户可通过按键设置对话框自定义这些快捷键。
      */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // 确保按键事件能被正确处理，即使在软键盘弹出时
+        // 先尝试处理按键事件
+        try {
+            val action = event.action
+            val keyCode = event.keyCode
+
+            if (action == KeyEvent.ACTION_DOWN) {
+                // 检测修饰键状态
+                val isCtrlPressed = event.isCtrlPressed
+                val isShiftPressed = event.isShiftPressed
+                val isAltPressed = event.isAltPressed
+
+                // 使用 KeyBindingManager 查找匹配的快捷键绑定
+                val binding = keyBindingManager.findBinding(keyCode, isCtrlPressed, isShiftPressed, isAltPressed)
+
+                if (binding != null) {
+                    // 执行对应的功能
+                    val handled = executeAction(binding.actionId)
+                    if (handled) {
+                        return true  // 消费事件，不再传递
+                    }
+                }
+            }
+
+            // 未找到绑定或未处理，交给父类分发
+            return super.dispatchKeyEvent(event)
+        } catch (e: Exception) {
+            Log.e("MarkdownEditorActivity", "Error in dispatchKeyEvent", e)
+            return super.dispatchKeyEvent(event)
+        }
+    }
+
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        // F11 键切换显示模式
-        if (keyCode == KeyEvent.KEYCODE_F11) {
-            cycleDisplayMode()
-            return true
+        if (event == null) {
+            return super.onKeyDown(keyCode, null)
         }
 
+        // 检测修饰键状态
+        val isCtrlPressed = event.isCtrlPressed
+        val isShiftPressed = event.isShiftPressed
+        val isAltPressed = event.isAltPressed
+
+        // 使用 KeyBindingManager 查找匹配的快捷键绑定
+        val binding = keyBindingManager.findBinding(keyCode, isCtrlPressed, isShiftPressed, isAltPressed)
+
+        if (binding != null) {
+            // 执行对应的功能
+            return executeAction(binding.actionId)
+        }
+
+        // 未找到绑定，交给父类处理
         return super.onKeyDown(keyCode, event)
+    }
+
+    /**
+     * 执行编辑器操作
+     *
+     * 根据功能 ID 执行对应的编辑器操作。
+     *
+     * @param actionId 功能 ID
+     * @return 如果成功执行返回 true，否则返回 false
+     */
+    private fun executeAction(actionId: String): Boolean {
+        try {
+            val action = EditorAction.fromString(actionId) ?: return false
+
+            when (action) {
+                // ========== 文本格式 ==========
+                EditorAction.BOLD -> {
+                    insertMarkdown("**", "**")
+                    return true
+                }
+                EditorAction.ITALIC -> {
+                    insertMarkdown("*", "*")
+                    return true
+                }
+                EditorAction.UNDERLINE -> {
+                    insertMarkdown("~~", "~~")
+                    return true
+                }
+
+                // ========== 编辑操作 ==========
+                EditorAction.SAVE -> {
+                    saveFile()
+                    return true
+                }
+                EditorAction.UNDO -> {
+                    performLocalUndo()
+                    return true
+                }
+                EditorAction.REDO -> {
+                    performLocalRedo()
+                    return true
+                }
+                EditorAction.SEARCH -> {
+                    openSearchBar(replaceMode = false)
+                    return true
+                }
+                EditorAction.REPLACE -> {
+                    openSearchBar(replaceMode = true)
+                    return true
+                }
+
+                // ========== 标题 ==========
+                EditorAction.HEADING_1 -> setHeadingLevelAndReturn(1)
+                EditorAction.HEADING_2 -> setHeadingLevelAndReturn(2)
+                EditorAction.HEADING_3 -> setHeadingLevelAndReturn(3)
+                EditorAction.HEADING_4 -> setHeadingLevelAndReturn(4)
+                EditorAction.HEADING_5 -> setHeadingLevelAndReturn(5)
+                EditorAction.HEADING_6 -> setHeadingLevelAndReturn(6)
+                EditorAction.HEADING_CLEAR -> {
+                    clearHeadingFormat()
+                    return true
+                }
+                EditorAction.HEADING_UP -> {
+                    changeHeading(1)
+                    return true
+                }
+                EditorAction.HEADING_DOWN -> {
+                    changeHeading(-1)
+                    return true
+                }
+
+                // ========== 插入元素 ==========
+                EditorAction.LINK -> {
+                    insertLink()
+                    return true
+                }
+                EditorAction.CODE_INLINE -> {
+                    insertMarkdown("`", "`")
+                    return true
+                }
+                EditorAction.CODE_BLOCK -> {
+                    insertCodeBlock()
+                    return true
+                }
+                EditorAction.FORMULA_INLINE -> {
+                    insertMarkdown("$", "$")
+                    return true
+                }
+                EditorAction.FORMULA_BLOCK -> {
+                    insertFormulaBlock()
+                    return true
+                }
+                EditorAction.LIST_UNORDERED -> {
+                    insertLine("- ")
+                    return true
+                }
+                EditorAction.LIST_ORDERED -> {
+                    insertLine("1. ")
+                    return true
+                }
+                EditorAction.QUOTE -> {
+                    insertLine("> ")
+                    return true
+                }
+                EditorAction.TABLE -> {
+                    insertTable()
+                    return true
+                }
+                EditorAction.THEMATIC_BREAK -> {
+                    insertThematicBreak()
+                    return true
+                }
+
+                // ========== 视图操作 ==========
+                EditorAction.TOGGLE_PREVIEW -> {
+                    togglePreviewMode()
+                    return true
+                }
+                EditorAction.TOGGLE_SPLIT -> {
+                    toggleSplitMode()
+                    return true
+                }
+                EditorAction.TOGGLE_REVISION -> {
+                    toggleRevisionMode()
+                    return true
+                }
+                EditorAction.CYCLE_DISPLAY_MODE -> {
+                    cycleDisplayMode()
+                    return true
+                }
+                EditorAction.TOGGLE_TOC -> {
+                    toggleToc()
+                    return true
+                }
+                EditorAction.TOGGLE_TOOLBAR -> {
+                    toggleBottomToolbar()
+                    return true
+                }
+
+                // 无操作
+                EditorAction.NONE -> {
+                    return false
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("MarkdownEditorActivity", "Error executing action: $actionId", e)
+            return false
+        }
+
+        // 不应该到达这里，但为了满足编译器要求
+        return false
+    }
+
+    /**
+     * 设置标题级别并返回 true
+     */
+    private fun setHeadingLevelAndReturn(level: Int): Boolean {
+        setHeadingLevel(level)
+        return true
     }
 
     // 保留原有的按钮切换函数（用于 UI 按钮）
@@ -1346,6 +1569,39 @@ class MarkdownEditorActivity : android.app.Activity() {
         splitEditorText.clearFocus()
     }
 
+    /**
+     * 确保编辑器有焦点（用于外接键盘输入）
+     *
+     * 在非修订模式下，确保当前可见的编辑器获得焦点，
+     * 以便外接键盘输入能够正常工作。
+     */
+    private fun ensureEditorFocus() {
+        // 修订模式下不需要编辑器焦点
+        if (isRevisionMode) return
+
+        // 预览模式下不需要编辑器焦点
+        if (isPreviewMode && !isSplitMode) return
+
+        // 根据当前模式设置焦点
+        when (currentDisplayMode) {
+            DisplayMode.EDIT -> {
+                if (!editorText.isFocused) {
+                    editorText.requestFocus()
+                    Log.d("MarkdownEditorActivity", "Editor focus restored")
+                }
+            }
+            DisplayMode.SPLIT -> {
+                if (!splitEditorText.isFocused) {
+                    splitEditorText.requestFocus()
+                    Log.d("MarkdownEditorActivity", "Split editor focus restored")
+                }
+            }
+            DisplayMode.PREVIEW -> {
+                // 预览模式不需要编辑器焦点
+            }
+        }
+    }
+
     private fun toggleSearchBar() {
         if (searchBar.visibility == View.VISIBLE) {
             // 关闭搜索栏时清除所有内容和高亮
@@ -1356,11 +1612,36 @@ class MarkdownEditorActivity : android.app.Activity() {
             clearSearchHighlights()  // 清除搜索高亮
             searchBar.visibility = View.GONE
             replaceRow.visibility = View.GONE
+            // 关闭搜索栏后恢复编辑器焦点（用于外接键盘）
+            ensureEditorFocus()
         } else {
             searchBar.visibility = View.VISIBLE
             searchInput.requestFocus()
             showSoftKeyboard()
         }
+    }
+
+    /**
+     * 打开搜索栏（快捷键专用）
+     * @param replaceMode true=显示替换选项，false=仅搜索
+     */
+    private fun openSearchBar(replaceMode: Boolean = false) {
+        // 清除之前的搜索状态
+        if (searchBar.visibility == View.VISIBLE) {
+            searchInput.text.clear()
+            replaceInput.text.clear()
+            searchResults.clear()
+            currentSearchIndex = 0
+            clearSearchHighlights()
+        }
+
+        // 显示搜索栏
+        searchBar.visibility = View.VISIBLE
+        searchInput.requestFocus()
+        showSoftKeyboard()
+
+        // 根据模式决定是否显示替换选项
+        replaceRow.visibility = if (replaceMode) View.VISIBLE else View.GONE
     }
 
     private fun toggleBottomToolbar() {
@@ -1374,6 +1655,8 @@ class MarkdownEditorActivity : android.app.Activity() {
     private fun toggleToc() {
         if (tocPanel.visibility == View.VISIBLE) {
             tocPanel.visibility = View.GONE
+            // 关闭目录后恢复编辑器焦点（用于外接键盘）
+            ensureEditorFocus()
         } else {
             tocPanel.visibility = View.VISIBLE
             updateToc()
@@ -2116,6 +2399,19 @@ class MarkdownEditorActivity : android.app.Activity() {
     }
 
     /**
+     * 直接插入块级公式（快捷键专用）
+     * 插入 $$...$$ 块级公式
+     */
+    private fun insertFormulaBlock() {
+        val editor = getCurrentEditor()
+        val position = editor.selectionStart
+        editor.text.insert(position, "$$\n\n$$\n")
+        editor.setSelection(position + 3)
+        markAsModified()
+        updatePreview()
+    }
+
+    /**
      * 插入分隔线
      *
      * 自动添加前后空行，并将光标定位到新行
@@ -2179,6 +2475,83 @@ class MarkdownEditorActivity : android.app.Activity() {
             text.insert(lineStart, "# ")
         }
         markAsModified()
+    }
+
+    /**
+     * 设置当前行的标题级别（快捷键专用）
+     * @param level 标题级别 (1-6)
+     */
+    private fun setHeadingLevel(level: Int) {
+        val editor = getCurrentEditor()
+        val position = editor.selectionStart
+        val text = editor.text
+
+        // 找到当前行的行首
+        var lineStart = position
+        while (lineStart > 0 && text[lineStart - 1] != '\n') {
+            lineStart--
+        }
+
+        // 检查是否已经是标题
+        var hashes = 0
+        while (lineStart + hashes < text.length && text[lineStart + hashes] == '#') {
+            hashes++
+        }
+
+        if (hashes > 0) {
+            // 已有标题，替换为指定级别
+            // 找到标题标记后的位置（跳过空格）
+            var contentStart = lineStart + hashes
+            while (contentStart < text.length && text[contentStart] == ' ') {
+                contentStart++
+            }
+
+            // 替换整个标题标记
+            val headingPrefix = "#".repeat(level) + " "
+            text.replace(lineStart, contentStart, headingPrefix)
+        } else {
+            // 不是标题，插入标题标记
+            text.insert(lineStart, "#".repeat(level) + " ")
+        }
+
+        markAsModified()
+        updatePreview()
+    }
+
+    /**
+     * 清除当前行的标题格式（快捷键专用）
+     * 移除当前行的 # 标题标记
+     */
+    private fun clearHeadingFormat() {
+        val editor = getCurrentEditor()
+        val position = editor.selectionStart
+        val text = editor.text
+
+        // 找到当前行的行首
+        var lineStart = position
+        while (lineStart > 0 && text[lineStart - 1] != '\n') {
+            lineStart--
+        }
+
+        // 检查是否是标题
+        var hashes = 0
+        while (lineStart + hashes < text.length && text[lineStart + hashes] == '#') {
+            hashes++
+        }
+
+        if (hashes > 0) {
+            // 找到标题标记后的位置（跳过空格）
+            var contentStart = lineStart + hashes
+            while (contentStart < text.length && text[contentStart] == ' ') {
+                contentStart++
+            }
+
+            // 删除整个标题标记
+            text.delete(lineStart, contentStart)
+            markAsModified()
+            updatePreview()
+        }
+        // 如果不是标题，不做任何操作
     }
 
     // =========================================================================
@@ -2509,12 +2882,13 @@ class MarkdownEditorActivity : android.app.Activity() {
     private fun detectKeyboardStatus() {
         // 使用 KeyboardDetector 检测键盘状态
         val keyboardType = keyboardDetector.detectKeyboardType()
-        if (keyboardDetector.shouldShowIndicator()) {
-            keyboardIndicator.text = keyboardDetector.getKeyboardLabelText()
-            keyboardIndicator.visibility = View.VISIBLE
-        } else {
-            keyboardIndicator.visibility = View.GONE
+
+        // 外接键盘优先级高于软键盘
+        // 当检测到外接物理键盘时，自动隐藏软键盘
+        if (keyboardType == KeyboardType.F11_PHYSICAL) {
+            hideSoftKeyboardFromAll()
         }
+        // 已移除外接键盘标识显示
 
         // 根据 F11 键盘状态调整分屏比例
         if (keyboardType == KeyboardType.F11_PHYSICAL && isSplitMode) {

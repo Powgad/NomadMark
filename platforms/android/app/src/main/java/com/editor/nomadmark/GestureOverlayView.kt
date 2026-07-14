@@ -337,4 +337,21 @@ class GestureOverlayView @JvmOverloads constructor(
         super.onDetachedFromWindow()
         removeCallbacks(gestureTimeoutRunnable)
     }
+
+    // =========================================================================
+    // 按键事件处理
+    // =========================================================================
+
+    /**
+     * 分发按键事件
+     *
+     * 确保所有按键事件都传递到底层视图，而不是被手势层拦截。
+     * 这使得即使在修订模式下（手势层可见），外接键盘也能正常工作。
+     */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // 始终返回 false，表示我们不消费这个事件
+        // 事件会继续传递到底层的 EditText
+        Log.v(TAG, "Dispatching key event: ${event.keyCode}, action=${event.action}")
+        return false
+    }
 }
