@@ -6,7 +6,6 @@ import android.graphics.Rect
 import android.view.View
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.RecyclerView
-import com.editor.nomadmark.MarkdownCore
 import com.editor.nomadmark.TocEntry
 
 /**
@@ -93,9 +92,9 @@ class TocAdapter(
     /**
      * 加载目录数据
      *
-     * @param tocEntries 来自 Rust FFI 的 TocEntry 数组
+     * @param tocEntries 目录条目列表
      */
-    fun loadToc(tocEntries: Array<TocEntry>) {
+    fun loadToc(tocEntries: List<TocEntry>) {
         rootEntries.clear()
         flatList.clear()
 

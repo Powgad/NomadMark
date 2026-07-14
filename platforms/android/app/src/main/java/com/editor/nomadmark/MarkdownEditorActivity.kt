@@ -157,34 +157,8 @@ class MarkdownEditorActivity : android.app.Activity() {
     private var scrollSyncManager: ScrollSyncManager? = null
 
     // =========================================================================
-    // Core 文档集成
-    // =========================================================================
-
-    /** Core 文档句柄 */
-    private var rustCoreDocumentHandle: Long = 0L
-
-    /** 是否使用 Rust Core 搜索/替换 */
-    private var useRustCoreSearch = true
-
-    /** 当前搜索的文档内容（用于计算上下文） */
-    private var currentSearchContent: String = ""
-
-    // =========================================================================
     // 渲染引擎设置
     // =========================================================================
-
-    /**
-     * 渲染引擎枚举
-     */
-    enum class RenderEngine {
-        /** Markwon 渲染引擎 */
-        MARKWON,
-        /** Rust Core 渲染引擎 */
-        RUST_CORE
-    }
-
-    /** 当前选择的渲染引擎 */
-    private var renderEngine: RenderEngine = RenderEngine.MARKWON
 
     /** SharedPreferences 用于存储用户偏好 */
     private lateinit var prefs: SharedPreferences
@@ -268,9 +242,6 @@ class MarkdownEditorActivity : android.app.Activity() {
 
         // 初始化 SharedPreferences
         prefs = getSharedPreferences("NomadMarkPrefs", MODE_PRIVATE)
-
-        // 加载用户偏好设置
-        loadUserPreferences()
 
         // 初始化 Markwon 渲染器
         initMarkwon()
@@ -789,7 +760,7 @@ class MarkdownEditorActivity : android.app.Activity() {
 
     private fun setupGestureLayer() {
         // 创建手势编辑器
-        gestureEditor = GestureEditor(null)  // 暂时传 null，后续可以传 MarkdownEditorView
+        gestureEditor = GestureEditor()
 
         // 设置手势识别回调
         gestureLayer.onGestureRecognized = { result ->
@@ -857,7 +828,9 @@ class MarkdownEditorActivity : android.app.Activity() {
         btnUndo.setOnClickListener { undo() }
         btnRedo.setOnClickListener { redo() }
         btnToolbarToggle.setOnClickListener { toggleBottomToolbar() }
-        btnKeyboardSettings.setOnClickListener { showSettingsDialog() }
+        btnKeyboardSettings.setOnClickListener {
+            Toast.makeText(this, "键盘设置功能开发中", Toast.LENGTH_SHORT).show()
+        }
         btnSave.setOnClickListener { saveFile() }
 
         // 搜索栏
@@ -1423,66 +1396,11 @@ class MarkdownEditorActivity : android.app.Activity() {
             return
         }
 
-        // 保存当前内容用于上下文计算
-        currentSearchContent = getCurrentContent()
-
-        // 使用 Rust Core 搜索
-        if (useRustCoreSearch && rustCoreDocumentHandle != 0L) {
-            performRustCoreSearch(query, singleMode)
-        } else {
-            // 回退到本地搜索
-            performLocalSearch(query, singleMode)
-        }
+        // 使用本地搜索
+        performLocalSearch(query, singleMode)
 
         // 显示替换选项
         replaceRow.visibility = View.VISIBLE
-    }
-
-    /**
-     * 使用 Rust Core 执行搜索
-     */
-    private fun performRustCoreSearch(query: String, singleMode: Boolean) {
-        searchResults.clear()
-        currentSearchIndex = 0
-        isSingleSearchMode = singleMode
-
-        // 先清除旧的高亮
-        clearSearchHighlights()
-
-        try {
-            // 调用 Rust Core 搜索
-            val results = MarkdownCore.nativeSearch(rustCoreDocumentHandle, query)
-
-            if (results == null || results.isEmpty()) {
-                Toast.makeText(this, "未找到匹配项", Toast.LENGTH_SHORT).show()
-                return
-            }
-
-            // 解析结果: [start, end, line_number, ...]
-            var index = 0
-            while (index + 2 < results.size) {
-                val start = results[index].toInt()
-                val end = results[index + 1].toInt()
-                val lineNumber = results[index + 2].toInt()
-                searchResults.add(Pair(start, end))
-                index += 3
-            }
-
-            // 应用高亮
-            if (singleMode) {
-                currentSearchIndex = 0
-                highlightSingleResult(0)
-                Toast.makeText(this, "已定位到第 1 个匹配项", Toast.LENGTH_SHORT).show()
-            } else {
-                applyAllHighlights()
-                Toast.makeText(this, "找到 ${searchResults.size} 个匹配项", Toast.LENGTH_SHORT).show()
-            }
-
-        } catch (e: Exception) {
-            Log.e("MarkdownEditorActivity", "Rust Core search failed", e)
-            // 回退到本地搜索
-            performLocalSearch(query, singleMode)
-        }
     }
 
     /**
@@ -2026,53 +1944,12 @@ class MarkdownEditorActivity : android.app.Activity() {
             return
         }
 
-        // 使用 Rust Core 替换
-        if (useRustCoreSearch && rustCoreDocumentHandle != 0L) {
-            performRustCoreReplaceFirst(query, replaceText)
-        } else {
-            // 回退到本地替换
-            performLocalReplaceOne(query, replaceText)
-        }
+        // 使用本地替换
+        performLocalReplaceOne(query, replaceText)
     }
 
     /**
-     * 使用 Rust Core 替换第一个匹配项
-     */
-    private fun performRustCoreReplaceFirst(query: String, replacement: String) {
-        try {
-            val newContent = MarkdownCore.nativeReplaceFirst(
-                rustCoreDocumentHandle,
-                query,
-                replacement
-            )
-
-            if (newContent == null) {
-                Toast.makeText(this, "未找到匹配项", Toast.LENGTH_SHORT).show()
-                return
-            }
-
-            // 更新编辑器内容
-            getCurrentEditor().setText(newContent)
-
-            // 更新预览（如果是预览或分屏模式）
-            if (isPreviewMode || isSplitMode) {
-                updatePreview()
-            }
-
-            // 重新搜索以更新匹配项位置（这会同时更新编辑层和预览层的高亮）
-            performSearch(isSingleSearchMode)
-
-            Toast.makeText(this, "已替换 1 处", Toast.LENGTH_SHORT).show()
-
-        } catch (e: Exception) {
-            Log.e("MarkdownEditorActivity", "Rust Core replace first failed", e)
-            // 回退到本地替换
-            performLocalReplaceOne(query, replacement)
-        }
-    }
-
-    /**
-     * 本地替换第一个匹配项（回退实现）
+     * 本地替换第一个匹配项
      */
     private fun performLocalReplaceOne(query: String, replacement: String) {
         if (searchResults.isEmpty()) return
@@ -2126,57 +2003,12 @@ class MarkdownEditorActivity : android.app.Activity() {
             return
         }
 
-        // 使用 Rust Core 替换
-        if (useRustCoreSearch && rustCoreDocumentHandle != 0L) {
-            performRustCoreReplaceAll(query, replaceText)
-        } else {
-            // 回退到本地替换
-            performLocalReplaceAll(query, replaceText)
-        }
+        // 使用本地替换
+        performLocalReplaceAll(query, replaceText)
     }
 
     /**
-     * 使用 Rust Core 替换所有匹配项
-     */
-    private fun performRustCoreReplaceAll(query: String, replacement: String) {
-        try {
-            val newContent = MarkdownCore.nativeReplaceAll(
-                rustCoreDocumentHandle,
-                query,
-                replacement
-            )
-
-            if (newContent == null) {
-                Toast.makeText(this, "未找到匹配项", Toast.LENGTH_SHORT).show()
-                return
-            }
-
-            val count = searchResults.size
-
-            // 更新编辑器内容
-            getCurrentEditor().setText(newContent)
-
-            // 更新预览（如果是预览或分屏模式）
-            if (isPreviewMode || isSplitMode) {
-                updatePreview()
-            }
-
-            // 清除搜索结果和高亮（编辑层和预览层）
-            searchResults.clear()
-            currentSearchIndex = 0
-            clearSearchHighlights()
-
-            Toast.makeText(this, "已替换 $count 处", Toast.LENGTH_SHORT).show()
-
-        } catch (e: Exception) {
-            Log.e("MarkdownEditorActivity", "Rust Core replace all failed", e)
-            // 回退到本地替换
-            performLocalReplaceAll(query, replacement)
-        }
-    }
-
-    /**
-     * 本地替换所有匹配项（回退实现）
+     * 本地替换所有匹配项
      */
     private fun performLocalReplaceAll(query: String, replacement: String) {
         if (searchResults.isEmpty()) return
@@ -2414,34 +2246,20 @@ class MarkdownEditorActivity : android.app.Activity() {
     private fun updatePreview() {
         val content = getCurrentContent()
 
-        // 根据选择的渲染引擎进行渲染
-        when (renderEngine) {
-            RenderEngine.MARKWON -> {
-                // 使用 Markwon 渲染 Markdown
-                if (isPreviewMode) {
-                    markwon.setMarkdown(previewText, content)
-                    // 移除下划线
-                    removeUnderlines(previewText.text as Spanned)
-                    // 应用代码块边框
-                    applyCodeBlockBorder(previewText.text as Spanned)
-                }
-                if (isSplitMode) {
-                    markwon.setMarkdown(splitPreviewText, content)
-                    // 移除下划线
-                    removeUnderlines(splitPreviewText.text as Spanned)
-                    // 应用代码块边框
-                    applyCodeBlockBorder(splitPreviewText.text as Spanned)
-                }
-            }
-            RenderEngine.RUST_CORE -> {
-                // 使用 Rust Core 渲染 Markdown
-                if (isPreviewMode) {
-                    renderWithRustCore(content, previewText)
-                }
-                if (isSplitMode) {
-                    renderWithRustCore(content, splitPreviewText)
-                }
-            }
+        // 使用 Markwon 渲染 Markdown
+        if (isPreviewMode) {
+            markwon.setMarkdown(previewText, content)
+            // 移除下划线
+            removeUnderlines(previewText.text as Spanned)
+            // 应用代码块边框
+            applyCodeBlockBorder(previewText.text as Spanned)
+        }
+        if (isSplitMode) {
+            markwon.setMarkdown(splitPreviewText, content)
+            // 移除下划线
+            removeUnderlines(splitPreviewText.text as Spanned)
+            // 应用代码块边框
+            applyCodeBlockBorder(splitPreviewText.text as Spanned)
         }
     }
 
@@ -2799,320 +2617,6 @@ class MarkdownEditorActivity : android.app.Activity() {
             )
 
             return view
-        }
-    }
-
-    // =========================================================================
-    // 渲染引擎设置
-    // =========================================================================
-
-    /**
-     * 加载用户偏好设置
-     */
-    private fun loadUserPreferences() {
-        // 读取渲染引擎偏好，默认为 MARKWON
-        val engineName = prefs.getString("render_engine", "MARKWON") ?: "MARKWON"
-        renderEngine = try {
-            RenderEngine.valueOf(engineName)
-        } catch (e: IllegalArgumentException) {
-            RenderEngine.MARKWON
-        }
-
-        Log.d("MarkdownEditorActivity", "Loaded render engine: $renderEngine")
-    }
-
-    /**
-     * 保存用户偏好设置
-     */
-    private fun saveUserPreferences() {
-        prefs.edit()
-            .putString("render_engine", renderEngine.name)
-            .apply()
-
-        Log.d("MarkdownEditorActivity", "Saved render engine: $renderEngine")
-    }
-
-    /**
-     * 显示设置对话框
-     */
-    private fun showSettingsDialog() {
-        val engines = RenderEngine.values()
-        val engineNames = engines.map {
-            when (it) {
-                RenderEngine.MARKWON -> "Markwon (稳定)"
-                RenderEngine.RUST_CORE -> "Rust Core (实验性)"
-            }
-        }.toTypedArray()
-
-        val currentIndex = engines.indexOf(renderEngine)
-
-        AlertDialog.Builder(this)
-            .setTitle("选择渲染引擎")
-            .setSingleChoiceItems(engineNames, currentIndex) { dialog, which ->
-                // 保存选择
-                val selectedEngine = engines[which]
-                if (selectedEngine != renderEngine) {
-                    renderEngine = selectedEngine
-                    saveUserPreferences()
-
-                    // 刷新预览
-                    updatePreview()
-
-                    Toast.makeText(
-                        this,
-                        "已切换到 ${engineNames[which]}",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
-                dialog.dismiss()
-            }
-            .setNegativeButton("取消", null)
-            .show()
-    }
-
-    /**
-     * 使用 Rust Core 渲染 Markdown
-     */
-    private fun renderWithRustCore(content: String, textView: TextView) {
-        try {
-            // 释放之前的文档句柄
-            if (rustCoreDocumentHandle != 0L) {
-                MarkdownCore.nativeRelease(rustCoreDocumentHandle)
-                rustCoreDocumentHandle = 0L
-            }
-
-            // 创建新文档
-            rustCoreDocumentHandle = MarkdownCore.nativeCreate(content)
-
-            if (rustCoreDocumentHandle == 0L) {
-                // Rust Core 渲染失败，显示错误信息
-                textView.text = "Rust Core 渲染失败\n\n回退到 Markwon..."
-                Log.e("MarkdownEditorActivity", "Rust Core nativeCreate failed")
-                return
-            }
-
-            // 获取渲染命令
-            val outCommands = LongArray(2)      // [commands_ptr, commands_count]
-            val outDirtyRects = LongArray(8)    // [x, y, w, h, x, y, w, h]
-            val outTotalHeight = IntArray(1)   // [total_height]
-
-            val result = MarkdownCore.nativeLoadRange(
-                rustCoreDocumentHandle,
-                0,              // 从第 0 行开始
-                1000,           // 加载前 1000 行
-                outCommands,
-                outDirtyRects,
-                outTotalHeight
-            )
-
-            if (result == 0) {
-                val commandsPtr = outCommands[0]
-                val commandsCount = outCommands[1].toInt()
-
-                Log.d("MarkdownEditorActivity", "Rust Core rendered: commandsPtr=$commandsPtr, count=$commandsCount")
-
-                if (commandsPtr != 0L && commandsCount > 0) {
-                    // 将渲染命令转换为 SpannableString
-                    val spannable = convertCommandsToSpannable(commandsPtr, commandsCount)
-                    textView.text = spannable
-
-                    // 释放 Rust 分配的命令内存
-                    MarkdownCore.nativeFreeCommands(commandsPtr, commandsCount)
-                } else {
-                    // 没有渲染命令，显示原始内容
-                    textView.text = content
-                }
-            } else {
-                // 渲染失败
-                textView.text = "Rust Core 渲染失败 (错误代码: $result)\n\n$content"
-            }
-
-        } catch (e: Exception) {
-            Log.e("MarkdownEditorActivity", "Error rendering with Rust Core", e)
-            textView.text = "Rust Core 渲染异常: ${e.message}\n\n$content"
-        }
-    }
-
-    /**
-     * 将 Rust Core 渲染命令转换为 SpannableString
-     *
-     * Rust RenderCommand 结构（C ABI）：
-     * - cmd_type: i32 (4 bytes)
-     * - x, y, width, height: f32 (4 bytes each, 16 bytes total)
-     * - color: Color {r,g,b,a} (4 bytes)
-     * - data: RenderCommandData (24 bytes)
-     *   对于 DrawText，data 包含 TextData：
-     *   - text_ptr: u64 (8 bytes) @ offset 24-31
-     *   - text_len: u32 (4 bytes) @ offset 32-35
-     *   - font_family: u8 (1 byte) @ offset 36
-     *   - font_size_pt: u8 (1 byte) @ offset 37
-     *   - font_bold: u8 (1 byte) @ offset 38
-     *   - font_italic: u8 (1 byte) @ offset 39
-     *   - _pad: [u8; 8] (8 bytes) @ offset 40-47
-     * 总计：48 bytes
-     */
-    private fun convertCommandsToSpannable(commandsPtr: Long, commandsCount: Int): SpannableString {
-        // 读取命令数据
-        val commandSize = 48  // 每个 RenderCommand 48 字节（C ABI）
-        val dataSize = commandsCount * commandSize
-
-        if (dataSize <= 0 || commandsPtr == 0L) {
-            return SpannableString.valueOf("")
-        }
-
-        try {
-            val bytes = MarkdownCore.nativeReadBytes(commandsPtr, dataSize)
-            if (bytes == null || bytes.isEmpty()) {
-                Log.e("MarkdownEditorActivity", "nativeReadBytes returned null or empty")
-                return SpannableString.valueOf("")
-            }
-
-            // 存储文本片段信息
-            data class TextSegment(
-                val text: String,
-                val x: Float,
-                val y: Float,
-                val color: Int,
-                val fontSizePt: Int,
-                val bold: Boolean,
-                val italic: Boolean
-            )
-
-            val segments = mutableListOf<TextSegment>()
-            val buffer = java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.nativeOrder())
-
-            repeat(commandsCount) {
-                val startPos = buffer.position()
-
-                val cmdType = buffer.int
-                val x = buffer.float
-                val y = buffer.float
-                val width = buffer.float
-                val height = buffer.float
-
-                // 读取颜色（RGBA 各 1 字节，打包成 i32）
-                val colorPacked = buffer.int
-                val a = (colorPacked shr 24) and 0xFF
-                val r = (colorPacked shr 16) and 0xFF
-                val g = (colorPacked shr 8) and 0xFF
-                val b = colorPacked and 0xFF
-                val color = android.graphics.Color.argb(a, r, g, b)
-
-                when (cmdType) {
-                    0 -> {  // CMD_DRAW_TEXT
-                        // TextData 结构（24 字节）
-                        val textPtr = buffer.long
-                        val textLen = buffer.int
-                        val fontFamily = buffer.get().toInt()
-                        val fontSizePt = buffer.get().toInt()
-                        val fontBold = buffer.get().toInt() != 0
-                        val fontItalic = buffer.get().toInt() != 0
-                        // 跳过 padding（8 字节）
-                        buffer.position(buffer.position() + 8)
-
-                        // 读取文本内容
-                        if (textPtr != 0L && textLen > 0) {
-                            val textBytes = MarkdownCore.nativeReadBytes(textPtr, textLen)
-                            if (textBytes != null && textBytes.isNotEmpty()) {
-                                val text = String(textBytes, Charsets.UTF_8)
-                                segments.add(TextSegment(text, x, y, color, fontSizePt, fontBold, fontItalic))
-                            }
-                        }
-                    }
-                    else -> {
-                        // 跳过 data 区域（24 字节）和前面的字段（24 字节）
-                        buffer.position(startPos + commandSize)
-                    }
-                }
-            }
-
-            if (segments.isEmpty()) {
-                return SpannableString.valueOf("")
-            }
-
-            // 按位置排序（从上到下，从左到右）
-            segments.sortWith { a, b ->
-                val yDiff = a.y - b.y
-                if (kotlin.math.abs(yDiff) > 10f) {
-                    yDiff.compareTo(0f)
-                } else {
-                    a.x.compareTo(b.x)
-                }
-            }
-
-            // 构建文本和 Span 信息
-            val fullText = StringBuilder()
-
-            // 使用简单数据结构存储 Span 信息
-            data class SpanInfo(
-                val start: Int,
-                val end: Int,
-                val bold: Boolean,
-                val italic: Boolean,
-                val color: Int,
-                val fontSizePx: Int
-            )
-
-            val spanInfos = mutableListOf<SpanInfo>()
-
-            for (segment in segments) {
-                val start = fullText.length
-                fullText.append(segment.text)
-                val end = fullText.length
-
-                // 记录 Span 信息
-                spanInfos.add(SpanInfo(
-                    start = start,
-                    end = end,
-                    bold = segment.bold,
-                    italic = segment.italic,
-                    color = segment.color,
-                    fontSizePx = (segment.fontSizePt * 300 / 72).toInt() // pt to px at 300 DPI
-                ))
-
-                // 添加换行符（如果是新的行）
-                fullText.append("\n")
-            }
-
-            // 创建 SpannableString 并应用 Span
-            val spannable = SpannableString.valueOf(fullText.toString())
-            for (info in spanInfos) {
-                // 应用粗体
-                if (info.bold) {
-                    spannable.setSpan(
-                        StyleSpan(android.graphics.Typeface.BOLD),
-                        info.start, info.end,
-                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
-                    )
-                }
-                // 应用斜体
-                if (info.italic) {
-                    spannable.setSpan(
-                        StyleSpan(android.graphics.Typeface.ITALIC),
-                        info.start, info.end,
-                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
-                    )
-                }
-                // 应用颜色
-                spannable.setSpan(
-                    ForegroundColorSpan(info.color),
-                    info.start, info.end,
-                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-                // 应用字号
-                spannable.setSpan(
-                    android.text.style.AbsoluteSizeSpan(info.fontSizePx),
-                    info.start, info.end,
-                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-            }
-
-            Log.d("MarkdownEditorActivity", "Created SpannableString with ${segments.size} segments")
-            return spannable
-
-        } catch (e: Exception) {
-            Log.e("MarkdownEditorActivity", "Error in convertCommandsToSpannable", e)
-            return SpannableString.valueOf("")
         }
     }
 

@@ -15,7 +15,6 @@ import android.widget.ImageButton
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.editor.nomadmark.EinkRefreshController
-import com.editor.nomadmark.MarkdownCore
 import com.editor.nomadmark.SearchResult
 
 /**
@@ -69,7 +68,6 @@ class SearchPanel @JvmOverloads constructor(
     // =========================================================================
 
     private var isVisible = false
-    private var documentHandle: Long = 0L
     private var currentQuery: String = ""
     private var currentResults: Array<SearchResult> = emptyArray()
     private var selectedIndex: Int = -1
@@ -81,6 +79,7 @@ class SearchPanel @JvmOverloads constructor(
     var onResultSelected: ((SearchResult) -> Unit)? = null
     var onDismiss: (() -> Unit)? = null
     var onReplaceRequested: (() -> Unit)? = null
+    var onSearchRequested: ((String) -> Unit)? = null
 
     // =========================================================================
     // E-ink 刷新
@@ -167,10 +166,12 @@ class SearchPanel @JvmOverloads constructor(
     }
 
     /**
-     * 设置文档句柄
+     * 设置搜索结果（外部调用）
      */
-    fun setDocumentHandle(handle: Long) {
-        documentHandle = handle
+    fun setSearchResults(results: Array<SearchResult>) {
+        currentResults = results
+        selectedIndex = if (results.isNotEmpty()) 0 else -1
+        updateResultsList()
     }
 
     /**
@@ -261,10 +262,10 @@ class SearchPanel @JvmOverloads constructor(
 
     /**
      * 执行搜索
+     * 注意：此方法已废弃，搜索现在由外部处理并通过 setSearchResults 传入结果
      */
+    @Deprecated("Search is now handled externally with setSearchResults")
     private fun performSearch() {
-        if (documentHandle == 0L) return
-
         val query = searchInput.text.toString().trim()
         if (query.isEmpty()) {
             clearResults()
@@ -273,16 +274,9 @@ class SearchPanel @JvmOverloads constructor(
 
         currentQuery = query
 
-        try {
-            // 暂时使用本地搜索实现
-            // TODO: 适配 Rust Core 的新 LongArray? 返回类型
-            performLocalSearch(query)
-
-        } catch (e: Exception) {
-            currentResults = emptyArray()
-            selectedIndex = -1
-            updateResultsList()
-        }
+        // 搜索现在由外部处理
+        // 通知外部执行搜索
+        onSearchRequested?.invoke(query)
     }
 
     /**

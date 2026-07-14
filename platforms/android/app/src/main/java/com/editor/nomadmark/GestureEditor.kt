@@ -11,7 +11,7 @@ import android.widget.EditText
  *
  * 使用 LRU 缓存处理坐标空间校正以提高性能。
  */
-class GestureEditor(private val editorView: MarkdownEditorView?) {
+class GestureEditor {
 
     companion object {
         private const val TAG = "GestureEditor"
@@ -42,32 +42,28 @@ class GestureEditor(private val editorView: MarkdownEditorView?) {
      * 处理识别结果并进行坐标校正
      *
      * @param result 识别结果数据
+     * @param editor 目标 EditText
      */
-    fun processRecognitionResult(result: RecognResultData) {
+    fun processRecognitionResult(result: RecognResultData, editor: EditText) {
         val bbox = result.boundingBox
         val keyPoint = result.keyPoint
 
         // 首先检查缓存
         val correctedRect = getCachedCorrection(bbox, keyPoint)
 
-        // 转换为文档坐标
-        val (line, column) = editorView?.coordinateToOffset(
-            correctedRect.centerX().toFloat(),
-            correctedRect.centerY().toFloat()
-        ) ?: Pair(0, 0)
-
         // 根据手势类型执行操作
         when (result.gestureType) {
             GestureType.DELETE -> {
-                editorView?.deleteLine(line)
-                triggerPartialRefresh(line)
+                deleteTextRange(correctedRect, editor)
             }
             GestureType.INSERT -> {
-                editorView?.insertAtLine(line, result.text)
-                triggerPartialRefresh(line)
+                // 对于插入手势，需要在矩形位置插入文本
+                val (line, _) = findTextPositionsForRect(correctedRect, editor)
+                insertAtLine(line, result.text, editor)
             }
             GestureType.SELECT -> {
-                editorView?.selectRange(correctedRect)
+                // 选择功能暂未实现
+                Log.d(TAG, "Select gesture not yet implemented")
             }
         }
     }
@@ -143,14 +139,6 @@ class GestureEditor(private val editorView: MarkdownEditorView?) {
             (bbox.right / scaleX).toInt(),
             (bbox.bottom / scaleY).toInt()
         )
-    }
-
-    /**
-     * 触发特定行的部分刷新
-     */
-    private fun triggerPartialRefresh(line: Int) {
-        val rect = editorView?.getLineBoundingRect(line) ?: return
-        editorView?.refreshController?.addDirty(rect)
     }
 
     /**

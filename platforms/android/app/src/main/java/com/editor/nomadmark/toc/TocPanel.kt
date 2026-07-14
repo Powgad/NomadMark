@@ -10,7 +10,6 @@ import android.widget.FrameLayout
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.editor.nomadmark.EinkRefreshController
-import com.editor.nomadmark.MarkdownCore
 import com.editor.nomadmark.TocEntry
 
 /**
@@ -147,16 +146,12 @@ class TocPanel @JvmOverloads constructor(
      * 显示目录
      *
      * 从左侧滑出动画
+     * 注意：需要先调用 loadTocData(tocEntries) 加载目录数据
      */
     fun show() {
         if (isVisible) return
 
         visibility = View.VISIBLE
-
-        // 加载目录数据
-        if (documentHandle != 0L) {
-            loadTocData()
-        }
 
         // 滑动动画
         val tocWidth = (screenWidth * TOC_WIDTH_RATIO).toInt()
@@ -181,11 +176,11 @@ class TocPanel @JvmOverloads constructor(
 
     /**
      * 刷新目录数据
+     * 注意：此方法已废弃，请使用 loadTocData(tocEntries) 重新加载数据
      */
+    @Deprecated("Use loadTocData with explicit TocEntry list instead")
     fun refresh() {
-        if (documentHandle != 0L) {
-            loadTocData()
-        }
+        // 不再自动刷新，需要外部调用 loadTocData
     }
 
     // =========================================================================
@@ -193,38 +188,37 @@ class TocPanel @JvmOverloads constructor(
     // =========================================================================
 
     /**
-     * 从 Rust Core 加载目录数据
+     * 从外部数据加载目录
      */
-    private fun loadTocData() {
-        if (documentHandle == 0L) return
+    fun loadTocData(tocEntries: List<TocEntry>) {
+        // 初始化 Adapter (首次)
+        if (!::adapter.isInitialized) {
+            adapter = TocAdapter(
+                onEntryClick = { entry ->
+                    onTocEntryClick?.invoke(entry)
+                    dismiss()
+                },
+                onEntryMoved = { fromPos, toPos ->
+                    onEntryMoved(fromPos, toPos)
+                }
+            )
+            recyclerView.adapter = adapter
 
-        try {
-            val tocEntries = MarkdownCore.getTocEntries(documentHandle)
-
-            // 初始化 Adapter (首次)
-            if (!::adapter.isInitialized) {
-                adapter = TocAdapter(
-                    onEntryClick = { entry ->
-                        onTocEntryClick?.invoke(entry)
-                        dismiss()
-                    },
-                    onEntryMoved = { fromPos, toPos ->
-                        onEntryMoved(fromPos, toPos)
-                    }
-                )
-                recyclerView.adapter = adapter
-
-                // 设置拖拽支持
-                val dragHelper = adapter.createDragTouchHelper()
-                dragHelper.attachToRecyclerView(recyclerView)
-            }
-
-            // 更新数据
-            adapter.loadToc(tocEntries)
-
-        } catch (e: Exception) {
-            // 错误处理
+            // 设置拖拽支持
+            val dragHelper = adapter.createDragTouchHelper()
+            dragHelper.attachToRecyclerView(recyclerView)
         }
+
+        // 更新数据
+        adapter.loadToc(tocEntries)
+    }
+
+    /**
+     * 显示目录（已弃用，保留以兼容旧代码）
+     */
+    @Deprecated("Use loadTocData with explicit TocEntry list instead")
+    private fun loadTocDataFromHandle() {
+        // 此方法已废弃，不再使用 Rust Core
     }
 
     // =========================================================================
