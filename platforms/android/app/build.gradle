@@ -51,11 +51,28 @@ android {
     buildTypes {
         release {
             minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             signingConfig signingConfigs.release
         }
+
         debug {
             minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             signingConfig signingConfigs.debug
+        }
+    }
+
+    // APK 输出文件名配置
+    android.applicationVariants.all { variant ->
+        variant.outputs.all {
+            outputFileName = "NomadMark-${variant.name}-${variant.versionName}.apk"
+        }
+    }
+
+    // 支持 aar 包的 flatDir 配置
+    repositories {
+        flatDir {
+            dirs 'libs'
         }
     }
 
@@ -97,6 +114,24 @@ dependencies {
     // 代码语法高亮 - 暂时禁用（需要额外配置 Prism4j）
     // TODO: 后续可添加 syntax-highlight 和 prism4j 支持
     // implementation "io.noties.markwon:syntax-highlight:$markwonVersion"
+
+    // ============================================
+    // Supernote AAR 库 (如果有的话)
+    // ============================================
+    // 将以下 aar 文件放入 app/libs/ 目录后，取消注释相应依赖：
+    //
+    // api(name: 'SupernoteUiLib', ext: 'aar') { transitive true }
+    // api(name: 'dialoglib', ext: 'aar') { transitive true }
+    // api(name: 'nativeEventlib', ext: 'aar') { transitive true }
+
+    // EventBus (Supernote 库可能需要)
+    implementation 'org.greenrobot:eventbus:3.3.1'
+
+    // Glide (Supernote 库可能需要)
+    implementation 'com.github.bumptech.glide:glide:4.7.1'
+
+    // WiFi 打印支持 (可选)
+    implementation 'androidx.print:print:1.0.0'
 
     // Testing
     testImplementation 'junit:junit:4.13.2'

@@ -8,6 +8,16 @@
     <uses-permission android:name="android.permission.READ_LOGS"
         android:maxSdkVersion="15" />
 
+    <!-- Storage permissions for saving files to Documents directory -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
+    <!-- Android 11+ for SD card absolute path access -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        android:minSdkVersion="30" />
+
     <application
         android:name="com.editor.nomadmark.NomadMarkApplication"
         android:allowBackup="true"
@@ -22,6 +32,16 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+        </activity>
+
+        <!-- Markdown Editor Activity -->
+        <activity
+            android:name="com.editor.nomadmark.MarkdownEditorActivity"
+            android:exported="true"
+            android:theme="@style/Theme.NomadMark"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|keyboardHidden">
+
             <!-- Markdown file association - by MIME type -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
@@ -79,13 +99,6 @@
                 <data android:pathPattern=".*\\.md" />
             </intent-filter>
         </activity>
-
-        <!-- Markdown Editor Activity -->
-        <activity
-            android:name="com.editor.nomadmark.MarkdownEditorActivity"
-            android:theme="@style/Theme.NomadMark"
-            android:windowSoftInputMode="adjustResize"
-            android:configChanges="orientation|screenSize|keyboardHidden" />
     </application>
 
 </manifest>

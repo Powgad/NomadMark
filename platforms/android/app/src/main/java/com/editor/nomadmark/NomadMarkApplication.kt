@@ -51,6 +51,12 @@ class NomadMarkApplication : Application() {
         }
 
         Log.i(TAG, "NomadMarkApplication initialized - Version: ${getAppVersion()}")
+
+        // 检测 Explorer 系统库状态
+        detectExplorerStatus()
+
+        // 测试 Document 目录访问
+        testDocumentAccess()
     }
 
     /**
@@ -173,6 +179,48 @@ class NomadMarkApplication : Application() {
             packageInfo.versionName ?: "unknown"
         } catch (e: Exception) {
             "unknown"
+        }
+    }
+
+    /**
+     * 检测 Explorer 系统库状态
+     */
+    private fun detectExplorerStatus() {
+        try {
+            ExplorerUtils.logFullStatus(this)
+
+            val status = ExplorerUtils.checkStatus(this)
+            if (status.canInvoke) {
+                Log.i(TAG, "✅ Explorer 系统库可用，可以通过 Intent 调用文件选择功能")
+            } else if (status.exists) {
+                Log.w(TAG, "⚠️ Explorer 存在但可能无法正常调用")
+            } else {
+                Log.w(TAG, "⚠️ Explorer 系统库不存在，文件选择功能可能不可用")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "检测 Explorer 状态时出错", e)
+        }
+    }
+
+    /**
+     * 测试 Document 目录访问
+     */
+    private fun testDocumentAccess() {
+        try {
+            Log.i(TAG, "========== Document 目录访问测试 ==========")
+            val testResult = StorageTest.testDocumentAccess()
+            Log.i(TAG, testResult)
+            Log.i(TAG, "===========================================")
+
+            // 检查最佳路径
+            val bestPath = StorageTest.getBestDocumentPath()
+            if (bestPath != null) {
+                Log.i(TAG, "✅ 找到可访问的 Document 目录: ${bestPath.absolutePath}")
+            } else {
+                Log.w(TAG, "⚠️ 未找到可访问的 Document 目录")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "测试 Document 访问时出错", e)
         }
     }
 }

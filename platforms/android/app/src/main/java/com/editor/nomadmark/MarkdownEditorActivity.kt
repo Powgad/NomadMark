@@ -5,12 +5,17 @@ import android.app.ProgressDialog
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.text.Editable
 import android.text.Spannable
 import android.text.SpannableString
@@ -26,6 +31,8 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.InputMethodManager
 import android.widget.*
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import java.io.File
 
 import com.editor.nomadmark.GestureType
@@ -179,6 +186,9 @@ class MarkdownEditorActivity : android.app.Activity() {
     /** 当前文件路径 */
     private var filePath: String? = null
 
+    /** 当前文件 URI (用于通过 Intent 打开的文件) */
+    private var fileUri: android.net.Uri? = null
+
     /** 当前文件名 */
     private var fileName: String? = null
 
@@ -254,6 +264,9 @@ class MarkdownEditorActivity : android.app.Activity() {
 
         // 设置监听器
         setupListeners()
+
+        // 检查和请求存储权限
+        checkAndRequestStoragePermissions()
 
         // 处理打开的文件
         handleOpenIntent(intent)
@@ -883,6 +896,15 @@ class MarkdownEditorActivity : android.app.Activity() {
     // =========================================================================
 
     private fun handleOpenIntent(intent: Intent?) {
+        // 优先处理从外部应用打开的文件（Intent data URI）
+        val uri = intent?.data
+        if (uri != null) {
+            Log.d("MarkdownEditorActivity", "Opening file from URI: $uri")
+            openFileFromUri(uri)
+            return
+        }
+
+        // 处理 Intent extras（内部调用）
         val extras = intent?.extras
         val path = extras?.getString("file_path")
         val openSample = extras?.getBoolean("open_sample", false) ?: false
@@ -990,10 +1012,28 @@ class MarkdownEditorActivity : android.app.Activity() {
         Thread {
             try {
                 val content = getCurrentContent()
-                val path = filePath ?: createNewFilePath()
 
-                File(path).writeText(content)
-                filePath = path
+                // 如果是通过 URI 打开的文件，使用 ContentResolver 保存
+                if (fileUri != null) {
+                    try {
+                        saveFileToUri(content)
+                        // 写入成功，清空 URI 标记（后续保存仍用 URI）
+                    } catch (e: Exception) {
+                        Log.e("MarkdownEditorActivity", "Failed to save to URI", e)
+                        // URI 写入失败，需要另存为
+                        Handler(Looper.getMainLooper()).post {
+                            dismissSavingDialog()
+                            showSaveAsDialog(content)
+                        }
+                        return@Thread
+                    }
+                } else {
+                    // 否则使用文件路径保存
+                    val path = filePath ?: createNewFilePath()
+                    File(path).writeText(content)
+                    filePath = path
+                }
+
                 lastSavedContent = content
                 isModified = false
 
@@ -1010,6 +1050,38 @@ class MarkdownEditorActivity : android.app.Activity() {
                 }
             }
         }.start()
+    }
+
+    /**
+     * 显示另存为对话框
+     */
+    private fun showSaveAsDialog(content: String) {
+        fileOperationHelper.showNewFileDialog { newPath ->
+            try {
+                File(newPath).writeText(content)
+                filePath = newPath
+                fileUri = null  // 切换到文件路径模式
+                lastSavedContent = content
+                isModified = false
+                updateSaveButton()
+                Toast.makeText(this, "已保存到: ${File(newPath).name}", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Log.e("MarkdownEditorActivity", "Failed to save as new file", e)
+                Toast.makeText(this, "保存失败: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    /**
+     * 保存文件到 URI
+     */
+    private fun saveFileToUri(content: String) {
+        val uri = fileUri ?: throw IllegalStateException("No file URI available")
+
+        // 使用 ContentResolver 写入文件
+        contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { writer ->
+            writer.write(content)
+        } ?: throw IllegalStateException("Cannot open output stream for URI: $uri")
     }
 
     private fun createNewFilePath(): String {
@@ -3002,6 +3074,10 @@ class MarkdownEditorActivity : android.app.Activity() {
         private const val OPEN_FILE_REQUEST_CODE = 1001
         private const val OPEN_SAMPLE_REQUEST_CODE = 1002
 
+        // 存储权限请求码
+        private const val REQUEST_STORAGE_PERMISSION = 2001
+        private const val REQUEST_MANAGE_EXTERNAL_STORAGE = 2002
+
         // Markwon 内部类名常量（用于反射访问）
         private const val CODE_BLOCK_SPAN = "io.noties.markwon.core.spans.CodeBlockSpan"
         private const val FENCED_CODE_BLOCK_SPAN = "io.noties.markwon.core.spans.FencedCodeBlockSpan"
@@ -3013,8 +3089,7 @@ class MarkdownEditorActivity : android.app.Activity() {
      * 显示打开文件对话框
      */
     private fun showOpenFileDialog() {
-        // 创建选择对话框
-        val options = arrayOf("选择文件", "打开测试文档")
+        val options = arrayOf("系统文件选择器", "打开测试文档")
 
         AlertDialog.Builder(this)
             .setTitle("打开文件")
@@ -3052,6 +3127,118 @@ class MarkdownEditorActivity : android.app.Activity() {
         loadAssetSample()
     }
 
+    // =========================================================================
+    // 存储权限管理
+    // =========================================================================
+
+    /**
+     * 检查和请求存储权限
+     * Android 11+ (SDK 30+) 需要 MANAGE_EXTERNAL_STORAGE 权限
+     * Android 10 及以下需要传统的 READ/WRITE_EXTERNAL_STORAGE 权限
+     */
+    private fun checkAndRequestStoragePermissions() {
+        when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
+                // Android 11+ (SDK 30+)
+                if (!Environment.isExternalStorageManager()) {
+                    // 需要请求 MANAGE_EXTERNAL_STORAGE 权限
+                    showStoragePermissionDialog()
+                } else {
+                    Log.d("MarkdownEditorActivity", "已有 MANAGE_EXTERNAL_STORAGE 权限")
+                }
+            }
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.M -> {
+                // Android 6-10 (SDK 23-29)
+                val writePermission = ContextCompat.checkSelfPermission(
+                    this,
+                    android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+                )
+                if (writePermission != PackageManager.PERMISSION_GRANTED) {
+                    // 请求传统存储权限
+                    ActivityCompat.requestPermissions(
+                        this,
+                        arrayOf(
+                            android.Manifest.permission.READ_EXTERNAL_STORAGE,
+                            android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+                        ),
+                        REQUEST_STORAGE_PERMISSION
+                    )
+                } else {
+                    Log.d("MarkdownEditorActivity", "已有传统存储权限")
+                }
+            }
+            else -> {
+                // Android 5 及以下，无需运行时权限
+                Log.d("MarkdownEditorActivity", "Android 5 及以下，无需运行时权限")
+            }
+        }
+    }
+
+    /**
+     * 显示存储权限说明对话框并引导用户到设置页面
+     * MANAGE_EXTERNAL_STORAGE 需要用户在系统设置中手动授权
+     */
+    private fun showStoragePermissionDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("需要存储权限")
+            .setMessage(
+                "NomadMark 需要访问您的 SD 卡来保存和打开 Markdown 文件。\n\n" +
+                "请前往系统设置，授予「所有文件访问权限」。\n\n" +
+                "授予后即可正常使用。"
+            )
+            .setPositiveButton("前往设置") { _, _ ->
+                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                intent.data = Uri.parse("package:$packageName")
+                try {
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    // 部分设备可能不支持此 Intent，提供备用方案
+                    val fallbackIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                    fallbackIntent.data = Uri.parse("package:$packageName")
+                    startActivity(fallbackIntent)
+                }
+            }
+            .setNegativeButton("稍后") { _, _ ->
+                // 用户选择稍后，暂时跳过权限请求
+                Toast.makeText(this, "稍后可以在设置中授予权限", Toast.LENGTH_LONG).show()
+            }
+            .setNeutralButton("不再提示") { _, _ ->
+                // 保存用户选择，不再提示
+                prefs.edit().putBoolean("skip_storage_permission_dialog", true).apply()
+            }
+            .show()
+    }
+
+    /**
+     * 处理权限请求结果
+     * 用于传统存储权限 (Android 6-10)
+     */
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+
+        when (requestCode) {
+            REQUEST_STORAGE_PERMISSION -> {
+                if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
+                    Log.d("MarkdownEditorActivity", "传统存储权限已授予")
+                } else {
+                    // 权限被拒绝，提示用户
+                    Toast.makeText(this, "需要存储权限才能保存文件", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // 文件打开功能
+    // =========================================================================
+
+    /**
+     * 使用 Explorer 打开文件选择器
+     */
     /**
      * 处理文件选择结果
      */
@@ -3074,11 +3261,14 @@ class MarkdownEditorActivity : android.app.Activity() {
      */
     private fun openFileFromUri(uri: android.net.Uri) {
         try {
-            // 请求持久化读取权限
-            contentResolver.takePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
+            // 请求持久化读取和写入权限
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            try {
+                contentResolver.takePersistableUriPermission(uri, flags)
+            } catch (e: Exception) {
+                // 如果无法获取持久化权限，尝试获取临时权限
+                Log.w("MarkdownEditorActivity", "Cannot take persistable URI permission, trying temporary: ${e.message}")
+            }
 
             // 读取文件内容
             val content = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
@@ -3131,9 +3321,12 @@ class MarkdownEditorActivity : android.app.Activity() {
 
         // 更新文件路径和名称
         if (uri != null) {
+            fileUri = uri
             filePath = uri.toString()
             fileName = getFileNameFromUri(uri)
             updateFilenameDisplay()
+        } else {
+            fileUri = null
         }
 
         // 清空撤销重做栈并保存初始状态
