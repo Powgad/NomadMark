@@ -627,16 +627,16 @@ class MarkdownEditorActivity : android.app.Activity() {
                         "about:blank"
                     }
 
-                    // 创建不带下划线的自定义 Span，保留原始 URL
-                    val noUnderlineSpan = object : android.text.style.URLSpan(url) {
+                    // 创建带下划线的自定义 Span，保留原始 URL
+                    val underlinedSpan = object : android.text.style.URLSpan(url) {
                         override fun updateDrawState(ds: android.text.TextPaint) {
                             super.updateDrawState(ds)
-                            ds.isUnderlineText = false
+                            ds.isUnderlineText = true  // 保持下划线
                             // 保留原始链接颜色
                             ds.color = ds.linkColor
                         }
                     }
-                    spannable.setSpan(noUnderlineSpan, start, end, flags)
+                    spannable.setSpan(underlinedSpan, start, end, flags)
                 }
             }
         } catch (e: ClassNotFoundException) {
@@ -652,14 +652,14 @@ class MarkdownEditorActivity : android.app.Activity() {
             val end = spannable.getSpanEnd(span)
             val flags = spannable.getSpanFlags(span)
             spannable.removeSpan(span)
-            // 创建不带下划线的 URLSpan
-            val noUnderlineSpan = object : android.text.style.URLSpan(span.url) {
+            // 创建带下划线的 URLSpan
+            val underlinedSpan = object : android.text.style.URLSpan(span.url) {
                 override fun updateDrawState(ds: android.text.TextPaint) {
                     super.updateDrawState(ds)
-                    ds.isUnderlineText = false
+                    ds.isUnderlineText = true  // 保持下划线
                 }
             }
-            spannable.setSpan(noUnderlineSpan, start, end, flags)
+            spannable.setSpan(underlinedSpan, start, end, flags)
         }
 
         // 移除 UnderlineSpan
