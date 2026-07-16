@@ -83,6 +83,7 @@ class NomadMarkApplication : Application() {
     /**
      * 显示崩溃通知
      */
+    @Suppress("UNUSED_PARAMETER")
     private fun showCrashNotification(crashInfo: CrashHandler.CrashInfo) {
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_notify_error)
@@ -122,6 +123,7 @@ class NomadMarkApplication : Application() {
      *
      * TODO: 实现将崩溃报告上传到服务器的逻辑
      */
+    @Suppress("UNUSED_PARAMETER")
     private fun uploadCrashReport(crashInfo: CrashHandler.CrashInfo) {
         // 这里可以实现上传到服务器的逻辑
         // 例如：

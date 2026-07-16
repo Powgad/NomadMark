@@ -1,7 +1,6 @@
 package com.editor.nomadmark
 
 import android.app.AlertDialog
-import android.app.ProgressDialog
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -50,6 +49,7 @@ import io.noties.markwon.ext.tasklist.TaskListPlugin
 import io.noties.markwon.ext.latex.JLatexMathPlugin
 import io.noties.markwon.inlineparser.MarkwonInlineParserPlugin
 import io.noties.markwon.image.ImagesPlugin
+import io.noties.markwon.image.network.NetworkSchemeHandler
 import android.text.Spanned
 import android.text.style.URLSpan
 import android.text.style.UnderlineSpan
@@ -280,6 +280,7 @@ class MarkdownEditorActivity : android.app.Activity() {
         handleOpenIntent(intent)
     }
 
+    @Suppress("DEPRECATION")
     override fun onBackPressed() {
         // 防丢失保护
         if (isModified) {
@@ -308,7 +309,11 @@ class MarkdownEditorActivity : android.app.Activity() {
             .usePlugin(StrikethroughPlugin.create())
             .usePlugin(TablePlugin.create(this))
             .usePlugin(TaskListPlugin.create(this))
-            .usePlugin(ImagesPlugin.create())
+            // 图片插件 - 添加网络和本地图片支持
+            .usePlugin(ImagesPlugin.create { plugin: ImagesPlugin ->
+                // 添加网络图片支持 (http/https)
+                plugin.addSchemeHandler(NetworkSchemeHandler.create())
+            })
             // 添加行内解析器（支持行内数学公式）
             .usePlugin(MarkwonInlineParserPlugin.create())
             // 数学公式渲染（JLatexMath）
@@ -2897,14 +2902,14 @@ class MarkdownEditorActivity : android.app.Activity() {
         textFilename.text = displayName ?: "未命名.md"
     }
 
-    private var savingDialog: ProgressDialog? = null
+    private var savingDialog: AlertDialog? = null
 
     private fun showSavingDialog() {
-        savingDialog = ProgressDialog(this).apply {
+        savingDialog = AlertDialog.Builder(this).apply {
             setMessage("正在保存...")
             setCancelable(false)
-            show()
-        }
+        }.create()
+        savingDialog?.show()
     }
 
     private fun dismissSavingDialog() {
@@ -3293,8 +3298,6 @@ class MarkdownEditorActivity : android.app.Activity() {
      * 在打开新文件前保存当前内容的对话框
      */
     private fun showSaveBeforeOpenDialog(newContent: String, uri: android.net.Uri) {
-        val displayName = fileName ?: "未命名.md"
-
         AlertDialog.Builder(this)
             .setTitle("保存修改？")
             .setMessage("当前文档有未保存的修改，是否保存后打开新文件？")

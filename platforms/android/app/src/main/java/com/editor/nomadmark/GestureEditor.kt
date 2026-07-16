@@ -219,7 +219,7 @@ class GestureEditor {
      * @return (起始，结束) 字符位置对
      */
     private fun findTextPositionsForRect(rect: Rect, editor: EditText): Pair<Int, Int> {
-        val text = editor.text ?: return Pair(0, 0)
+        if (editor.text == null) return Pair(0, 0)
 
         // 获取行高和位置
         val layout = editor.layout ?: return Pair(0, 0)
@@ -248,6 +248,7 @@ class GestureEditor {
     private fun triggerPartialRefreshForRange(start: Int, end: Int, editor: EditText) {
         // 目前，触发编辑器视图的完整刷新
         // 未来，可以优化为仅刷新脏矩形
+        // start 和 end 参数可用于局部刷新优化
         editor.invalidate()
     }
 

@@ -228,6 +228,7 @@ class TocPanel @JvmOverloads constructor(
     /**
      * 处理条目移动
      */
+    @Suppress("UNUSED_PARAMETER")
     private fun onEntryMoved(fromPos: Int, toPos: Int) {
         // TODO: 实现 Markdown 文档中的标题移动
         // 这需要调用 Rust Core 的编辑接口
@@ -250,8 +251,7 @@ class TocPanel @JvmOverloads constructor(
             translationX = animation.animatedValue as Float
 
             // 局部刷新移动区域
-            val dirtyRect = Rect(0, 0, tocWidth + kotlin.math.abs(translationX.toInt()), screenHeight)
-            invalidate(dirtyRect)
+            invalidate()
         }
         animator.start()
 
@@ -274,8 +274,7 @@ class TocPanel @JvmOverloads constructor(
             translationX = animation.animatedValue as Float
 
             // 局部刷新移动区域
-            val dirtyRect = Rect(0, 0, tocWidth + kotlin.math.abs(translationX.toInt()), screenHeight)
-            invalidate(dirtyRect)
+            invalidate()
         }
         animator.addListener(object : android.animation.AnimatorListenerAdapter() {
             override fun onAnimationEnd(animation: android.animation.Animator) {
@@ -301,10 +300,12 @@ class TocPanel @JvmOverloads constructor(
      *
      * 触发 EPD_FULL 刷新
      */
+    @Suppress("UNUSED_VARIABLE")
     fun handleToggleExpanded(position: Int) {
         if (::adapter.isInitialized.not()) return
 
         val affectedRect = adapter.toggleExpanded(position)
+        // TODO: 使用 affectedRect 进行局部刷新而非全局刷新
 
         // 展开/收起需要全局刷新
         if (::refreshController.isInitialized) {

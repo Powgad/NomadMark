@@ -70,9 +70,9 @@ class SearchHighlightBackgroundSpan(
         start: Int,
         end: Int,
         x: Float,
-        top: Int,
+        _top: Int,
         y: Int,
-        bottom: Int,
+        _bottom: Int,
         paint: Paint
     ) {
         // 保存原始 paint 状态

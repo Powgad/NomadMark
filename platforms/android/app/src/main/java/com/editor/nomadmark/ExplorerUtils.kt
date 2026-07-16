@@ -111,7 +111,7 @@ object ExplorerUtils {
         val pm = context.packageManager
         return EXPLORER_PACKAGES.map { packageName ->
             try {
-                val appInfo = pm.getApplicationInfo(packageName, 0)
+                pm.getApplicationInfo(packageName, 0)
                 val packageInfo = pm.getPackageInfo(packageName, PackageManager.GET_ACTIVITIES)
 
                 // 查找 explorer 相关的 Activity
@@ -143,7 +143,7 @@ object ExplorerUtils {
         val pm = context.packageManager
         for (packageName in EXPLORER_PACKAGES) {
             try {
-                val appInfo = pm.getApplicationInfo(packageName, 0)
+                pm.getApplicationInfo(packageName, 0)
                 val packageInfo = pm.getPackageInfo(packageName, PackageManager.GET_ACTIVITIES)
 
                 // 检查是否有 SelectFileActivity

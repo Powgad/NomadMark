@@ -155,6 +155,7 @@ class KeyBindingSettingsDialog(private val activity: MarkdownEditorActivity) {
      * @param action 要设置快捷键的功能
      * @param currentBinding 当前的绑定（如果有的话）
      */
+    @Suppress("UNUSED_PARAMETER")
     private fun showRecordingDialog(action: EditorAction, currentBinding: KeyBinding? = null) {
         currentRecordingAction = action
         currentKeys = ""
@@ -219,6 +220,7 @@ class KeyBindingSettingsDialog(private val activity: MarkdownEditorActivity) {
     /**
      * 处理按键按下事件
      */
+    @Suppress("UNUSED_PARAMETER")
     private fun handleKeyPress(
         keyCode: Int,
         event: KeyEvent,

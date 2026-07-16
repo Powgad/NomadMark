@@ -8,9 +8,8 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import SplitView from './components/SplitView';
 import { useDocument } from './hooks/useDocument';
-import type { ViewMode, KeyboardType, Rect } from './types';
+import { ViewMode, KeyboardType, type Rect } from './types';
 import { open } from '@tauri-apps/api/dialog';
-import { readTextFile } from '@tauri-apps/api/fs';
 
 // =============================================================================
 // 工具栏图标 (使用 Unicode 模拟)
@@ -67,7 +66,6 @@ interface ToolbarProps {
 }
 
 const Toolbar: React.FC<ToolbarProps> = ({
-  viewMode,
   isPreviewActive,
   isSplitActive,
   isRevisionActive,

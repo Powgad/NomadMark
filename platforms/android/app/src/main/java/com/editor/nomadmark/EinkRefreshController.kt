@@ -129,8 +129,10 @@ class EinkRefreshController(private val view: View) {
      */
     private fun doPartialRefresh() {
         for (rect in dirtyRects) {
-            view.invalidate(rect)
+            // invalidate(rect) 已弃用，使用 invalidate()
+            // TODO: 考虑使用其他局部刷新方法
         }
+        view.invalidate()
     }
 
     /**

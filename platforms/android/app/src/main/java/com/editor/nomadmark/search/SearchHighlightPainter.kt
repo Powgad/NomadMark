@@ -380,6 +380,7 @@ class SearchResultRectCalculator {
     /**
      * 更新布局参数
      */
+    @Suppress("UNUSED_PARAMETER")
     fun updateLayout(
         lineHeight: Int = this.lineHeight,
         charWidth: Int = this.charWidth,
@@ -387,5 +388,6 @@ class SearchResultRectCalculator {
         documentLeft: Int = this.documentLeft
     ) {
         // 在实际实现中更新参数
+        // TODO: Update cached layout parameters
     }
 }

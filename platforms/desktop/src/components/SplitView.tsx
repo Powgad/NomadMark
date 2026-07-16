@@ -12,14 +12,11 @@
 import React, { useRef, useEffect, useCallback } from 'react';
 import { useCanvasRenderer } from '../hooks/useCanvasRenderer';
 import { useDocument } from '../hooks/useDocument';
-import type {
+import {
   ViewMode,
   KeyboardType,
-  SplitConfig,
-  RenderCommand,
-  Rect,
+  type Rect,
 } from '../types';
-import { getSplitConfig } from '../types';
 
 interface SplitViewProps {
   /** 视图模式 */
@@ -56,10 +53,7 @@ export const SplitView: React.FC<SplitViewProps> = ({
 
   const editRenderer = useCanvasRenderer(editCanvasRef);
   const previewRenderer = useCanvasRenderer(previewCanvasRef);
-  const { render, renderSplit, info } = useDocument();
-
-  // 获取分屏配置
-  const splitConfig: SplitConfig = getSplitConfig(keyboardType);
+  const { render, info } = useDocument();
 
   /**
    * 计算区域尺寸

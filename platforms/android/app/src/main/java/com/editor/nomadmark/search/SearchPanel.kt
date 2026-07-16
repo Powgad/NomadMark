@@ -282,6 +282,7 @@ class SearchPanel @JvmOverloads constructor(
     /**
      * 本地搜索实现（临时回退方案）
      */
+    @Suppress("UNUSED_PARAMETER")
     private fun performLocalSearch(query: String) {
         // 获取文档内容进行本地搜索
         // 注意：这是一个简化实现，实际应该从文档获取内容
@@ -383,6 +384,7 @@ class SearchPanel @JvmOverloads constructor(
     /**
      * 计算结果区域 (在文档中的位置)
      */
+    @Suppress("UNUSED_PARAMETER")
     private fun calculateResultRect(result: SearchResult): Rect {
         // TODO: 根据行号和列位置计算高亮区域
         // 这需要与 MarkdownEditorView 配合

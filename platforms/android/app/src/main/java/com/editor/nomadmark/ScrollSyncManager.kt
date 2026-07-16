@@ -77,7 +77,7 @@ class ScrollSyncManager(
     private fun setupListeners() {
         // 尝试将 ScrollView 转换为 ObservableScrollView
         if (editorScrollView is ObservableScrollView) {
-            editorScrollView.onScrollChangedCallback = { scrollX, scrollY, oldScrollX, oldScrollY ->
+            editorScrollView.onScrollChangedCallback = { _: Int, scrollY: Int, _: Int, _: Int ->
                 onEditorScrolled(scrollY)
             }
         } else {
@@ -88,7 +88,7 @@ class ScrollSyncManager(
         }
 
         if (previewScrollView is ObservableScrollView) {
-            previewScrollView.onScrollChangedCallback = { scrollX, scrollY, oldScrollX, oldScrollY ->
+            previewScrollView.onScrollChangedCallback = { _: Int, scrollY: Int, _: Int, _: Int ->
                 onPreviewScrolled(scrollY)
             }
         } else {

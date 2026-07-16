@@ -106,6 +106,8 @@ dependencies {
     implementation "io.noties.markwon:ext-tasklist:$markwonVersion"
     implementation "io.noties.markwon:image:$markwonVersion"
     implementation "io.noties.markwon:inline-parser:$markwonVersion"
+    // 注意：Markwon 4.6.2 的 image-glide 模块可能不可用
+    // 默认 ImagesPlugin 支持本地文件 (file:// 协议)
 
     // 数学公式渲染 (使用 JLatexMath)
     implementation "io.noties.markwon:ext-latex:$markwonVersion"

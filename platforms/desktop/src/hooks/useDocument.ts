@@ -5,11 +5,10 @@
  * 参考: 《架构设计书 v2.0》§5.1
  */
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/tauri';
 import type {
   DocumentInfo,
-  RenderCommand,
   RenderResult,
   TocEntry,
   SearchResult,
@@ -58,9 +57,6 @@ export function useDocument(options: UseDocumentOptions = {}) {
     error: null,
     modified: false,
   });
-
-  // 用于取消请求的引用
-  const abortControllerRef = useRef<AbortController | null>(null);
 
   /**
    * 打开文档
