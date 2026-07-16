@@ -232,6 +232,19 @@ class MarkdownEditorActivity : android.app.Activity() {
     /** 当前搜索模式：true=单个搜索，false=全部搜索 */
     private var isSingleSearchMode = true
 
+    // =========================================================================
+    // 滚动位置同步
+    // =========================================================================
+
+    /** 编辑模式保存的滚动位置 */
+    private var editorScrollY: Int = 0
+
+    /** 编辑模式保存的光标位置 */
+    private var editorCursorPosition: Int = 0
+
+    /** 预览模式保存的滚动位置 */
+    private var previewScrollY: Int = 0
+
     /** 是否正在执行撤销/重做操作（用于防止 textWatcher 重复保存状态） */
     private var isUndoingOrRedoing = false
 
@@ -1142,6 +1155,9 @@ class MarkdownEditorActivity : android.app.Activity() {
      * 切换到编辑模式
      */
     private fun switchToEditMode() {
+        // 保存预览滚动位置
+        previewScrollY = previewLayer.scrollY
+
         // 关闭其他模式标记
         isPreviewMode = false
         isSplitMode = false
@@ -1172,6 +1188,9 @@ class MarkdownEditorActivity : android.app.Activity() {
         // 禁用滚动同步
         disableScrollSync()
 
+        // 恢复编辑器滚动位置
+        restoreEditorScrollPosition()
+
         Toast.makeText(this, "编辑模式", Toast.LENGTH_SHORT).show()
     }
 
@@ -1179,6 +1198,9 @@ class MarkdownEditorActivity : android.app.Activity() {
      * 切换到预览模式
      */
     private fun switchToPreviewMode() {
+        // 保存编辑器滚动位置和光标位置
+        saveEditorScrollPosition()
+
         // 更新模式标记
         isPreviewMode = true
         isSplitMode = false
@@ -1208,6 +1230,10 @@ class MarkdownEditorActivity : android.app.Activity() {
         disableScrollSync()
 
         updatePreview()
+
+        // 恢复预览滚动位置（基于编辑器光标位置）
+        restorePreviewScrollPosition()
+
         Toast.makeText(this, "预览模式", Toast.LENGTH_SHORT).show()
     }
 
@@ -1488,9 +1514,36 @@ class MarkdownEditorActivity : android.app.Activity() {
 
     // 保留原有的按钮切换函数（用于 UI 按钮）
     private fun togglePreviewMode() {
-        isPreviewMode = !isPreviewMode
-
         if (isPreviewMode) {
+            // 当前在预览模式，切换到编辑模式
+            isPreviewMode = false
+
+            // 保存预览滚动位置
+            previewScrollY = previewLayer.scrollY
+
+            // 切换到编辑模式
+            btnPreviewToggle.setImageResource(R.drawable.ic_preview_off)
+            editorLayer.visibility = View.VISIBLE
+            previewLayer.visibility = View.GONE
+
+            // 恢复手势覆盖层可见性
+            gestureLayer.visibility = View.VISIBLE
+
+            // 编辑模式下显示光标（支持编辑），除非在修订模式
+            if (!isRevisionMode) {
+                editorText.isCursorVisible = true
+                editorText.requestFocus()
+            }
+
+            // 恢复编辑器滚动位置
+            restoreEditorScrollPosition()
+        } else {
+            // 当前在编辑模式，切换到预览模式
+            isPreviewMode = true
+
+            // 保存编辑器滚动位置和光标位置
+            saveEditorScrollPosition()
+
             // 切换到预览模式
             btnPreviewToggle.setImageResource(R.drawable.ic_preview_on)
             editorLayer.visibility = View.GONE
@@ -1505,20 +1558,9 @@ class MarkdownEditorActivity : android.app.Activity() {
             hideSoftKeyboardFromAll()
 
             updatePreview()
-        } else {
-            // 切换到编辑模式
-            btnPreviewToggle.setImageResource(R.drawable.ic_preview_off)
-            editorLayer.visibility = View.VISIBLE
-            previewLayer.visibility = View.GONE
 
-            // 恢复手势覆盖层可见性
-            gestureLayer.visibility = View.VISIBLE
-
-            // 编辑模式下显示光标（支持编辑），除非在修订模式
-            if (!isRevisionMode) {
-                editorText.isCursorVisible = true
-                editorText.requestFocus()
-            }
+            // 恢复预览滚动位置（基于编辑器光标位置）
+            restorePreviewScrollPosition()
         }
 
         // 分屏模式下同步更新
@@ -3079,6 +3121,71 @@ class MarkdownEditorActivity : android.app.Activity() {
 
     private fun getCurrentScrollView(): ScrollView {
         return if (isSplitMode) splitEditorScroll else editorLayer
+    }
+
+    // =========================================================================
+    // 滚动位置同步
+    // =========================================================================
+
+    /**
+     * 保存编辑器的滚动位置和光标位置
+     */
+    private fun saveEditorScrollPosition() {
+        editorScrollY = editorLayer.scrollY
+        editorCursorPosition = editorText.selectionStart
+        android.util.Log.d("MarkdownEditor", "保存编辑器位置: scrollY=$editorScrollY, cursor=$editorCursorPosition")
+    }
+
+    /**
+     * 恢复编辑器的滚动位置
+     */
+    private fun restoreEditorScrollPosition() {
+        editorLayer.post {
+            editorLayer.scrollTo(0, editorScrollY)
+            android.util.Log.d("MarkdownEditor", "恢复编辑器滚动位置: scrollY=$editorScrollY")
+        }
+    }
+
+    /**
+     * 恢复预览的滚动位置（基于编辑器光标位置）
+     */
+    private fun restorePreviewScrollPosition() {
+        val editor = getCurrentEditor()
+        val layout = editor.layout
+
+        if (layout != null && editorCursorPosition >= 0) {
+            // 获取编辑器光标所在的行
+            val line = layout.getLineForOffset(editorCursorPosition)
+
+            // 获取该行在编辑器中的顶部位置
+            val lineTop = layout.getLineTop(line)
+
+            // 计算滚动比例（行顶部 / 总内容高度）
+            val totalHeight = layout.height.toFloat()
+            val scrollRatio = if (totalHeight > 0) lineTop / totalHeight else 0f
+
+            // 在预览中应用相同的滚动比例
+            previewLayer.post {
+                val previewLayout = previewText.layout
+                if (previewLayout != null) {
+                    val previewTotalHeight = previewLayout.height.toFloat()
+                    val targetScrollY = (scrollRatio * previewTotalHeight).toInt()
+
+                    previewLayer.scrollTo(0, targetScrollY.coerceAtLeast(0))
+                    android.util.Log.d("MarkdownEditor", "恢复预览滚动位置: editorLine=$line, targetScrollY=$targetScrollY")
+                } else {
+                    // 如果预览布局还没准备好，使用保存的滚动位置
+                    previewLayer.scrollTo(0, previewScrollY.coerceAtLeast(0))
+                    android.util.Log.d("MarkdownEditor", "使用保存的预览滚动位置: scrollY=$previewScrollY")
+                }
+            }
+        } else {
+            // 降级方案：使用保存的滚动位置
+            previewLayer.post {
+                previewLayer.scrollTo(0, previewScrollY.coerceAtLeast(0))
+                android.util.Log.d("MarkdownEditor", "降级方案: 使用保存的预览滚动位置: scrollY=$previewScrollY")
+            }
+        }
     }
 
     private fun showSoftKeyboard() {
