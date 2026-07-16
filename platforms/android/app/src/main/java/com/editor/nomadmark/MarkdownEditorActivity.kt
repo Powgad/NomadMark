@@ -8,13 +8,13 @@ import android.content.pm.PackageManager
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.net.Uri
 import android.text.Editable
 import android.text.Spannable
 import android.text.SpannableString
@@ -49,12 +49,15 @@ import io.noties.markwon.ext.tasklist.TaskListPlugin
 import io.noties.markwon.ext.latex.JLatexMathPlugin
 import io.noties.markwon.inlineparser.MarkwonInlineParserPlugin
 import io.noties.markwon.image.ImagesPlugin
-import io.noties.markwon.image.network.NetworkSchemeHandler
+import android.graphics.BitmapFactory
+import android.graphics.drawable.BitmapDrawable
 import android.text.Spanned
 import android.text.style.URLSpan
 import android.text.style.UnderlineSpan
 import com.editor.nomadmark.format.ThematicBreakFormatter
 import com.editor.nomadmark.markwon.StrictThematicBreakPlugin
+import com.editor.nomadmark.image.ImageProcessor
+import com.editor.nomadmark.image.SupernoteImageLoader
 
 /**
  * Markdown Editor Activity
@@ -69,6 +72,7 @@ import com.editor.nomadmark.markwon.StrictThematicBreakPlugin
  * - 搜索和替换
  * - 目录导航
  * - 防丢失保护
+ * - 图片处理（针对 Supernote A6 X2 Nomad 优化）
  */
 class MarkdownEditorActivity : android.app.Activity() {
 
@@ -136,6 +140,7 @@ class MarkdownEditorActivity : android.app.Activity() {
     private lateinit var btnCodeInline: Button
     private lateinit var btnCodeBlock: Button
     private lateinit var btnLink: Button
+    private lateinit var btnImage: Button
     private lateinit var btnList: Button
     private lateinit var btnQuote: Button
     private lateinit var btnTable: Button
@@ -162,6 +167,9 @@ class MarkdownEditorActivity : android.app.Activity() {
 
     /** 文件操作辅助 */
     private val fileOperationHelper: FileOperationHelper by lazy { FileOperationHelper(this, keyboardDetector) }
+
+    /** 图片处理器（针对 Supernote 优化） */
+    private val imageProcessor: ImageProcessor by lazy { ImageProcessor(this) }
 
     /** 滚动同步管理器 */
     private var scrollSyncManager: ScrollSyncManager? = null
@@ -309,11 +317,8 @@ class MarkdownEditorActivity : android.app.Activity() {
             .usePlugin(StrikethroughPlugin.create())
             .usePlugin(TablePlugin.create(this))
             .usePlugin(TaskListPlugin.create(this))
-            // 图片插件 - 添加网络和本地图片支持
-            .usePlugin(ImagesPlugin.create { plugin: ImagesPlugin ->
-                // 添加网络图片支持 (http/https)
-                plugin.addSchemeHandler(NetworkSchemeHandler.create())
-            })
+            // 图片插件 - 使用默认配置
+            .usePlugin(ImagesPlugin.create())
             // 添加行内解析器（支持行内数学公式）
             .usePlugin(MarkwonInlineParserPlugin.create())
             // 数学公式渲染（JLatexMath）
@@ -749,6 +754,7 @@ class MarkdownEditorActivity : android.app.Activity() {
         btnCodeInline = findViewById(R.id.btn_code_inline)
         btnCodeBlock = findViewById(R.id.btn_code_block)
         btnLink = findViewById(R.id.btn_link)
+        btnImage = findViewById(R.id.btn_image)
         btnList = findViewById(R.id.btn_list)
         btnQuote = findViewById(R.id.btn_quote)
         btnTable = findViewById(R.id.btn_table)
@@ -886,6 +892,7 @@ class MarkdownEditorActivity : android.app.Activity() {
         btnCodeInline.setOnClickListener { insertMarkdown("`", "`") }
         btnCodeBlock.setOnClickListener { insertCodeBlock() }
         btnLink.setOnClickListener { insertLink() }
+        btnImage.setOnClickListener { showImageInsertDialog() }
         btnList.setOnClickListener { insertLine("- ") }
         btnQuote.setOnClickListener { insertLine("> ") }
         btnTable.setOnClickListener { insertTable() }
@@ -1388,6 +1395,10 @@ class MarkdownEditorActivity : android.app.Activity() {
                 // ========== 插入元素 ==========
                 EditorAction.LINK -> {
                     insertLink()
+                    return true
+                }
+                EditorAction.IMAGE -> {
+                    showImageInsertDialog()
                     return true
                 }
                 EditorAction.CODE_INLINE -> {
@@ -2311,7 +2322,7 @@ class MarkdownEditorActivity : android.app.Activity() {
     /**
      * 本地替换第一个匹配项
      */
-    private fun performLocalReplaceOne(query: String, replacement: String) {
+    private fun performLocalReplaceOne(@Suppress("UNUSED_PARAMETER") query: String, replacement: String) {
         if (searchResults.isEmpty()) return
 
         // 确保索引在有效范围内
@@ -2445,6 +2456,193 @@ class MarkdownEditorActivity : android.app.Activity() {
             editor.text.replace(start, end, "[$selectedText](url)")
         }
         markAsModified()
+    }
+
+    /**
+     * 显示图片插入对话框
+     */
+    private fun showImageInsertDialog() {
+        val options = arrayOf("选择本地图片", "输入网络图片链接")
+
+        AlertDialog.Builder(this)
+            .setTitle("插入图片")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> openImagePicker()
+                    1 -> showImageUrlDialog()
+                }
+            }
+            .show()
+    }
+
+    /**
+     * 打开图片选择器
+     */
+    private fun openImagePicker() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "image/*"
+            // 支持的图片类型
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(
+                "image/jpeg",
+                "image/png",
+                "image/gif",
+                "image/webp",
+                "image/bmp",
+                "image/svg+xml"
+            ))
+        }
+        startActivityForResult(intent, PICK_IMAGE_REQUEST_CODE)
+    }
+
+    /**
+     * 显示网络图片链接输入对话框
+     */
+    private fun showImageUrlDialog() {
+        val editText = EditText(this).apply {
+            hint = "请输入图片 URL (https://...)"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
+            setText("https://")
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("插入网络图片")
+            .setView(editText)
+            .setPositiveButton("插入") { _, _ ->
+                val url = editText.text.toString().trim()
+                if (url.isNotEmpty() && (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("file://"))) {
+                    insertImage(url)
+                } else {
+                    Toast.makeText(this, "请输入有效的图片 URL", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    /**
+     * 插入图片到编辑器
+     */
+    private fun insertImage(url: String) {
+        val editor = getCurrentEditor()
+        val start = editor.selectionStart
+        val end = editor.selectionEnd
+
+        val imageMarkdown = if (start == end) {
+            "![图片]($url)"
+        } else {
+            val selectedText = editor.text.substring(start, end)
+            "![$selectedText]($url)"
+        }
+
+        editor.text.replace(start, end, imageMarkdown)
+        markAsModified()
+    }
+
+    /**
+     * 从 URI 插入图片（针对 Supernote 优化）
+     *
+     * 流程：
+     * 1. 使用 ImageProcessor 处理图片（采样、压缩）
+     * 2. 保存到 app-private 目录
+     * 3. 插入 file:// 路径到 Markdown
+     */
+    private fun insertImageFromUri(uri: android.net.Uri) {
+        Log.d("MarkdownEditorActivity", "========== 插入图片开始 ==========")
+        Log.d("MarkdownEditorActivity", "接收到的 URI: $uri")
+
+        try {
+            // 请求持久化读取权限
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+            try {
+                contentResolver.takePersistableUriPermission(uri, flags)
+                Log.d("MarkdownEditorActivity", "已获得持久化 URI 权限")
+            } catch (e: Exception) {
+                Log.w("MarkdownEditorActivity", "Cannot take persistable URI permission: ${e.message}")
+            }
+
+            // 使用 ImageProcessor 处理图片
+            showSavingDialog()  // 处理可能需要时间，显示进度提示
+
+            Thread {
+                Log.d("MarkdownEditorActivity", "开始处理图片...")
+                val relativePath = imageProcessor.processAndSaveImage(uri)
+                Log.d("MarkdownEditorActivity", "图片处理结果: $relativePath")
+
+                Handler(Looper.getMainLooper()).post {
+                    dismissSavingDialog()
+
+                    if (relativePath != null) {
+                        // 获取完整路径
+                        val fullPath = imageProcessor.getFullPath(relativePath)
+                        val fileUrl = "file://$fullPath"
+                        Log.d("MarkdownEditorActivity", "插入图片 URL: $fileUrl")
+                        // 插入 file:// 路径
+                        insertImage(fileUrl)
+                        Toast.makeText(this, "图片已插入 (已优化)", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Log.e("MarkdownEditorActivity", "图片处理失败，尝试备用方法")
+                        // 失败时尝试旧方法
+                        val filePath = getFilePathFromUri(uri)
+                        if (filePath != null) {
+                            insertImage("file://$filePath")
+                            Toast.makeText(this, "图片已插入 (兼容模式)", Toast.LENGTH_SHORT).show()
+                        } else {
+                            insertImage(uri.toString())
+                            Toast.makeText(this, "图片已插入 (Content URI)", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                    Log.d("MarkdownEditorActivity", "========== 插入图片结束 ==========")
+                }
+            }.start()
+
+        } catch (e: Exception) {
+            Log.e("MarkdownEditorActivity", "Error inserting image: ${e.message}", e)
+            Toast.makeText(this, "插入图片失败: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /**
+     * 从 content:// URI 获取文件路径
+     */
+    private fun getFilePathFromUri(uri: android.net.Uri): String? {
+        try {
+            when (uri.scheme) {
+                "content" -> {
+                    // 尝试从 _data 列获取文件路径
+                    val cursor = contentResolver.query(uri, arrayOf("_data"), null, null, null)
+                    cursor?.use {
+                        if (it.moveToFirst()) {
+                            val dataIndex = it.getColumnIndex("_data")
+                            if (dataIndex != -1) {
+                                return it.getString(dataIndex)
+                            }
+                        }
+                    }
+
+                    // 如果 _data 列不存在，尝试其他方法
+                    // 对于 DocumentsProvider，需要特殊处理
+                    if (uri.authority == "com.android.externalstorage.documents") {
+                        // 解析 SAF URI: content://com.android.externalstorage.documents/document/primary%3ADocument%2F11.jpg
+                        val documentId = uri.lastPathSegment ?: return null
+                        if (documentId.startsWith("primary:")) {
+                            // 主存储：primary:Document/11.jpg -> /storage/emulated/0/Document/11.jpg
+                            val path = documentId.substring(8) // 移除 "primary:"
+                            return "/storage/emulated/0/$path"
+                        }
+                    }
+
+                    return null
+                }
+                "file" -> {
+                    return uri.path
+                }
+                else -> return null
+            }
+        } catch (e: Exception) {
+            Log.e("MarkdownEditorActivity", "Error getting file path from URI: ${e.message}")
+            return null
+        }
     }
 
     private fun insertTable() {
@@ -3078,6 +3276,7 @@ class MarkdownEditorActivity : android.app.Activity() {
     companion object {
         private const val OPEN_FILE_REQUEST_CODE = 1001
         private const val OPEN_SAMPLE_REQUEST_CODE = 1002
+        private const val PICK_IMAGE_REQUEST_CODE = 1003
 
         // 存储权限请求码
         private const val REQUEST_STORAGE_PERMISSION = 2001
@@ -3255,6 +3454,13 @@ class MarkdownEditorActivity : android.app.Activity() {
                 if (resultCode == android.app.Activity.RESULT_OK && data != null) {
                     data.data?.let { uri ->
                         openFileFromUri(uri)
+                    }
+                }
+            }
+            PICK_IMAGE_REQUEST_CODE -> {
+                if (resultCode == android.app.Activity.RESULT_OK && data != null) {
+                    data.data?.let { uri ->
+                        insertImageFromUri(uri)
                     }
                 }
             }

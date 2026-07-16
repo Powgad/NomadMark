@@ -8,6 +8,7 @@ import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import com.editor.nomadmark.image.SupernoteImageLoader
 
 /**
  * NomadMark 应用程序入口
@@ -17,6 +18,7 @@ import androidx.core.app.NotificationManagerCompat
  * - 自动检测上次崩溃并通知用户
  * - 设置崩溃监听器
  * - 创建通知渠道
+ * - 初始化 Coil 图片加载器（Supernote 优化）
  */
 class NomadMarkApplication : Application() {
 
@@ -57,6 +59,10 @@ class NomadMarkApplication : Application() {
 
         // 测试 Document 目录访问
         testDocumentAccess()
+
+        // 初始化 Coil 图片加载器（Supernote 优化）
+        SupernoteImageLoader.init(this)
+        Log.i(TAG, "Coil 图片加载器已初始化")
     }
 
     /**
@@ -83,7 +89,7 @@ class NomadMarkApplication : Application() {
     /**
      * 显示崩溃通知
      */
-    @Suppress("UNUSED_PARAMETER")
+    @Suppress("UNUSED_PARAMETER", "MissingPermission")
     private fun showCrashNotification(crashInfo: CrashHandler.CrashInfo) {
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_notify_error)

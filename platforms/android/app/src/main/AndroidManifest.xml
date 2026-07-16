@@ -8,6 +8,10 @@
     <uses-permission android:name="android.permission.READ_LOGS"
         android:maxSdkVersion="15" />
 
+    <!-- Network permissions for image loading -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
     <!-- Storage permissions for saving files to Documents directory -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
@@ -99,6 +103,12 @@
                 <data android:pathPattern=".*\\.md" />
             </intent-filter>
         </activity>
+
+        <!-- 图片显示测试 Activity (用于调试) -->
+        <activity
+            android:name="com.editor.nomadmark.ImageDisplayTestActivity"
+            android:exported="true"
+            android:label="图片测试" />
     </application>
 
 </manifest>

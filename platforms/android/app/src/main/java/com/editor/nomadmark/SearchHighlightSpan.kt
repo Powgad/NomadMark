@@ -70,9 +70,9 @@ class SearchHighlightSpan(
         start: Int,
         end: Int,
         x: Float,
-        _top: Int,
+        @Suppress("UNUSED_PARAMETER") _top: Int,
         y: Int,
-        _bottom: Int,
+        @Suppress("UNUSED_PARAMETER") _bottom: Int,
         paint: Paint
     ) {
         // 保存原始 paint 状态

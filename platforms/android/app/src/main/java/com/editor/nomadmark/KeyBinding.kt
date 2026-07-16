@@ -174,6 +174,7 @@ enum class EditorAction(
 
     // 插入元素
     LINK("link", "链接", ActionCategory.INSERT),
+    IMAGE("image", "图片", ActionCategory.INSERT),
     CODE_INLINE("codeInline", "行内代码", ActionCategory.INSERT),
     CODE_BLOCK("codeBlock", "代码块", ActionCategory.INSERT),
     FORMULA_INLINE("formulaInline", "行内公式", ActionCategory.INSERT),

@@ -238,7 +238,7 @@ class GestureOverlayView @JvmOverloads constructor(
     /**
      * 处理触摸抬起 - 识别手势
      */
-    private fun handleActionUp(_event: MotionEvent) {
+    private fun handleActionUp(@Suppress("UNUSED_PARAMETER") _event: MotionEvent) {
         Log.d(TAG, "ACTION_UP: points=${currentGesturePoints.size}")
 
         // 取消超时

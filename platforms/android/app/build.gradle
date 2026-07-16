@@ -106,6 +106,8 @@ dependencies {
     implementation "io.noties.markwon:ext-tasklist:$markwonVersion"
     implementation "io.noties.markwon:image:$markwonVersion"
     implementation "io.noties.markwon:inline-parser:$markwonVersion"
+    // Markwon Coil 集成（用于图片加载）
+    implementation "io.noties.markwon:image-coil:$markwonVersion"
     // 注意：Markwon 4.6.2 的 image-glide 模块可能不可用
     // 默认 ImagesPlugin 支持本地文件 (file:// 协议)
 
@@ -131,6 +133,12 @@ dependencies {
 
     // Glide (Supernote 库可能需要)
     implementation 'com.github.bumptech.glide:glide:4.7.1'
+
+    // Coil - 轻量级图片加载库（用于 Markwon 图片渲染）
+    def coilVersion = '2.5.0'
+    implementation "io.coil-kt:coil:$coilVersion"
+    implementation "io.coil-kt:coil-svg:$coilVersion"
+    implementation "io.coil-kt:coil-gif:$coilVersion"
 
     // WiFi 打印支持 (可选)
     implementation 'androidx.print:print:1.0.0'

@@ -147,6 +147,7 @@ object CrashHandler {
                         versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                             packageInfo.longVersionCode
                         } else {
+                            @Suppress("DEPRECATION")
                             packageInfo.versionCode.toLong()
                         },
                         packageName = packageInfo.packageName,
@@ -175,10 +176,10 @@ object CrashHandler {
                 activityManager?.getMemoryInfo(memInfo)
 
                 return RuntimeInfo(
-                    availableMemory = memInfo?.availMem?.div(1024 * 1024) ?: 0,
-                    totalMemory = memInfo?.totalMem?.div(1024 * 1024) ?: 0,
+                    availableMemory = (memInfo.availMem / (1024 * 1024)),
+                    totalMemory = (memInfo.totalMem / (1024 * 1024)),
                     memoryClass = activityManager?.memoryClass ?: 0,
-                    isLowMemory = memInfo?.lowMemory ?: false
+                    isLowMemory = memInfo.lowMemory
                 )
             }
         }
@@ -214,7 +215,7 @@ object CrashHandler {
      * 在应用启动时调用，如果有崩溃则提示用户
      */
     fun checkPreviousCrash(): CrashInfo? {
-        val ctx = context ?: return null
+        if (context == null) return null
         val hasCrash = prefs?.getBoolean(KEY_HAS_CRASH, false) ?: false
 
         if (!hasCrash) {
@@ -255,7 +256,7 @@ object CrashHandler {
     /**
      * 解析崩溃信息
      */
-    private fun parseCrashInfo(content: String, crashFile: File, timestamp: Date): CrashInfo {
+    private fun parseCrashInfo(@Suppress("UNUSED_PARAMETER") content: String, crashFile: File, timestamp: Date): CrashInfo {
         val ctx = context!!
 
         // 简单解析，从日志中提取关键信息

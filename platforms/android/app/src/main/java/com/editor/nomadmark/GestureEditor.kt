@@ -245,7 +245,7 @@ class GestureEditor {
      * @param end 结束字符位置
      * @param editor EditText
      */
-    private fun triggerPartialRefreshForRange(start: Int, end: Int, editor: EditText) {
+    private fun triggerPartialRefreshForRange(@Suppress("UNUSED_PARAMETER") start: Int, @Suppress("UNUSED_PARAMETER") end: Int, editor: EditText) {
         // 目前，触发编辑器视图的完整刷新
         // 未来，可以优化为仅刷新脏矩形
         // start 和 end 参数可用于局部刷新优化

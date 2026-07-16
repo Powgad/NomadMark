@@ -45,6 +45,7 @@ object ActivityLaunchTest {
         }
 
         // 2. 测试 exported 标志
+        @Suppress("UNUSED_VARIABLE")
         val isExported = try {
             val info = context.packageManager.getActivityInfo(
                 android.content.ComponentName(context, MainActivity::class.java),
@@ -69,9 +70,11 @@ object ActivityLaunchTest {
         val testFilePath = testFile ?: createTempMarkdownFile(context)
         val uri = Uri.fromFile(testFilePath)
 
+        @Suppress("UNUSED_VARIABLE")
         val intentFiltersSupported = testIntentFilters(context, uri, details, results)
 
         // 4. 测试实际启动能力
+        @Suppress("UNUSED_VARIABLE")
         val canLaunch = if (testFilePath.exists()) {
             testActualLaunch(context, testFilePath, details, results)
         } else {
