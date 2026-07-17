@@ -58,6 +58,7 @@ import com.editor.nomadmark.format.ThematicBreakFormatter
 import com.editor.nomadmark.markwon.StrictThematicBreakPlugin
 import com.editor.nomadmark.image.ImageProcessor
 import com.editor.nomadmark.image.SupernoteImageLoader
+import com.editor.nomadmark.image.DocumentContextHolder
 
 /**
  * Markdown Editor Activity
@@ -1002,6 +1003,9 @@ class MarkdownEditorActivity : android.app.Activity() {
             updateSaveButton()
             updateFilenameDisplay()
 
+            // 设置当前文档目录，用于图片相对路径解析
+            DocumentContextHolder.setCurrentDocument(path)
+
             // 清空撤销重做栈并保存初始状态
             undoStack.clear()
             redoStack.clear()
@@ -1027,6 +1031,9 @@ class MarkdownEditorActivity : android.app.Activity() {
             isModified = false
             updateSaveButton()
             updateFilenameDisplay()
+
+            // 设置当前文档目录，用于图片相对路径解析
+            DocumentContextHolder.setCurrentDocument(newPath)
 
             // 清空撤销重做栈并保存初始状态
             undoStack.clear()
@@ -2604,20 +2611,13 @@ class MarkdownEditorActivity : android.app.Activity() {
 
     /**
      * 打开图片选择器
+     * 不限制图片格式，允许选择任何图片文件
      */
     private fun openImagePicker() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "image/*"
-            // 支持的图片类型
-            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(
-                "image/jpeg",
-                "image/png",
-                "image/gif",
-                "image/webp",
-                "image/bmp",
-                "image/svg+xml"
-            ))
+            // 不限制具体图片类型，让系统显示所有图片文件
         }
         startActivityForResult(intent, PICK_IMAGE_REQUEST_CODE)
     }
@@ -3550,17 +3550,13 @@ class MarkdownEditorActivity : android.app.Activity() {
 
     /**
      * 打开系统文件选择器
+     * 不限制文件格式，允许选择任何文件
      */
     private fun openFilePicker() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
-            type = "text/markdown"
-            // 也支持纯文本
-            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(
-                "text/markdown",
-                "text/plain",
-                "text/x-markdown"
-            ))
+            type = "*/*"
+            // 不限制具体文件类型，让用户选择任何文件
         }
         startActivityForResult(intent, OPEN_FILE_REQUEST_CODE)
     }
