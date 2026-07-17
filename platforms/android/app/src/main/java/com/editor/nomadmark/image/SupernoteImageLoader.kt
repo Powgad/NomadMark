@@ -10,6 +10,7 @@ import coil.request.ImageRequest
 import coil.size.Precision
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
+import coil.map.Mapper
 
 /**
  * Supernote 图片加载器配置
@@ -30,6 +31,8 @@ object SupernoteImageLoader {
         val imageLoader = ImageLoader.Builder(context)
             .components {
                 add(SvgDecoder.Factory())
+                // 添加文件路径 Mapper，支持相对路径和 file:// 协议
+                add(CoilFileMapper(context))
             }
             .crossfade(false)
             .allowHardware(false)
