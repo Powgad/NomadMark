@@ -49,6 +49,7 @@ import io.noties.markwon.ext.tasklist.TaskListPlugin
 import io.noties.markwon.ext.latex.JLatexMathPlugin
 import io.noties.markwon.inlineparser.MarkwonInlineParserPlugin
 import io.noties.markwon.image.ImagesPlugin
+import io.noties.markwon.image.coil.CoilImagesPlugin
 import android.graphics.BitmapFactory
 import android.graphics.drawable.BitmapDrawable
 import android.text.Spanned
@@ -342,8 +343,8 @@ class MarkdownEditorActivity : android.app.Activity() {
             .usePlugin(StrikethroughPlugin.create())
             .usePlugin(TablePlugin.create(this))
             .usePlugin(TaskListPlugin.create(this))
-            // 图片插件 - 使用默认配置
-            .usePlugin(ImagesPlugin.create())
+            // 图片插件 - 使用 Coil 加载器（支持我们的 CoilFileMapper）
+            .usePlugin(CoilImagesPlugin.create(this))
             // 添加行内解析器（支持行内数学公式）
             .usePlugin(MarkwonInlineParserPlugin.create())
             // 数学公式渲染（JLatexMath）
