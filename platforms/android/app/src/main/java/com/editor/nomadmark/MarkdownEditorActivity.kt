@@ -245,6 +245,17 @@ class MarkdownEditorActivity : android.app.Activity() {
     /** 预览模式保存的滚动位置 */
     private var previewScrollY: Int = 0
 
+    // ========== 分屏模式状态变量 ==========
+
+    /** 分屏编辑区保存的滚动位置 */
+    private var splitEditorScrollY: Int = 0
+
+    /** 分屏编辑区保存的光标位置 */
+    private var splitEditorCursorPosition: Int = 0
+
+    /** 分屏预览区保存的滚动位置 */
+    private var splitPreviewScrollY: Int = 0
+
     /** 是否正在执行撤销/重做操作（用于防止 textWatcher 重复保存状态） */
     private var isUndoingOrRedoing = false
 
@@ -1155,40 +1166,48 @@ class MarkdownEditorActivity : android.app.Activity() {
      * 切换到编辑模式
      */
     private fun switchToEditMode() {
-        // 保存预览滚动位置
-        previewScrollY = previewLayer.scrollY
+        // === 步骤1：根据来源模式保存当前位置 ===
+        when (currentDisplayMode) {
+            DisplayMode.PREVIEW -> {
+                // 从预览模式切换：保存预览位置
+                savePreviewScrollPosition()
+            }
+            DisplayMode.SPLIT -> {
+                // 从分屏模式切换：保存分屏位置
+                saveSplitEditorScrollPosition()
+                saveSplitPreviewScrollPosition()
+                // 禁用滚动同步
+                disableScrollSync()
+            }
+            DisplayMode.EDIT -> {
+                // 已经是编辑模式，无需操作
+            }
+        }
 
-        // 关闭其他模式标记
+        // === 步骤2：更新UI ===
         isPreviewMode = false
         isSplitMode = false
 
-        // 更新按钮状态
         btnPreviewToggle.setImageResource(R.drawable.ic_preview_off)
         btnSplit.setImageResource(R.drawable.ic_split_off)
 
-        // 显示编辑层，隐藏其他层
         editorLayer.visibility = View.VISIBLE
         previewLayer.visibility = View.GONE
         splitLayer.visibility = View.GONE
 
-        // 恢复手势层可见性（根据修订模式状态）
+        // === 步骤3：处理光标和手势层 ===
         if (isRevisionMode) {
             gestureLayer.visibility = View.VISIBLE
             gestureLayer.isGestureEnabled = true
-            // 修订模式下隐藏光标
             editorText.isCursorVisible = false
         } else {
             gestureLayer.visibility = View.GONE
             gestureLayer.isGestureEnabled = false
-            // 编辑模式下显示光标
             editorText.isCursorVisible = true
             editorText.requestFocus()
         }
 
-        // 禁用滚动同步
-        disableScrollSync()
-
-        // 恢复编辑器滚动位置
+        // === 步骤4：恢复编辑模式滚动位置 ===
         restoreEditorScrollPosition()
 
         Toast.makeText(this, "编辑模式", Toast.LENGTH_SHORT).show()
@@ -1198,26 +1217,38 @@ class MarkdownEditorActivity : android.app.Activity() {
      * 切换到预览模式
      */
     private fun switchToPreviewMode() {
-        // 保存编辑器滚动位置和光标位置
-        saveEditorScrollPosition()
+        // === 步骤1：根据来源模式保存当前位置 ===
+        when (currentDisplayMode) {
+            DisplayMode.EDIT -> {
+                // 从编辑模式切换：保存编辑器位置
+                saveEditorScrollPosition()
+            }
+            DisplayMode.SPLIT -> {
+                // 从分屏模式切换：保存分屏位置
+                saveSplitEditorScrollPosition()
+                saveSplitPreviewScrollPosition()
+                // 禁用滚动同步
+                disableScrollSync()
+            }
+            DisplayMode.PREVIEW -> {
+                // 已经是预览模式，无需操作
+            }
+        }
 
-        // 更新模式标记
+        // === 步骤2：更新UI ===
         isPreviewMode = true
         isSplitMode = false
 
-        // 更新按钮状态
         btnPreviewToggle.setImageResource(R.drawable.ic_preview_on)
         btnSplit.setImageResource(R.drawable.ic_split_off)
 
-        // 显示预览层，隐藏其他层
         editorLayer.visibility = View.GONE
         previewLayer.visibility = View.VISIBLE
         splitLayer.visibility = View.GONE
 
-        // 预览模式下光标和键盘不可用
+        // === 步骤3：处理光标和手势层 ===
         editorText.isCursorVisible = false
 
-        // 恢复手势层可见性（根据修订模式状态）
         if (isRevisionMode) {
             gestureLayer.visibility = View.VISIBLE
             gestureLayer.isGestureEnabled = true
@@ -1226,12 +1257,10 @@ class MarkdownEditorActivity : android.app.Activity() {
             gestureLayer.isGestureEnabled = false
         }
 
-        // 禁用滚动同步
-        disableScrollSync()
-
+        // === 步骤4：更新预览内容 ===
         updatePreview()
 
-        // 恢复预览滚动位置（基于编辑器光标位置）
+        // === 步骤5：恢复预览滚动位置 ===
         restorePreviewScrollPosition()
 
         Toast.makeText(this, "预览模式", Toast.LENGTH_SHORT).show()
@@ -1241,37 +1270,53 @@ class MarkdownEditorActivity : android.app.Activity() {
      * 切换到分屏模式
      */
     private fun switchToSplitMode() {
-        // 更新模式标记
+        // === 步骤1：根据来源模式保存当前位置 ===
+        when (currentDisplayMode) {
+            DisplayMode.EDIT -> {
+                // 从编辑模式切换：保存编辑器位置
+                saveEditorScrollPosition()
+            }
+            DisplayMode.PREVIEW -> {
+                // 从预览模式切换：保存预览位置
+                savePreviewScrollPosition()
+            }
+            DisplayMode.SPLIT -> {
+                // 已经是分屏模式，无需操作
+            }
+        }
+
+        // === 步骤2：更新UI ===
         isPreviewMode = false
         isSplitMode = true
 
-        // 更新按钮状态
         btnPreviewToggle.setImageResource(R.drawable.ic_preview_off)
         btnSplit.setImageResource(R.drawable.ic_split_on)
 
-        // 显示分屏层，隐藏其他层
         editorLayer.visibility = View.GONE
         previewLayer.visibility = View.GONE
         splitLayer.visibility = View.VISIBLE
 
-        // 恢复手势层可见性（根据修订模式状态）
+        // === 步骤3：处理光标和手势层 ===
         if (isRevisionMode) {
             gestureLayer.visibility = View.VISIBLE
             gestureLayer.isGestureEnabled = true
-            // 修订模式下分屏两区都隐藏光标
             splitEditorText.isCursorVisible = false
         } else {
             gestureLayer.visibility = View.GONE
             gestureLayer.isGestureEnabled = false
-            // 分屏模式下仅编辑区显示光标
             splitEditorText.isCursorVisible = true
             splitEditorText.requestFocus()
         }
 
-        // 启用滚动同步
+        // === 步骤4：更新预览内容 ===
+        updatePreview()
+
+        // === 步骤5：恢复分屏编辑区滚动位置 ===
+        restoreSplitEditorScrollPosition()
+
+        // === 步骤6：启用滚动同步 ===
         enableScrollSync()
 
-        updatePreview()
         Toast.makeText(this, "分屏模式", Toast.LENGTH_SHORT).show()
     }
 
@@ -1573,41 +1618,67 @@ class MarkdownEditorActivity : android.app.Activity() {
         isSplitMode = !isSplitMode
 
         if (isSplitMode) {
-            // 开启分屏
+            // === 开启分屏 ===
+
+            // 保存当前模式位置
+            if (currentDisplayMode == DisplayMode.EDIT) {
+                saveEditorScrollPosition()
+            } else if (currentDisplayMode == DisplayMode.PREVIEW) {
+                savePreviewScrollPosition()
+            }
+
             btnSplit.setImageResource(R.drawable.ic_split_on)
             editorLayer.visibility = View.GONE
             previewLayer.visibility = View.GONE
             splitLayer.visibility = View.VISIBLE
+
             updatePreview()
 
-            // 在分屏模式下隐藏手势覆盖层，确保滚轮事件能够正确传递
-            gestureLayer.visibility = View.GONE
-
-            // 分屏模式下编辑区域显示光标（支持编辑），除非在修订模式
-            if (!isRevisionMode) {
+            if (isRevisionMode) {
+                splitEditorText.isCursorVisible = false
+            } else {
                 splitEditorText.isCursorVisible = true
                 splitEditorText.requestFocus()
-            } else {
-                splitEditorText.isCursorVisible = false
             }
+
+            // 恢复分屏编辑区位置
+            restoreSplitEditorScrollPosition()
 
             // 启用滚动同步
             enableScrollSync()
         } else {
-            // 关闭分屏
+            // === 关闭分屏 ===
+
+            // 保存分屏位置
+            saveSplitEditorScrollPosition()
+            saveSplitPreviewScrollPosition()
+
             btnSplit.setImageResource(R.drawable.ic_split_off)
             splitLayer.visibility = View.GONE
+
             if (isPreviewMode) {
                 previewLayer.visibility = View.VISIBLE
             } else {
                 editorLayer.visibility = View.VISIBLE
             }
 
-            // 恢复手势覆盖层可见性
-            gestureLayer.visibility = View.VISIBLE
-
             // 禁用滚动同步
             disableScrollSync()
+
+            // 恢复目标模式位置
+            if (isPreviewMode) {
+                restorePreviewScrollPosition()
+            } else {
+                restoreEditorScrollPosition()
+                // 恢复焦点
+                if (!isRevisionMode) {
+                    editorText.isCursorVisible = true
+                    editorText.requestFocus()
+                }
+            }
+
+            // 恢复手势覆盖层可见性
+            gestureLayer.visibility = View.VISIBLE
         }
     }
 
@@ -1936,20 +2007,22 @@ class MarkdownEditorActivity : android.app.Activity() {
      * 注意：由于预览文本是渲染后的结果，与原始文本位置无法直接映射，
      * 我们直接在预览文本中搜索相同的查询字符串来定位所有匹配项。
      * 这确保了预览模式和编辑模式的搜索逻辑一致。
+     * @param query 搜索查询字符串
+     * @param currentIndex 当前选中项的索引（0-based，默认为0）
      */
-    private fun applyPreviewHighlightsAll(query: String) {
+    private fun applyPreviewHighlightsAll(query: String, currentIndex: Int = 0) {
         if (query.isEmpty()) return
 
         // 清除预览层现有高亮
         clearPreviewHighlights()
 
-        // 在预览层中查找并高亮所有匹配项（使用灰色边框，第一项使用深灰色）
+        // 在预览层中查找并高亮所有匹配项（使用灰色边框，当前项使用深灰色）
         if (isPreviewMode && ::previewText.isInitialized) {
-            highlightAllInTextView(previewText, query)
+            highlightAllInTextView(previewText, query, currentIndex)
         }
 
         if (isSplitMode && ::splitPreviewText.isInitialized) {
-            highlightAllInTextView(splitPreviewText, query)
+            highlightAllInTextView(splitPreviewText, query, currentIndex)
         }
     }
 
@@ -1993,12 +2066,13 @@ class MarkdownEditorActivity : android.app.Activity() {
      * 在 TextView 中高亮所有匹配项（全部搜索模式）
      * @param textView 目标 TextView
      * @param searchText 要高亮的文本
+     * @param currentIndex 当前选中项的索引（0-based，默认为0）
      */
-    private fun highlightAllInTextView(textView: TextView, searchText: String) {
+    private fun highlightAllInTextView(textView: TextView, searchText: String, currentIndex: Int = 0) {
         val spannable = textView.text as? android.text.Spannable ?: return
         val text = spannable.toString()
         val ignoreCase = true
-        var isFirst = true
+        var count = 0
 
         // 查找所有匹配项
         var searchIndex = 0
@@ -2006,21 +2080,22 @@ class MarkdownEditorActivity : android.app.Activity() {
             val foundIndex = text.indexOf(searchText, searchIndex, ignoreCase = ignoreCase)
             if (foundIndex < 0) break
 
+            val isCurrent = (count == currentIndex)
             spannable.setSpan(
                 SearchHighlightBackgroundSpan(
-                    borderColor = if (isFirst) {
+                    borderColor = if (isCurrent) {
                         SearchHighlightBackgroundSpan.CURRENT_BORDER_COLOR
                     } else {
                         SearchHighlightBackgroundSpan.ALL_SEARCH_BORDER_COLOR
                     },
-                    isCurrent = isFirst
+                    isCurrent = isCurrent
                 ),
                 foundIndex,
                 foundIndex + searchText.length,
                 android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
             )
 
-            isFirst = false
+            count++
             searchIndex = foundIndex + searchText.length
         }
     }
@@ -2166,7 +2241,9 @@ class MarkdownEditorActivity : android.app.Activity() {
         // 预览层：高亮所有匹配项
         val query = searchInput.text.toString()
         if (query.isNotEmpty()) {
-            applyPreviewHighlightsAll(query)
+            applyPreviewHighlightsAll(query, 0)
+            // 滚动预览层到第一个匹配项
+            scrollPreviewToMatch(query, 0)
         }
     }
 
@@ -2205,6 +2282,14 @@ class MarkdownEditorActivity : android.app.Activity() {
 
         // 显示当前匹配项位置
         Toast.makeText(this, "第 ${index + 1} / ${searchResults.size} 个匹配项", Toast.LENGTH_SHORT).show()
+
+        // 重新应用预览层高亮（保持全部搜索模式，并更新当前选中项）
+        val query = searchInput.text.toString()
+        if (query.isNotEmpty()) {
+            applyPreviewHighlightsAll(query, index)
+            // 滚动预览层到当前匹配项位置
+            scrollPreviewToMatch(query, index)
+        }
     }
 
     /**
@@ -3185,6 +3270,55 @@ class MarkdownEditorActivity : android.app.Activity() {
                 previewLayer.scrollTo(0, previewScrollY.coerceAtLeast(0))
                 android.util.Log.d("MarkdownEditor", "降级方案: 使用保存的预览滚动位置: scrollY=$previewScrollY")
             }
+        }
+    }
+
+    /**
+     * 保存预览模式的滚动位置
+     */
+    private fun savePreviewScrollPosition() {
+        previewScrollY = previewLayer.scrollY
+        android.util.Log.d("ScrollSync", "保存预览模式位置: scrollY=$previewScrollY")
+    }
+
+    /**
+     * 保存分屏编辑区的滚动位置和光标位置
+     */
+    private fun saveSplitEditorScrollPosition() {
+        splitEditorScrollY = splitEditorScroll.scrollY
+        splitEditorCursorPosition = splitEditorText.selectionStart
+        android.util.Log.d("ScrollSync", "保存分屏编辑区位置: scrollY=$splitEditorScrollY, cursor=$splitEditorCursorPosition")
+    }
+
+    /**
+     * 恢复分屏编辑区的滚动位置
+     */
+    private fun restoreSplitEditorScrollPosition() {
+        splitEditorScroll.post {
+            splitEditorScroll.scrollTo(0, splitEditorScrollY)
+            // 恢复光标位置
+            if (splitEditorCursorPosition >= 0 && splitEditorCursorPosition <= splitEditorText.text.length) {
+                splitEditorText.setSelection(splitEditorCursorPosition)
+            }
+            android.util.Log.d("ScrollSync", "恢复分屏编辑区位置: scrollY=$splitEditorScrollY, cursor=$splitEditorCursorPosition")
+        }
+    }
+
+    /**
+     * 保存分屏预览区的滚动位置
+     */
+    private fun saveSplitPreviewScrollPosition() {
+        splitPreviewScrollY = splitPreviewScroll.scrollY
+        android.util.Log.d("ScrollSync", "保存分屏预览区位置: scrollY=$splitPreviewScrollY")
+    }
+
+    /**
+     * 恢复分屏预览区的滚动位置
+     */
+    private fun restoreSplitPreviewScrollPosition() {
+        splitPreviewScroll.post {
+            splitPreviewScroll.scrollTo(0, splitPreviewScrollY)
+            android.util.Log.d("ScrollSync", "恢复分屏预览区位置: scrollY=$splitPreviewScrollY")
         }
     }
 
