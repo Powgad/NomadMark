@@ -45,7 +45,7 @@
             android:exported="true"
             android:theme="@style/Theme.NomadMark"
             android:windowSoftInputMode="adjustResize"
-            android:configChanges="orientation|screenSize|keyboardHidden">
+            android:configChanges="orientation|screenSize|keyboard|keyboardHidden">
 
             <!-- Markdown file association - by MIME type -->
             <intent-filter>
