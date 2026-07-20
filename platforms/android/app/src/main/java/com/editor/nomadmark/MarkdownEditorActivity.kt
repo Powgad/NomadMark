@@ -12,6 +12,7 @@ import android.graphics.Typeface
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.util.TypedValue
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
@@ -821,12 +822,49 @@ class MarkdownEditorActivity : android.app.Activity() {
         editorText.typeface = monoFont
         splitEditorText.typeface = monoFont
 
+        // 应用保存的字体大小
+        applySavedFontSize()
+
         // 初始化光标状态：编辑模式下默认显示光标
         editorText.isCursorVisible = true
         splitEditorText.isCursorVisible = true
 
         // 确保编辑器获得焦点以显示光标
         editorText.requestFocus()
+    }
+
+    // =========================================================================
+    // 字体大小设置
+    // =========================================================================
+
+    /**
+     * 应用保存的字体大小
+     */
+    private fun applySavedFontSize() {
+        val fontSize = prefs.getInt(PREF_KEY_FONT_SIZE, DEFAULT_FONT_SIZE_SP)
+        applyEditorFontSize(fontSize)
+    }
+
+    /**
+     * 应用字体大小到编辑器
+     *
+     * @param sizeSp 字体大小（单位：sp）
+     */
+    fun applyEditorFontSize(sizeSp: Int) {
+        // 转换 sp 到 px（使用 TypedValue.applyDimension）
+        val sizePx = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_SP,
+            sizeSp.toFloat(),
+            resources.displayMetrics
+        ).toInt()
+
+        // 应用到编辑器和预览
+        editorText.setTextSize(TypedValue.COMPLEX_UNIT_PX, sizePx.toFloat())
+        splitEditorText.setTextSize(TypedValue.COMPLEX_UNIT_PX, sizePx.toFloat())
+        previewText.setTextSize(TypedValue.COMPLEX_UNIT_PX, sizePx.toFloat())
+        splitPreviewText.setTextSize(TypedValue.COMPLEX_UNIT_PX, sizePx.toFloat())
+
+        Log.d("MarkdownEditorActivity", "Applied font size: ${sizeSp}sp (${sizePx}px)")
     }
 
     private fun setupGestureLayer() {
@@ -3704,6 +3742,10 @@ class MarkdownEditorActivity : android.app.Activity() {
         private const val OPEN_FILE_REQUEST_CODE = 1001
         private const val OPEN_SAMPLE_REQUEST_CODE = 1002
         private const val PICK_IMAGE_REQUEST_CODE = 1003
+
+        // 字体大小设置
+        private const val PREF_KEY_FONT_SIZE = "editor_font_size"
+        private const val DEFAULT_FONT_SIZE_SP = 16
 
         // 存储权限请求码
         private const val REQUEST_STORAGE_PERMISSION = 2001

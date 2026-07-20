@@ -18,12 +18,22 @@ import android.widget.Toast
  * 按键设置对话框
  *
  * 提供快捷键设置界面，包括快捷键列表查看、编辑、录制和恢复默认功能。
+ * 同时提供正文字体大小设置功能。
  */
 class KeyBindingSettingsDialog(private val activity: MarkdownEditorActivity) {
 
     private val keyBindingManager = KeyBindingManager(activity)
     private var currentRecordingAction: EditorAction? = null
     private var currentKeys: String = ""
+
+    companion object {
+        private const val TAG = "KeyBindingSettingsDialog"
+
+        // 字体大小选项（单位：sp）
+        private val FONT_SIZE_OPTIONS = listOf(16, 18, 20, 22, 24)
+        private const val DEFAULT_FONT_SIZE = 16
+        private const val PREF_KEY_FONT_SIZE = "editor_font_size"
+    }
 
     /**
      * 显示按键设置对话框
@@ -54,6 +64,22 @@ class KeyBindingSettingsDialog(private val activity: MarkdownEditorActivity) {
             orientation = LinearLayout.VERTICAL
             setPadding(0, 0, 0, 20)
         }
+
+        // 添加字体大小设置区域
+        val fontSizeSection = createFontSizeSection()
+        scrollContent.addView(fontSizeSection)
+
+        // 分隔线
+        val separator = View(activity).apply {
+            setBackgroundColor(0xFFCCCCCC.toInt())
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                2
+            ).apply {
+                setMargins(0, 20, 0, 20)
+            }
+        }
+        scrollContent.addView(separator)
 
         // 按分类显示快捷键
         for (category in ActionCategory.values()) {
@@ -374,5 +400,164 @@ class KeyBindingSettingsDialog(private val activity: MarkdownEditorActivity) {
             // 圆角 4dp
             cornerRadius = 8f
         }
+    }
+
+    // =========================================================================
+    // 字体大小设置
+    // =========================================================================
+
+    /**
+     * 创建字体大小设置区域
+     */
+    private fun createFontSizeSection(): LinearLayout {
+        val container = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 10, 0, 10)
+        }
+
+        // 标题
+        val title = TextView(activity).apply {
+            text = "正文字体大小"
+            textSize = 16f
+            setTextColor(0xFF000000.toInt())
+            setPadding(0, 0, 0, 10)
+        }
+        container.addView(title)
+
+        // 当前字体大小显示和按钮行
+        val buttonRow = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        container.addView(buttonRow)
+
+        // 当前值显示
+        val currentSizeView = TextView(activity).apply {
+            text = "${getCurrentFontSize()}sp"
+            textSize = 18f
+            setTextColor(0xFF000000.toInt())
+            setPadding(20, 0, 20, 0)
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(
+                100,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        buttonRow.addView(currentSizeView)
+
+        // 减小按钮
+        val decreaseButton = Button(activity).apply {
+            text = "-"
+            textSize = 20f
+            setTextColor(0xFF000000.toInt())
+            setPadding(20, 10, 20, 10)
+            background = createBorderDrawable()
+            setOnClickListener {
+                val currentSize = getCurrentFontSize()
+                val index = FONT_SIZE_OPTIONS.indexOf(currentSize)
+                if (index > 0) {
+                    setFontSize(FONT_SIZE_OPTIONS[index - 1])
+                    currentSizeView.text = "${FONT_SIZE_OPTIONS[index - 1]}sp"
+                }
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                60,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(10, 0, 10, 0)
+            }
+        }
+        buttonRow.addView(decreaseButton)
+
+        // 增大按钮
+        val increaseButton = Button(activity).apply {
+            text = "+"
+            textSize = 20f
+            setTextColor(0xFF000000.toInt())
+            setPadding(20, 10, 20, 10)
+            background = createBorderDrawable()
+            setOnClickListener {
+                val currentSize = getCurrentFontSize()
+                val index = FONT_SIZE_OPTIONS.indexOf(currentSize)
+                if (index >= 0 && index < FONT_SIZE_OPTIONS.size - 1) {
+                    setFontSize(FONT_SIZE_OPTIONS[index + 1])
+                    currentSizeView.text = "${FONT_SIZE_OPTIONS[index + 1]}sp"
+                }
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                60,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(10, 0, 10, 0)
+            }
+        }
+        buttonRow.addView(increaseButton)
+
+        // 预设选项
+        val presetsLabel = TextView(activity).apply {
+            text = "快速选择："
+            textSize = 14f
+            setTextColor(0xFF666666.toInt())
+            setPadding(0, 10, 0, 5)
+        }
+        container.addView(presetsLabel)
+
+        val presetsRow = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        container.addView(presetsRow)
+
+        for (size in FONT_SIZE_OPTIONS) {
+            val presetButton = Button(activity).apply {
+                text = "${size}sp"
+                textSize = 14f
+                setTextColor(0xFF000000.toInt())
+                setPadding(15, 8, 15, 8)
+                background = createBorderDrawable()
+                setOnClickListener {
+                    setFontSize(size)
+                    currentSizeView.text = "${size}sp"
+                }
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    setMargins(0, 0, 10, 0)
+                }
+            }
+            presetsRow.addView(presetButton)
+        }
+
+        // 说明文字
+        val hint = TextView(activity).apply {
+            text = "默认字体大小为 16sp，可以增大到最大 24sp"
+            textSize = 12f
+            setTextColor(0xFF999999.toInt())
+            setPadding(0, 10, 0, 0)
+        }
+        container.addView(hint)
+
+        return container
+    }
+
+    /**
+     * 获取当前字体大小
+     */
+    private fun getCurrentFontSize(): Int {
+        val prefs = activity.getSharedPreferences("NomadMarkPrefs", Context.MODE_PRIVATE)
+        return prefs.getInt(PREF_KEY_FONT_SIZE, DEFAULT_FONT_SIZE)
+    }
+
+    /**
+     * 设置字体大小
+     */
+    private fun setFontSize(size: Int) {
+        val prefs = activity.getSharedPreferences("NomadMarkPrefs", Context.MODE_PRIVATE)
+        prefs.edit().putInt(PREF_KEY_FONT_SIZE, size).apply()
+
+        // 应用字体大小到编辑器
+        activity.applyEditorFontSize(size)
+
+        android.util.Log.d(TAG, "Font size set to ${size}sp")
     }
 }
