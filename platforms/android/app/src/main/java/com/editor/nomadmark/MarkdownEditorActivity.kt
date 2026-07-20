@@ -905,6 +905,34 @@ class MarkdownEditorActivity : android.app.Activity() {
                     // 插入手势 - 弹出输入框让用户输入要插入的文本
                     showInsertDialog(result)
                 }
+                GestureType.NEWLINE -> {
+                    // 竖线换行手势 - 在指定位置插入换行符
+                    if (currentDisplayMode == DisplayMode.SPLIT) {
+                        val touchY = result.keyPoint.y
+                        val splitHeight = splitLayer.height.toFloat()
+                        val splitRatio = 0.6f  // 预览区占 60%
+                        val dividerY = splitLayer.top + splitHeight * splitRatio
+
+                        if (touchY < dividerY) {
+                            // 上半区（预览区）操作 - 同步到编辑区
+                            Log.d("GestureLayer", "Newline in preview area (top)")
+                            gestureEditor.insertNewlineAtPosition(result.boundingBox, splitEditorText, splitEditorScroll.scrollY)
+                            markAsModified()
+                            Toast.makeText(this, "已插入换行", Toast.LENGTH_SHORT).show()
+                        } else {
+                            // 下半区（编辑区）操作
+                            Log.d("GestureLayer", "Newline in editor area (bottom)")
+                            gestureEditor.insertNewlineAtPosition(result.boundingBox, splitEditorText, splitEditorScroll.scrollY)
+                            markAsModified()
+                            Toast.makeText(this, "已插入换行", Toast.LENGTH_SHORT).show()
+                        }
+                    } else {
+                        // 非分屏模式，直接操作当前编辑器
+                        gestureEditor.insertNewlineAtPosition(result.boundingBox, getCurrentEditor(), editorLayer.scrollY)
+                        markAsModified()
+                        Toast.makeText(this, "已插入换行", Toast.LENGTH_SHORT).show()
+                    }
+                }
                 GestureType.SELECT -> {
                     // 圈选手势（加粗）
                     if (currentDisplayMode == DisplayMode.SPLIT) {
@@ -2794,19 +2822,19 @@ class MarkdownEditorActivity : android.app.Activity() {
             if (touchY < dividerY) {
                 // 上半区（预览区）操作 - 同步到编辑区
                 Log.d("GestureLayer", "Insert in preview area (top)")
-                gestureEditor.processRecognitionResult(resultWithText, splitEditorText)
+                gestureEditor.processRecognitionResult(resultWithText, splitEditorText, splitEditorScroll.scrollY)
                 markAsModified()
                 Toast.makeText(this, "已插入: ${textToInsert.take(15)}${if (textToInsert.length > 15) "..." else ""}", Toast.LENGTH_SHORT).show()
             } else {
                 // 下半区（编辑区）操作
                 Log.d("GestureLayer", "Insert in editor area (bottom)")
-                gestureEditor.processRecognitionResult(resultWithText, splitEditorText)
+                gestureEditor.processRecognitionResult(resultWithText, splitEditorText, splitEditorScroll.scrollY)
                 markAsModified()
                 Toast.makeText(this, "已插入: ${textToInsert.take(15)}${if (textToInsert.length > 15) "..." else ""}", Toast.LENGTH_SHORT).show()
             }
         } else {
             // 非分屏模式，直接操作当前编辑器
-            gestureEditor.processRecognitionResult(resultWithText, getCurrentEditor())
+            gestureEditor.processRecognitionResult(resultWithText, getCurrentEditor(), editorLayer.scrollY)
             markAsModified()
             Toast.makeText(this, "已插入: ${textToInsert.take(15)}${if (textToInsert.length > 15) "..." else ""}", Toast.LENGTH_SHORT).show()
         }

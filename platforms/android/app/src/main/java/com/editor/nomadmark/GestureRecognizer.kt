@@ -94,6 +94,12 @@ object GestureRecognizer {
             return deleteResult
         }
 
+        val newlineResult = recognizeNewlineGesture(points)
+        if (newlineResult != null) {
+            Log.d(TAG, "NEWLINE recognized with confidence: ${newlineResult.confidence}")
+            return newlineResult
+        }
+
         val selectResult = recognizeSelectGesture(points)
         if (selectResult != null) {
             Log.d(TAG, "SELECT recognized with confidence: ${selectResult.confidence}")
@@ -158,6 +164,54 @@ object GestureRecognizer {
     }
 
     // =========================================================================
+    // NEWLINE 手势识别（竖线）
+    // =========================================================================
+
+    /**
+     * 识别 NEWLINE 手势：竖线 |（从上往下划）
+     *
+     * 特征：
+     * - 高线性度（点形成一条直线）
+     * - 垂直方向（角度在垂直线的 ±30° 内）
+     * - 长度 > MIN_LENGTH
+     */
+    private fun recognizeNewlineGesture(points: List<Point>): RecognResultData? {
+        val linearity = calculateLinearity(points)
+        if (linearity < LINEARITY_THRESHOLD) {
+            Log.d(TAG, "NEWLINE failed: low linearity $linearity < $LINEARITY_THRESHOLD")
+            return null
+        }
+
+        val angle = calculateDirectionAngle(points)
+        val angleDegrees = Math.toDegrees(angle.toDouble()).toFloat()
+
+        // 检查角度是否在垂直容差范围内（90° 或 -90°）
+        val isVertical = abs(abs(angleDegrees) - 90f) <= ANGLE_TOLERANCE_DEGREES
+
+        if (!isVertical) {
+            Log.d(TAG, "NEWLINE failed: not vertical, angle=$angleDegrees°")
+            return null
+        }
+
+        // 计算置信度：基于线性和角度偏差
+        val angleDeviation = abs(abs(angleDegrees) - 90f)
+        val angleScore = 1f - (angleDeviation / ANGLE_TOLERANCE_DEGREES)
+        val confidence = (linearity * 0.7f + angleScore * 0.3f).coerceIn(0f, 1f)
+
+        Log.d(TAG, "NEWLINE recognized: linearity=$linearity, angle=$angleDegrees°, confidence=$confidence")
+
+        val bbox = calculateBoundingBox(points)
+        // 对于竖线手势，使用底部作为关键点（插入位置）
+        val keyPoint = Point(bbox.centerX(), bbox.bottom)
+        return RecognResultData(
+            boundingBox = bbox,
+            keyPoint = keyPoint,
+            gestureType = GestureType.NEWLINE,
+            confidence = confidence
+        )
+    }
+
+    // =========================================================================
     // INSERT 手势识别（插入符号）
     // =========================================================================
 
@@ -203,9 +257,12 @@ object GestureRecognizer {
         Log.d(TAG, "INSERT recognized with confidence: $confidence")
 
         val bbox = calculateBoundingBox(points)
+        // 对于插入符号 ^，使用尖端（顶部中心）作为关键点
+        // 这样插入位置会更精确地定位到两个字之间
+        val caretTip = Point(bbox.centerX(), bbox.top)
         return RecognResultData(
             boundingBox = bbox,
-            keyPoint = Point(bbox.centerX(), bbox.centerY()),
+            keyPoint = caretTip,  // 使用尖端而不是中心
             gestureType = GestureType.INSERT,
             confidence = confidence
         )

@@ -43,8 +43,9 @@ class GestureEditor {
      *
      * @param result 识别结果数据
      * @param editor 目标 EditText
+     * @param scrollY ScrollView 的滚动偏移量
      */
-    fun processRecognitionResult(result: RecognResultData, editor: EditText) {
+    fun processRecognitionResult(result: RecognResultData, editor: EditText, scrollY: Int = 0) {
         val bbox = result.boundingBox
         val keyPoint = result.keyPoint
 
@@ -54,16 +55,19 @@ class GestureEditor {
         // 根据手势类型执行操作
         when (result.gestureType) {
             GestureType.DELETE -> {
-                deleteTextRange(correctedRect, editor)
+                deleteTextRange(correctedRect, editor, scrollY)
             }
             GestureType.INSERT -> {
-                // 对于插入手势，需要在矩形位置插入文本
-                val (line, _) = findTextPositionsForRect(correctedRect, editor)
-                insertAtLine(line, result.text, editor)
+                // 对于插入手势，需要精确定位到两个字符之间插入文本
+                insertAtPosition(correctedRect, result.text, editor, scrollY)
             }
             GestureType.SELECT -> {
                 // 圈选功能：对文本范围加粗
-                boldTextRange(correctedRect, editor)
+                boldTextRange(correctedRect, editor, scrollY)
+            }
+            GestureType.NEWLINE -> {
+                // 竖线手势：在指定位置插入换行符
+                insertNewlineAtPosition(correctedRect, editor, scrollY)
             }
         }
     }
@@ -338,26 +342,36 @@ class GestureEditor {
     /**
      * 查找对应于屏幕矩形的文本位置
      *
-     * @param rect 编辑器相对坐标中的矩形
+     * @param rect 编辑器相对坐标中的矩形（相对于 GestureOverlayView）
      * @param editor EditText
+     * @param scrollY ScrollView 的滚动偏移量
      * @return (起始，结束) 字符位置对
      */
-    private fun findTextPositionsForRect(rect: Rect, editor: EditText): Pair<Int, Int> {
+    private fun findTextPositionsForRect(rect: Rect, editor: EditText, scrollY: Int = 0): Pair<Int, Int> {
         if (editor.text == null) return Pair(0, 0)
 
         // 获取行高和位置
         val layout = editor.layout ?: return Pair(0, 0)
 
         val lineHeight = layout.getLineBottom(0) - layout.getLineTop(0)
-        val linePadding = editor.paddingTop
+        val paddingTop = editor.paddingTop
 
-        // 查找行范围
-        val topLine = ((rect.top - linePadding).coerceAtLeast(0) / lineHeight).coerceAtMost(layout.lineCount - 1)
-        val bottomLine = ((rect.bottom - linePadding).coerceAtLeast(0) / lineHeight).coerceAtMost(layout.lineCount - 1)
+        // 将手势坐标转换为 EditText 内容区坐标
+        // rect 坐标是相对于 GestureOverlayView（和 ScrollView 位置重叠）
+        // 减去 padding 得到相对于 EditText 内容区的坐标
+        // 加上 scrollY 考虑滚动偏移
+        val topY = rect.top - paddingTop + scrollY
+        val bottomY = rect.bottom - paddingTop + scrollY
+
+        // 根据转换后的 Y 坐标查找行范围
+        val topLine = (topY.coerceAtLeast(0) / lineHeight).toInt().coerceAtMost(layout.lineCount - 1)
+        val bottomLine = (bottomY.coerceAtLeast(0) / lineHeight).toInt().coerceAtMost(layout.lineCount - 1)
 
         // 获取每一行的字符位置
         val startPos = layout.getLineStart(topLine)
         val endPos = layout.getLineEnd(bottomLine)
+
+        Log.d(TAG, "findTextPositionsForRect: rect.top=${rect.top}, rect.bottom=${rect.bottom}, scrollY=$scrollY, topLine=$topLine, bottomLine=$bottomLine")
 
         return Pair(startPos, endPos)
     }
@@ -377,28 +391,225 @@ class GestureEditor {
     }
 
     /**
-     * 在特定行插入文本（用于插入手势）
+     * 在精确位置插入文本（用于插入手势）
      *
-     * @param line 行号（从 0 开始）
+     * 将手势的 X/Y 坐标转换为 EditText 中的字符偏移量，然后在该位置插入文本。
+     * 这样可以精确地将文本插入到两个字符之间，而不是简单地插入到行首。
+     *
+     * 实现步骤：
+     * 1. 使用 Y 坐标找到目标行
+     * 2. 使用 X 坐标在该行中找到最接近的字符偏移量
+     * 3. 在该偏移量位置插入文本
+     *
+     * @param rect 手势边界框（相对于 GestureOverlayView）
      * @param textToInsert 要插入的文本
      * @param editor EditText
+     * @param scrollY ScrollView 的滚动偏移量
      */
-    fun insertAtLine(line: Int, textToInsert: String, editor: EditText) {
-        Log.d(TAG, "insertAtLine: line=$line, text='$textToInsert'")
+    fun insertAtPosition(rect: Rect, textToInsert: String, editor: EditText, scrollY: Int = 0) {
+        Log.d(TAG, "========== INSERT START ==========")
+        Log.d(TAG, "insertAtPosition: rect=$rect, text='$textToInsert', scrollY=$scrollY")
 
         val layout = editor.layout ?: return
-        val lineCount = layout.lineCount
+        val text = editor.text ?: return
 
-        if (line < 0 || line >= lineCount) {
-            Log.w(TAG, "Invalid line number: $line (count=$lineCount)")
+        Log.d(TAG, "text type: ${text::class.java}")
+        Log.d(TAG, "Editor: width=${editor.width}, height=${editor.height}, paddingLeft=${editor.paddingLeft}, paddingTop=${editor.paddingTop}")
+        Log.d(TAG, "Layout: width=${layout.width}, height=${layout.height}, lineCount=${layout.lineCount}")
+
+        // 对于插入符号 ^，使用尖端（矩形顶部）来定位插入位置
+        // 尖端是 Y 值最小（最高）的点，X 取中心
+        val insertX = (rect.left + rect.right) / 2f
+        val insertY = rect.top.toFloat()  // 使用顶部（尖端）而不是中心
+
+        // 转换为 EditText 内容区坐标
+        val paddingTop = editor.paddingTop
+        val paddingLeft = editor.paddingLeft
+
+        // 减去 padding 得到相对于 EditText 内容区的坐标
+        val contentX = insertX - paddingLeft
+        val contentY = insertY - paddingTop + scrollY
+
+        Log.d(TAG, "Insert position (using caret tip):")
+        Log.d(TAG, "  Original: x=$insertX, y=$insertY")
+        Log.d(TAG, "  Adjusted: contentX=$contentX, contentY=$contentY (minus padding: pL=$paddingLeft, pT=$paddingTop, scrollY=$scrollY)")
+
+        // 步骤1：根据 Y 坐标找到目标行
+        val line = findLineForY(contentY, editor)
+        if (line < 0) {
+            Log.w(TAG, "Could not find line for Y coordinate: $contentY")
             return
         }
 
-        val position = layout.getLineStart(line)
-        editor.text?.insert(position, textToInsert)
+        Log.d(TAG, "Found line: $line")
 
-        // 触发刷新
-        editor.invalidate()
+        // 步骤2：根据 X 坐标找到该行中的字符偏移量
+        val offset = findOffsetForXInLine(contentX, line, layout)
+
+        Log.d(TAG, "Calculated offset: $offset (text length=${text.length})")
+        Log.d(TAG, "Text before insert (20 chars around offset): ${if (offset > 0 && offset < text.length) text.substring(offset.coerceAtLeast(0), (offset + 20).coerceAtMost(text.length)) else text.substring(0, 20.coerceAtMost(text.length))}")
+
+        if (offset >= 0 && offset <= text.length) {
+            // 步骤3：在计算出的偏移量位置插入文本
+            Log.d(TAG, "Attempting to insert: '$textToInsert' at offset $offset")
+            Log.d(TAG, "Text hash before: ${System.identityHashCode(text)}, editor.text hash: ${System.identityHashCode(editor.text)}")
+
+            // 使用 replace() 方法插入（更可靠）
+            // replace(offset, offset, text) 等同于 insert
+            text.replace(offset, offset, textToInsert)
+
+            Log.d(TAG, "Text hash after: ${System.identityHashCode(text)}, editor.text hash: ${System.identityHashCode(editor.text)}")
+            Log.d(TAG, "Text after insert: ${text.take(50)}...")
+            Log.d(TAG, "New text length: ${text.length}")
+
+            // 强制刷新
+            editor.invalidate()
+            editor.requestLayout()
+
+            // 验证插入是否成功
+            val insertedContent = text.substring(offset, (offset + textToInsert.length).coerceAtMost(text.length))
+            Log.d(TAG, "Verification: inserted content at offset $offset: '$insertedContent'")
+            Log.d(TAG, "Text inserted successfully at offset $offset")
+        } else {
+            Log.w(TAG, "Invalid offset: $offset (text length=${text.length})")
+        }
+    }
+
+    /**
+     * 在指定位置插入换行符（用于竖线换行手势）
+     *
+     * 竖线手势 `|` 从上往下划，在经过的位置插入换行符。
+     * 使用手势底部作为插入位置（竖线的终点）。
+     *
+     * @param rect 手势边界框
+     * @param editor EditText
+     * @param scrollY ScrollView 的滚动偏移量
+     */
+    fun insertNewlineAtPosition(rect: Rect, editor: EditText, scrollY: Int = 0) {
+        Log.d(TAG, "========== NEWLINE START ==========")
+        Log.d(TAG, "insertNewlineAtPosition: rect=$rect, scrollY=$scrollY")
+
+        val layout = editor.layout ?: return
+        val text = editor.text ?: return
+
+        Log.d(TAG, "text type: ${text::class.java}")
+        Log.d(TAG, "Editor: width=${editor.width}, height=${editor.height}, paddingLeft=${editor.paddingLeft}, paddingTop=${editor.paddingTop}")
+        Log.d(TAG, "Layout: width=${layout.width}, height=${layout.height}, lineCount=${layout.lineCount}")
+
+        // 对于竖线手势 |，使用底部作为插入位置
+        // 底部是 Y 值最大（最低）的点，X 取中心
+        val insertX = (rect.left + rect.right) / 2f
+        val insertY = rect.bottom.toFloat()  // 使用底部（竖线终点）
+
+        // 转换为 EditText 内容区坐标
+        val paddingTop = editor.paddingTop
+        val paddingLeft = editor.paddingLeft
+
+        val contentX = insertX - paddingLeft
+        val contentY = insertY - paddingTop + scrollY
+
+        Log.d(TAG, "Newline position (using vertical line bottom):")
+        Log.d(TAG, "  Original: x=$insertX, y=$insertY")
+        Log.d(TAG, "  Adjusted: contentX=$contentX, contentY=$contentY (pL=$paddingLeft, pT=$paddingTop, scrollY=$scrollY)")
+
+        // 步骤1：根据 Y 坐标找到目标行
+        // 对于竖线手势，使用中间位置而不是底部，更符合用户意图
+        val midY = (rect.top + rect.bottom) / 2f
+        val contentMidY = midY - paddingTop + scrollY
+        Log.d(TAG, "Using middle Y for line detection: contentMidY=$contentMidY")
+
+        val line = findLineForY(contentMidY, editor)
+        if (line < 0) {
+            Log.w(TAG, "Could not find line for Y coordinate: contentMidY=$contentMidY")
+            return
+        }
+
+        Log.d(TAG, "Found line: $line")
+
+        // 步骤2：根据 X 坐标找到该行中的字符偏移量
+        val offset = findOffsetForXInLine(contentX, line, layout)
+
+        Log.d(TAG, "Calculated offset for newline: $offset (text length=${text.length})")
+
+        if (offset >= 0 && offset <= text.length) {
+            // 步骤3：在计算出的偏移量位置插入换行符
+            val newline = "\n"
+            Log.d(TAG, "Attempting to insert newline at offset $offset")
+            text.replace(offset, offset, newline)
+            Log.d(TAG, "Newline inserted successfully at offset $offset")
+
+            // 强制刷新
+            editor.invalidate()
+            editor.requestLayout()
+        } else {
+            Log.w(TAG, "Invalid offset: $offset (text length=${text.length})")
+        }
+    }
+
+    /**
+     * 根据指定行中的 X 坐标找到插入点的字符偏移量
+     *
+     * 算法：遍历该行的每个字符间隙，找到 X 坐标落在哪个间隙中，
+     * 返回该间隙的起始字符偏移量作为插入点。
+     *
+     * @param x 目标 X 坐标（相对于 EditText 内容区）
+     * @param line 行号
+     * @param layout 文本布局
+     * @return 插入点的字符偏移量
+     */
+    private fun findOffsetForXInLine(x: Float, line: Int, layout: android.text.Layout): Int {
+        val lineStart = layout.getLineStart(line)
+        val lineEnd = layout.getLineEnd(line)
+
+        Log.d(TAG, "---------- findOffsetForXInLine ----------")
+        Log.d(TAG, "Input: x=$x, line=$line")
+        Log.d(TAG, "Line range: lineStart=$lineStart, lineEnd=$lineEnd")
+
+        // 空行情况
+        if (lineStart == lineEnd) {
+            Log.d(TAG, "Empty line, returning line start: $lineStart")
+            return lineStart
+        }
+
+        // 获取行的左边界（行首位置）
+        val lineLeft = layout.getLineLeft(line)
+        val lineRight = layout.getLineRight(line)
+
+        Log.d(TAG, "Line bounds: lineLeft=$lineLeft, lineRight=$lineRight")
+        Log.d(TAG, "Comparison: x=$x vs lineLeft=$lineLeft, lineRight=$lineRight")
+
+        // 如果 X 坐标在行首左侧，返回行首
+        if (x < lineLeft) {
+            Log.d(TAG, "⚠️ X is before line start! Returning lineStart: $lineStart")
+            return lineStart
+        }
+
+        // 如果 X 坐标在行尾右侧，返回行尾
+        if (x > lineRight) {
+            Log.d(TAG, "⚠️ X is after line end! Returning lineEnd: $lineEnd")
+            Log.d(TAG, "This will insert at the END of the line!")
+            return lineEnd
+        }
+
+        Log.d(TAG, "X is within line bounds, searching for character position...")
+
+        // 遍历该行的每个字符，找到 X 坐标落在哪个间隙中
+        var foundOffset = lineStart
+        for (offset in lineStart until lineEnd) {
+            val charX = layout.getPrimaryHorizontal(offset)
+
+            Log.v(TAG, "  offset=$offset, charX=$charX, targetX=$x, diff=${charX - x}")
+
+            if (x <= charX) {
+                Log.d(TAG, "✓ Found insertion point at offset: $offset")
+                foundOffset = offset
+                break
+            }
+            foundOffset = offset + 1
+        }
+
+        Log.d(TAG, "Final offset: $foundOffset")
+        return foundOffset
     }
 
     /**
@@ -565,5 +776,6 @@ data class RecognResultData(
 enum class GestureType {
     DELETE,
     INSERT,
-    SELECT
+    SELECT,
+    NEWLINE  // 竖线手势：从上往下划，插入换行符
 }
