@@ -852,24 +852,60 @@ class MarkdownEditorActivity : android.app.Activity() {
                         } else {
                             // 下半区（编辑区）操作
                             Log.d("GestureLayer", "Delete in editor area (bottom)")
-                            gestureEditor.deleteTextRange(result.boundingBox, splitEditorText)
+                            gestureEditor.deleteTextRange(result.boundingBox, splitEditorText, splitEditorScroll.scrollY)
                             markAsModified()
                             Toast.makeText(this, "已删除选中内容", Toast.LENGTH_SHORT).show()
                         }
                     } else {
                         // 非分屏模式，直接操作当前编辑器
-                        gestureEditor.deleteTextRange(result.boundingBox, getCurrentEditor())
+                        gestureEditor.deleteTextRange(result.boundingBox, getCurrentEditor(), editorLayer.scrollY)
                         markAsModified()
                         Toast.makeText(this, "已删除选中内容", Toast.LENGTH_SHORT).show()
                     }
                 }
                 GestureType.INSERT -> {
-                    // 插入手势（暂未实现）
-                    Toast.makeText(this, "插入功能开发中", Toast.LENGTH_SHORT).show()
+                    // 插入手势 - 弹出输入框让用户输入要插入的文本
+                    showInsertDialog(result)
                 }
                 GestureType.SELECT -> {
-                    // 选择手势（暂未实现）
-                    Toast.makeText(this, "选择功能开发中", Toast.LENGTH_SHORT).show()
+                    // 圈选手势（加粗）
+                    if (currentDisplayMode == DisplayMode.SPLIT) {
+                        val touchY = result.keyPoint.y
+                        val splitHeight = splitLayer.height.toFloat()
+                        val splitRatio = 0.6f  // 预览区占 60%
+                        val dividerY = splitLayer.top + splitHeight * splitRatio
+
+                        if (touchY < dividerY) {
+                            // 上半区（预览区）操作 - 同步到编辑区
+                            Log.d("GestureLayer", "Bold in preview area (top)")
+                            val boldedText = gestureEditor.boldTextRange(result.boundingBox, splitEditorText, splitEditorScroll.scrollY)
+                            markAsModified()
+                            if (boldedText.isNotEmpty()) {
+                                Toast.makeText(this, "已加粗: ${boldedText.take(20)}${if (boldedText.length > 20) "..." else ""}", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(this, "加粗失败", Toast.LENGTH_SHORT).show()
+                            }
+                        } else {
+                            // 下半区（编辑区）操作
+                            Log.d("GestureLayer", "Bold in editor area (bottom)")
+                            val boldedText = gestureEditor.boldTextRange(result.boundingBox, splitEditorText, splitEditorScroll.scrollY)
+                            markAsModified()
+                            if (boldedText.isNotEmpty()) {
+                                Toast.makeText(this, "已加粗: ${boldedText.take(20)}${if (boldedText.length > 20) "..." else ""}", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(this, "加粗失败", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    } else {
+                        // 非分屏模式，直接操作当前编辑器
+                        val boldedText = gestureEditor.boldTextRange(result.boundingBox, getCurrentEditor(), editorLayer.scrollY)
+                        markAsModified()
+                        if (boldedText.isNotEmpty()) {
+                            Toast.makeText(this, "已加粗: ${boldedText.take(20)}${if (boldedText.length > 20) "..." else ""}", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(this, "加粗失败", Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 }
             }
         }
@@ -2664,6 +2700,78 @@ class MarkdownEditorActivity : android.app.Activity() {
             }
             .setNegativeButton("取消", null)
             .show()
+    }
+
+    /**
+     * 显示插入手势的输入对话框
+     *
+     * @param result 手势识别结果，包含插入位置信息
+     */
+    private fun showInsertDialog(result: RecognResultData) {
+        // 创建输入框
+        val input = EditText(this).apply {
+            hint = "输入要插入的文本"
+            setSingleLine(true)
+            setPadding(48, 24, 48, 24)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("插入手势")
+            .setMessage("请在下方输入要插入的文本：")
+            .setView(input)
+            .setPositiveButton("插入") { _, _ ->
+                val textToInsert = input.text.toString()
+                if (textToInsert.isNotEmpty()) {
+                    performInsertGesture(result, textToInsert)
+                } else {
+                    Toast.makeText(this, "请输入文本", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+        // 自动弹出软键盘并聚焦到输入框
+        input.post {
+            input.requestFocus()
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+
+    /**
+     * 执行插入手势操作
+     *
+     * @param result 手势识别结果
+     * @param textToInsert 要插入的文本
+     */
+    private fun performInsertGesture(result: RecognResultData, textToInsert: String) {
+        // 创建带有文本的识别结果
+        val resultWithText = result.copy(text = textToInsert)
+
+        if (currentDisplayMode == DisplayMode.SPLIT) {
+            val touchY = result.keyPoint.y
+            val splitHeight = splitLayer.height.toFloat()
+            val splitRatio = 0.6f  // 预览区占 60%
+            val dividerY = splitLayer.top + splitHeight * splitRatio
+
+            if (touchY < dividerY) {
+                // 上半区（预览区）操作 - 同步到编辑区
+                Log.d("GestureLayer", "Insert in preview area (top)")
+                gestureEditor.processRecognitionResult(resultWithText, splitEditorText)
+                markAsModified()
+                Toast.makeText(this, "已插入: ${textToInsert.take(15)}${if (textToInsert.length > 15) "..." else ""}", Toast.LENGTH_SHORT).show()
+            } else {
+                // 下半区（编辑区）操作
+                Log.d("GestureLayer", "Insert in editor area (bottom)")
+                gestureEditor.processRecognitionResult(resultWithText, splitEditorText)
+                markAsModified()
+                Toast.makeText(this, "已插入: ${textToInsert.take(15)}${if (textToInsert.length > 15) "..." else ""}", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            // 非分屏模式，直接操作当前编辑器
+            gestureEditor.processRecognitionResult(resultWithText, getCurrentEditor())
+            markAsModified()
+            Toast.makeText(this, "已插入: ${textToInsert.take(15)}${if (textToInsert.length > 15) "..." else ""}", Toast.LENGTH_SHORT).show()
+        }
     }
 
     /**

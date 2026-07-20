@@ -148,6 +148,32 @@ class GestureOverlayView @JvmOverloads constructor(
             return false  // 传递到底层视图
         }
 
+        // 区分输入源：手指 vs 笔尖
+        // 手指：传递到底层视图处理滚动
+        // 笔尖：处理手势识别
+        when (event.getToolType(0)) {
+            MotionEvent.TOOL_TYPE_FINGER -> {
+                // 手指操作：传递到底层视图用于滚动
+                Log.d(TAG, "FINGER touch - passing through for scroll")
+                return false
+            }
+            MotionEvent.TOOL_TYPE_STYLUS -> {
+                // 笔尖操作：处理手势识别
+                Log.d(TAG, "STYLUS touch - processing for gesture")
+                return handleStylusEvent(event)
+            }
+            else -> {
+                // 其他输入类型（如鼠标）：传递到底层
+                Log.d(TAG, "Other tool type (${event.getToolType(0)}) - passing through")
+                return false
+            }
+        }
+    }
+
+    /**
+     * 处理笔尖触摸事件
+     */
+    private fun handleStylusEvent(event: MotionEvent): Boolean {
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
                 handleActionDown(event)

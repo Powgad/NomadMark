@@ -31,22 +31,28 @@ object GestureRecognizer {
     // =========================================================================
 
     /** 有效手势的最小点数 */
-    const val MIN_POINTS = 5
+    const val MIN_POINTS = 8  // 提高到 8，减少误触
 
     /** 最小手势长度（像素） */
-    private const val MIN_LENGTH = 50f
+    private const val MIN_LENGTH = 60f  // 提高到 60，减少误划识别
 
     /** 最大手势长度（像素）- 防止意外整页滑动 */
     private const val MAX_LENGTH = 800f
 
     /** 线性度阈值：点必须在 15% 的线长偏差内 */
-    private const val LINEARITY_THRESHOLD = 0.85f
+    private const val LINEARITY_THRESHOLD = 0.88f  // 提高到 0.88，更严格的线性要求
 
     /** 水平角度容差：±30 度 */
-    private const val ANGLE_TOLERANCE_DEGREES = 30f
+    private const val ANGLE_TOLERANCE_DEGREES = 25f  // 减少到 25°，更严格的角度要求
 
     /** 选择手势的圆圈闭合容差 */
-    private const val CIRCLE_CLOSURE_RATIO = 0.3f
+    private const val CIRCLE_CLOSURE_RATIO = 0.25f  // 减少到 0.25，更严格的闭合要求
+
+    /** 手势速度稳定性阈值（用于检测稳定的笔触） */
+    private const val VELOCITY_STABILITY_THRESHOLD = 0.6f
+
+    /** 点密度阈值（点/像素）- 用于检测连续性 */
+    private const val POINT_DENSITY_MIN = 0.05f  // 至少每 20 像素一个点
 
     // =========================================================================
     // 主识别入口点
@@ -60,24 +66,48 @@ object GestureRecognizer {
      */
     fun recognize(points: List<Point>): RecognResultData? {
         if (points.size < MIN_POINTS) {
-            Log.d(TAG, "Too few points: ${points.size}")
+            Log.d(TAG, "Too few points: ${points.size} < $MIN_POINTS")
             return null
         }
 
         val length = calculatePathLength(points)
         if (length < MIN_LENGTH) {
-            Log.d(TAG, "Gesture too short: $length")
+            Log.d(TAG, "Gesture too short: $length < $MIN_LENGTH")
             return null
         }
         if (length > MAX_LENGTH) {
-            Log.d(TAG, "Gesture too long: $length")
+            Log.d(TAG, "Gesture too long: $length > $MAX_LENGTH")
             return null
         }
 
-        // 尝试识别每种手势类型
-        return recognizeDeleteGesture(points)
-            ?: recognizeInsertGesture(points)
-            ?: recognizeSelectGesture(points)
+        // 检查点密度 - 确保手势是连续的
+        val density = points.size.toFloat() / length
+        if (density < POINT_DENSITY_MIN) {
+            Log.d(TAG, "Point density too low: $density < $POINT_DENSITY_MIN")
+            return null
+        }
+
+        // 尝试识别每种手势类型，按优先级顺序
+        val deleteResult = recognizeDeleteGesture(points)
+        if (deleteResult != null) {
+            Log.d(TAG, "DELETE recognized with confidence: ${deleteResult.confidence}")
+            return deleteResult
+        }
+
+        val selectResult = recognizeSelectGesture(points)
+        if (selectResult != null) {
+            Log.d(TAG, "SELECT recognized with confidence: ${selectResult.confidence}")
+            return selectResult
+        }
+
+        val insertResult = recognizeInsertGesture(points)
+        if (insertResult != null) {
+            Log.d(TAG, "INSERT recognized with confidence: ${insertResult.confidence}")
+            return insertResult
+        }
+
+        Log.d(TAG, "No gesture recognized")
+        return null
     }
 
     // =========================================================================
@@ -95,7 +125,7 @@ object GestureRecognizer {
     private fun recognizeDeleteGesture(points: List<Point>): RecognResultData? {
         val linearity = calculateLinearity(points)
         if (linearity < LINEARITY_THRESHOLD) {
-            Log.d(TAG, "DELETE failed: low linearity $linearity")
+            Log.d(TAG, "DELETE failed: low linearity $linearity < $LINEARITY_THRESHOLD")
             return null
         }
 
@@ -107,17 +137,23 @@ object GestureRecognizer {
                            abs(abs(angleDegrees) - 180f) <= ANGLE_TOLERANCE_DEGREES
 
         if (!isHorizontal) {
-            Log.d(TAG, "DELETE failed: not horizontal, angle=$angleDegrees°")
+            Log.d(TAG, "DELETE failed: not horizontal, angle=$angleDegrees° > $ANGLE_TOLERANCE_DEGREES°")
             return null
         }
 
-        Log.d(TAG, "DELETE recognized: linearity=$linearity, angle=$angleDegrees°")
+        // 计算置信度：基于线性和角度偏差
+        val angleDeviation = minOf(abs(angleDegrees), abs(abs(angleDegrees) - 180f))
+        val angleScore = 1f - (angleDeviation / ANGLE_TOLERANCE_DEGREES)
+        val confidence = (linearity * 0.7f + angleScore * 0.3f).coerceIn(0f, 1f)
+
+        Log.d(TAG, "DELETE recognized: linearity=$linearity, angle=$angleDegrees°, confidence=$confidence")
 
         val bbox = calculateBoundingBox(points)
         return RecognResultData(
             boundingBox = bbox,
             keyPoint = Point(bbox.centerX(), bbox.centerY()),
-            gestureType = GestureType.DELETE
+            gestureType = GestureType.DELETE,
+            confidence = confidence
         )
     }
 
@@ -156,13 +192,22 @@ object GestureRecognizer {
             return null
         }
 
-        Log.d(TAG, "INSERT recognized")
+        // 计算置信度：基于方向变化数量和向上趋势
+        val directionScore = when (directionChanges) {
+            2 -> 1.0f  // 最理想
+            1, 3 -> 0.8f
+            else -> 0.5f
+        }
+        val confidence = directionScore * 0.9f  // INSERT 识别相对复杂，给较低的基准置信度
+
+        Log.d(TAG, "INSERT recognized with confidence: $confidence")
 
         val bbox = calculateBoundingBox(points)
         return RecognResultData(
             boundingBox = bbox,
             keyPoint = Point(bbox.centerX(), bbox.centerY()),
-            gestureType = GestureType.INSERT
+            gestureType = GestureType.INSERT,
+            confidence = confidence
         )
     }
 
@@ -178,8 +223,9 @@ object GestureRecognizer {
      * - 起点和终点靠得很近
      */
     private fun recognizeSelectGesture(points: List<Point>): RecognResultData? {
-        if (points.size < 8) {
+        if (points.size < 10) {  // 提高最小点数要求
             // 圆圈需要更多的点
+            Log.d(TAG, "SELECT failed: too few points ${points.size} < 10")
             return null
         }
 
@@ -190,23 +236,33 @@ object GestureRecognizer {
         // 检查起点和终点是否接近（闭合环）
         val closureRatio = closureDistance / bboxDiagonal
         if (closureRatio > CIRCLE_CLOSURE_RATIO) {
-            Log.d(TAG, "SELECT failed: not closed, ratio=$closureRatio")
+            Log.d(TAG, "SELECT failed: not closed, ratio=$closureRatio > $CIRCLE_CLOSURE_RATIO")
             return null
         }
 
         // 检查长宽比 - 圆圈大致为正方形
         val aspectRatio = bbox.width().toFloat() / bbox.height().toFloat()
-        if (aspectRatio < 0.5f || aspectRatio > 2.0f) {
+        if (aspectRatio < 0.6f || aspectRatio > 1.67f) {  // 稍微放宽容差
             Log.d(TAG, "SELECT failed: wrong aspect ratio $aspectRatio")
             return null
         }
 
-        Log.d(TAG, "SELECT recognized")
+        // 计算置信度：基于闭合度和长宽比
+        val closureScore = 1f - (closureRatio / CIRCLE_CLOSURE_RATIO)
+        val aspectScore = when {
+            aspectRatio >= 0.8f && aspectRatio <= 1.25f -> 1.0f  // 接近正方形
+            aspectRatio >= 0.7f && aspectRatio <= 1.43f -> 0.8f
+            else -> 0.6f
+        }
+        val confidence = (closureScore * 0.6f + aspectScore * 0.4f).coerceIn(0f, 1f)
+
+        Log.d(TAG, "SELECT recognized with confidence: $confidence")
 
         return RecognResultData(
             boundingBox = bbox,
             keyPoint = Point(bbox.centerX(), bbox.centerY()),
-            gestureType = GestureType.SELECT
+            gestureType = GestureType.SELECT,
+            confidence = confidence
         )
     }
 
