@@ -15,6 +15,7 @@ import android.os.Environment
 import android.util.TypedValue
 import android.os.Handler
 import android.os.Looper
+import android.provider.DocumentsContract
 import android.provider.Settings
 import android.net.Uri
 import android.text.Editable
@@ -2936,30 +2937,61 @@ class MarkdownEditorActivity : android.app.Activity() {
      * 从 content:// URI 获取文件路径
      */
     private fun getFilePathFromUri(uri: android.net.Uri): String? {
+        Log.d("MarkdownEditorActivity", "getFilePathFromUri: 输入 URI = $uri")
         try {
-            when (uri.scheme) {
+            val scheme = uri.scheme
+            Log.d("MarkdownEditorActivity", "getFilePathFromUri: scheme = $scheme, authority = ${uri.authority}")
+            when (scheme) {
                 "content" -> {
+                    Log.d("MarkdownEditorActivity", "getFilePathFromUri: 处理 content URI")
                     // 尝试从 _data 列获取文件路径
                     val cursor = contentResolver.query(uri, arrayOf("_data"), null, null, null)
+                    Log.d("MarkdownEditorActivity", "getFilePathFromUri: cursor = $cursor")
+                    var foundDataPath: String? = null
                     cursor?.use {
+                        Log.d("MarkdownEditorActivity", "getFilePathFromUri: cursor count = ${it.count}")
                         if (it.moveToFirst()) {
                             val dataIndex = it.getColumnIndex("_data")
+                            Log.d("MarkdownEditorActivity", "getFilePathFromUri: _data column index = $dataIndex")
                             if (dataIndex != -1) {
-                                return it.getString(dataIndex)
+                                val dataValue = it.getString(dataIndex)
+                                Log.d("MarkdownEditorActivity", "getFilePathFromUri: _data value = $dataValue")
+                                if (dataValue != null && dataValue.isNotEmpty()) {
+                                    foundDataPath = dataValue
+                                }
+                            } else {
+                                Log.d("MarkdownEditorActivity", "getFilePathFromUri: _data column not found")
                             }
                         }
                     }
+                    // 如果找到了有效的路径，直接返回
+                    if (foundDataPath != null) {
+                        Log.d("MarkdownEditorActivity", "getFilePathFromUri: 使用 _data 路径: $foundDataPath")
+                        return foundDataPath
+                    }
 
-                    // 如果 _data 列不存在，尝试其他方法
+                    Log.d("MarkdownEditorActivity", "getFilePathFromUri: _data 无效，尝试其他方法")
+
+                    // 如果 _data 列不存在或为空，尝试其他方法
                     // 对于 DocumentsProvider，需要特殊处理
                     if (uri.authority == "com.android.externalstorage.documents") {
+                        Log.d("MarkdownEditorActivity", "getFilePathFromUri: authority match, processing DocumentsProvider")
                         // 解析 SAF URI: content://com.android.externalstorage.documents/document/primary%3ADocument%2F11.jpg
-                        val documentId = uri.lastPathSegment ?: return null
+                        val documentId = uri.lastPathSegment ?: run {
+                            Log.e("MarkdownEditorActivity", "getFilePathFromUri: lastPathSegment is null")
+                            return null
+                        }
+                        Log.d("MarkdownEditorActivity", "getFilePathFromUri: documentId = $documentId")
                         if (documentId.startsWith("primary:")) {
                             // 主存储：primary:Document/11.jpg -> /storage/emulated/0/Document/11.jpg
                             val path = documentId.substring(8) // 移除 "primary:"
-                            return "/storage/emulated/0/$path"
+                            val fullPath = "/storage/emulated/0/$path"
+                            Log.d("MarkdownEditorActivity", "getFilePathFromUri: 解析路径 = $fullPath")
+                            return fullPath
                         }
+                        Log.e("MarkdownEditorActivity", "getFilePathFromUri: documentId 不以 'primary:' 开头")
+                    } else {
+                        Log.d("MarkdownEditorActivity", "getFilePathFromUri: authority not match: ${uri.authority}")
                     }
 
                     return null
@@ -4233,8 +4265,19 @@ class MarkdownEditorActivity : android.app.Activity() {
             filePath = uri.toString()
             fileName = getFileNameFromUri(uri)
             updateFilenameDisplay()
+
+            // 尝试从 URI 获取实际文件路径，用于图片相对路径解析
+            val actualPath = getFilePathFromUri(uri)
+            if (actualPath != null) {
+                DocumentContextHolder.setCurrentDocument(actualPath)
+                Log.d("MarkdownEditorActivity", "设置文档目录用于相对路径解析: $actualPath")
+            } else {
+                Log.w("MarkdownEditorActivity", "无法从 URI 获取文件路径，相对路径图片可能无法显示: $uri")
+                DocumentContextHolder.clear()
+            }
         } else {
             fileUri = null
+            DocumentContextHolder.clear()
         }
 
         // 清空撤销重做栈并保存初始状态

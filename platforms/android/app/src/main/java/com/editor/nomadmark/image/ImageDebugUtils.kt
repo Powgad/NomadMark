@@ -76,4 +76,51 @@ object ImageDebugUtils {
         }
         return dir
     }
+
+    /**
+     * 诊断图片路径问题
+     *
+     * @param imagePath 图片路径（如 "11.jpg" 或 "./11.jpg"）
+     * @return 诊断信息
+     */
+    fun diagnoseImagePath(imagePath: String): String {
+        val info = buildString {
+            appendLine("========== 图片路径诊断 ==========")
+            appendLine("输入路径: $imagePath")
+
+            // 检查 DocumentContextHolder 状态
+            val docDir = DocumentContextHolder.getCurrentDocumentDir()
+            appendLine("当前文档目录: ${docDir?.absolutePath ?: "NULL"}")
+            appendLine("文档目录存在: ${docDir?.exists() ?: false}")
+
+            if (docDir != null) {
+                // 尝试解析相对路径
+                val resolvedFile = DocumentContextHolder.resolveRelativePath(imagePath)
+                appendLine("解析结果: ${resolvedFile?.absolutePath ?: "NULL"}")
+                appendLine("文件存在: ${resolvedFile?.exists() ?: false}")
+
+                if (resolvedFile != null && resolvedFile.exists()) {
+                    appendLine("文件大小: ${resolvedFile.length()} bytes")
+                    appendLine("文件可读: ${resolvedFile.canRead()}")
+                } else {
+                    // 列出文档目录中的文件
+                    val filesInDir = docDir.listFiles()
+                    if (filesInDir != null && filesInDir.isNotEmpty()) {
+                        appendLine("\n文档目录中的文件:")
+                        filesInDir.forEach { file ->
+                            val isImg = file.extension.lowercase() in setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "svg")
+                            appendLine("  - ${file.name} ${if (isImg) "[图片]" else ""}")
+                        }
+                    } else {
+                        appendLine("\n文档目录为空或无法访问")
+                    }
+                }
+            }
+
+            appendLine("=================================")
+        }
+
+        Log.d(TAG, info)
+        return info
+    }
 }

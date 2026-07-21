@@ -92,19 +92,24 @@ class CoilFileMapper(private val context: Context) : Mapper<String, File> {
 
             // 5. 处理同目录相对路径: 11.jpg 或 ./11.jpg
             isImageFile(data) -> {
+                val docDir = DocumentContextHolder.getCurrentDocumentDir()
+                Log.d(TAG, "处理相对路径: $data, 当前文档目录: ${docDir?.absolutePath ?: "NULL"}")
                 val file = DocumentContextHolder.resolveRelativePath(data)
+                Log.d(TAG, "解析结果: ${file?.absolutePath ?: "NULL"}, 文件存在: ${file?.exists() ?: false}")
                 if (file != null && file.exists()) {
                     Log.d(TAG, "找到文件 (相对路径): ${file.absolutePath}")
                     file
                 } else {
-                    Log.w(TAG, "文件不存在 (相对路径): $data, 当前文档目录: ${DocumentContextHolder.getCurrentDocumentDir()?.absolutePath}")
+                    Log.w(TAG, "文件不存在 (相对路径): $data, 当前文档目录: ${docDir?.absolutePath ?: "NULL"}, 解析结果: ${file?.absolutePath ?: "NULL"}")
                     null
                 }
             }
 
             // 6. 其他情况返回 null，让 Coil 尝试其他方式
             else -> {
-                Log.d(TAG, "未匹配的路径格式: $data")
+                val hasExtension = data.contains(".")
+                val isImg = isImageFile(data)
+                Log.d(TAG, "未匹配的路径格式: $data, 有扩展名: $hasExtension, 是图片文件: $isImg")
                 null
             }
         }

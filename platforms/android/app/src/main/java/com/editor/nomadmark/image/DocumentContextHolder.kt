@@ -23,6 +23,7 @@ object DocumentContextHolder {
         } else {
             null
         }
+        android.util.Log.d("DocumentContextHolder", "设置当前文档目录: $filePath -> ${currentDocumentDir?.absolutePath ?: "NULL"}")
     }
 
     /**
@@ -46,7 +47,10 @@ object DocumentContextHolder {
      * @return 完整文件路径，如果无法解析则返回 null
      */
     fun resolveRelativePath(relativePath: String): File? {
-        val docDir = currentDocumentDir ?: return null
+        val docDir = currentDocumentDir ?: run {
+            android.util.Log.w("DocumentContextHolder", "resolveRelativePath: currentDocumentDir 为 null")
+            return null
+        }
 
         // 移除可能的 ./ 前缀
         val cleanPath = if (relativePath.startsWith("./")) {
@@ -57,10 +61,12 @@ object DocumentContextHolder {
 
         // 不处理包含 .. 的路径（安全考虑）
         if (cleanPath.contains("..")) {
+            android.util.Log.w("DocumentContextHolder", "resolveRelativePath: 路径包含 ..，拒绝处理")
             return null
         }
 
         val file = File(docDir, cleanPath)
+        android.util.Log.d("DocumentContextHolder", "resolveRelativePath: $relativePath -> ${file.absolutePath}, 存在: ${file.exists()}")
         return if (file.exists()) file else null
     }
 }
