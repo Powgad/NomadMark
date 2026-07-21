@@ -321,7 +321,7 @@
         android:fillViewport="true"
         android:background="#FFFFFF">
 
-        <EditText
+        <com.editor.nomadmark.RefreshEditText
             android:id="@+id/editor_text"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -332,6 +332,8 @@
             android:fontFamily="monospace"
             android:gravity="top|start"
             android:inputType="textMultiLine"
+            android:textIsSelectable="true"
+            android:selectAllOnFocus="false"
             android:hint="# 开始输入您的 Markdown 内容..."
             android:lineSpacingExtra="4dp" />
     </ScrollView>
@@ -424,7 +426,7 @@
             android:background="#FFFFFF"
             android:fillViewport="true">
 
-            <EditText
+            <com.editor.nomadmark.RefreshEditText
                 android:id="@+id/split_editor_text"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -435,6 +437,8 @@
                 android:fontFamily="monospace"
                 android:gravity="top|start"
                 android:inputType="textMultiLine"
+                android:textIsSelectable="true"
+                android:selectAllOnFocus="false"
                 android:hint="编辑内容..."
                 android:lineSpacingExtra="2dp" />
         </com.editor.nomadmark.ObservableScrollView>

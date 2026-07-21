@@ -125,7 +125,7 @@ class MarkdownEditorActivity : android.app.Activity() {
 
     // 层1：编辑层
     private lateinit var editorLayer: ScrollView
-    private lateinit var editorText: EditText
+    private lateinit var editorText: RefreshEditText
 
     // 层2：预览层
     private lateinit var previewLayer: ScrollView
@@ -136,7 +136,7 @@ class MarkdownEditorActivity : android.app.Activity() {
     private lateinit var splitPreviewScroll: ObservableScrollView
     private lateinit var splitPreviewText: TextView
     private lateinit var splitEditorScroll: ObservableScrollView
-    private lateinit var splitEditorText: EditText
+    private lateinit var splitEditorText: RefreshEditText
 
     // 层4：手势层
     private lateinit var gestureLayer: GestureOverlayView
@@ -877,6 +877,9 @@ class MarkdownEditorActivity : android.app.Activity() {
         editorText.isCursorVisible = true
         splitEditorText.isCursorVisible = true
 
+        // 优化文本选择体验（笔尖长按选择）
+        setupTextSelectionOptimization()
+
         // 确保编辑器获得焦点以显示光标
         editorText.requestFocus()
     }
@@ -1034,6 +1037,38 @@ class MarkdownEditorActivity : android.app.Activity() {
         gestureLayer.isGestureEnabled = false
 
         Log.d("MarkdownEditorActivity", "GestureLayer setup complete")
+    }
+
+    /**
+     * 优化文本选择体验（笔尖长按选择）
+     *
+     * 配置 RefreshEditText 以支持更好的笔尖文本选择体验：
+     * - 确保可聚焦以便触摸响应
+     * - 设置 E-ink 刷新控制器，在选择变化时触发刷新
+     * - 保持焦点状态稳定
+     */
+    private fun setupTextSelectionOptimization() {
+        // 创建 E-ink 刷新控制器（用于主编辑器）
+        val editorRefreshController = EinkRefreshController(editorText)
+
+        // 创建 E-ink 刷新控制器（用于分屏编辑器）
+        val splitEditorRefreshController = EinkRefreshController(splitEditorText)
+
+        // 主编辑器配置
+        editorText.apply {
+            isFocusableInTouchMode = true
+            customSelectionActionModeCallback = null
+            einkRefreshController = editorRefreshController
+        }
+
+        // 分屏编辑器配置
+        splitEditorText.apply {
+            isFocusableInTouchMode = true
+            customSelectionActionModeCallback = null
+            einkRefreshController = splitEditorRefreshController
+        }
+
+        Log.d("MarkdownEditorActivity", "Text selection optimization configured with E-ink refresh")
     }
 
     private fun setupListeners() {
@@ -3712,7 +3747,8 @@ class MarkdownEditorActivity : android.app.Activity() {
         splitEditorScroll.post {
             splitEditorScroll.scrollTo(0, splitEditorScrollY)
             // 恢复光标位置
-            if (splitEditorCursorPosition >= 0 && splitEditorCursorPosition <= splitEditorText.text.length) {
+            val textLength = splitEditorText.text?.length ?: 0
+            if (splitEditorCursorPosition >= 0 && splitEditorCursorPosition <= textLength) {
                 splitEditorText.setSelection(splitEditorCursorPosition)
             }
             android.util.Log.d("ScrollSync", "恢复分屏编辑区位置: scrollY=$splitEditorScrollY, cursor=$splitEditorCursorPosition")
