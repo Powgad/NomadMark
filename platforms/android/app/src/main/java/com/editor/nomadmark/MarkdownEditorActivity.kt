@@ -3222,7 +3222,7 @@ class MarkdownEditorActivity : android.app.Activity() {
     // =========================================================================
 
     private fun updatePreview() {
-        val content = getCurrentContent()
+        val content = preprocessMarkdownForBreak(getCurrentContent())
 
         // 使用 Markwon 渲染 Markdown
         if (isPreviewMode) {
@@ -3239,6 +3239,97 @@ class MarkdownEditorActivity : android.app.Activity() {
             // 应用代码块边框
             applyCodeBlockBorder(splitPreviewText.text as Spanned)
         }
+    }
+
+    /**
+     * 预处理 Markdown 内容：将软换行转换为硬换行
+     *
+     * 在非代码块区域，将单个换行符转换为硬换行语法（行末加两个空格）。
+     * 这样用户在编辑时按一次回车，预览中就会显示为换行，符合墨水屏编辑器的直观期望。
+     *
+     * 规则：
+     * - 跳过代码块（```...```）
+     * - 跳过缩进代码块（4空格或tab开头）
+     * - 跳过行内代码（`...`）
+     * - 跳过已有硬换行标记的行
+     * - 在非连续换行（段落内换行）的行末添加两个空格
+     */
+    private fun preprocessMarkdownForBreak(content: String): String {
+        val result = StringBuilder()
+        val lines = content.split('\n')
+        var i = 0
+        val count = lines.size
+
+        while (i < count) {
+            val line = lines[i]
+
+            // 检测代码块开始 ```
+            if (line.startsWith("```")) {
+                // 输出整个代码块（不做处理）
+                result.append(line)
+                result.append('\n')
+                i++
+                // 跳过代码块内容
+                while (i < count && !lines[i].startsWith("```")) {
+                    result.append(lines[i])
+                    result.append('\n')
+                    i++
+                }
+                // 输出结束标记
+                if (i < count) {
+                    result.append(lines[i])
+                    result.append('\n')
+                    i++
+                }
+                continue
+            }
+
+            // 检测缩进代码块（4空格或tab开头）
+            if (line.startsWith("    ") || line.startsWith("\t")) {
+                // 输出整个缩进代码块
+                result.append(line)
+                result.append('\n')
+                i++
+                // 继续输出后续的缩进代码块行
+                while (i < count && (lines[i].startsWith("    ") || lines[i].startsWith("\t") || lines[i].isEmpty())) {
+                    result.append(lines[i])
+                    result.append('\n')
+                    i++
+                }
+                continue
+            }
+
+            // 检测行内代码（整行内容在行内代码中）
+            // 简化处理：跳过包含未闭合反引号的行
+            val backtickCount = line.count { it == '`' }
+            if (backtickCount % 2 != 0) {
+                // 奇数个反引号，可能跨越多行，保持原样
+                result.append(line)
+                result.append('\n')
+                i++
+                continue
+            }
+
+            // 处理普通文本行
+            val isNextLineEmpty = (i + 1 < count && lines[i + 1].isEmpty())
+            val isLastLine = (i == count - 1)
+            val hasHardBreakMark = line.endsWith("  ")
+
+            if (!isNextLineEmpty && !isLastLine && !hasHardBreakMark) {
+                // 在行末添加两个空格（硬换行标记）
+                // 先去掉行尾已有的空格
+                val trimmedEnd = line.trimEnd()
+                result.append(trimmedEnd)
+                result.append("  \n")
+            } else {
+                // 保持原样（段落分隔或已有硬换行标记）
+                result.append(line)
+                result.append('\n')
+            }
+            i++
+        }
+
+        return result.toString()
     }
 
     // =========================================================================
