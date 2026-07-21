@@ -66,6 +66,9 @@ import com.editor.nomadmark.markwon.StrictThematicBreakPlugin
 import com.editor.nomadmark.image.ImageProcessor
 import com.editor.nomadmark.image.SupernoteImageLoader
 import com.editor.nomadmark.image.DocumentContextHolder
+import com.editor.nomadmark.autosave.AutoSaveSession
+import com.editor.nomadmark.autosave.AutoSaveManager
+import com.editor.nomadmark.autosave.RecoverableSession
 
 /**
  * Markdown Editor Activity
@@ -230,6 +233,28 @@ class MarkdownEditorActivity : android.app.Activity() {
     /** 保存状态前的文本内容 */
     private var lastSavedContent: String = ""
 
+    // =========================================================================
+    // 自动保存
+    // =========================================================================
+
+    /** 自动保存会话 */
+    private var autoSaveSession: AutoSaveSession? = null
+
+    /** 自动保存延迟（毫秒）- 用户停止输入后多久保存 */
+    private val AUTO_SAVE_DELAY = 3000L
+
+    /** 最小自动保存间隔（毫秒）- 防止频繁保存 */
+    private val MIN_AUTO_SAVE_INTERVAL = 5000L
+
+    /** 自动保存 Handler */
+    private val autoSaveHandler = Handler(Looper.getMainLooper())
+
+    /** 自动保存 Runnable */
+    private var autoSaveRunnable: Runnable? = null
+
+    /** 上次自动保存时间 */
+    private var lastAutoSaveTime = 0L
+
     /** 搜索结果列表 */
     private var searchResults = mutableListOf<Pair<Int, Int>>() // start, end
     private var currentSearchIndex = 0
@@ -311,7 +336,19 @@ class MarkdownEditorActivity : android.app.Activity() {
         // 检查和请求存储权限
         checkAndRequestStoragePermissions()
 
-        // 处理打开的文件
+        // 清理过期的自动保存文件（7天前）
+        AutoSaveManager.cleanupExpiredSessions(this, maxAgeDays = 7)
+
+        // 检查是否有可恢复的自动保存内容
+        val recoverableSessions = AutoSaveManager.scanRecoverableSessions(this)
+        if (recoverableSessions.isNotEmpty()) {
+            // 有可恢复内容，显示恢复对话框
+            // 注意：showRecoveryDialog 会处理后续流程，这里不需要继续执行
+            showRecoveryDialog(recoverableSessions.first())
+            return // 不再继续执行 handleOpenIntent，等待用户选择
+        }
+
+        // 没有可恢复内容，正常处理打开的文件
         handleOpenIntent(intent)
 
         // 检测外接键盘状态
@@ -337,10 +374,10 @@ class MarkdownEditorActivity : android.app.Activity() {
         super.onPause()
         // 隐藏软键盘，防止退出到桌面时软键盘仍然显示
         hideSoftKeyboardFromAll()
-        // 防丢失保护 - 如果有修改，提示保存
+        // 自动保存 - 应用进入后台时保存
         if (isModified) {
-            // 实际应用中这里应该保存状态
-            Log.d("MarkdownEditorActivity", "Activity paused with unsaved changes")
+            performAutoSave()
+            Log.d("MarkdownEditorActivity", "Activity paused, auto-saved changes")
         }
     }
 
@@ -348,6 +385,13 @@ class MarkdownEditorActivity : android.app.Activity() {
         super.onDestroy()
         // 确保软键盘被隐藏（双重保险）
         hideSoftKeyboardFromAll()
+        // 清理自动保存 Handler
+        autoSaveHandler.removeCallbacksAndMessages(null)
+        // 如果是正常退出且没有未保存修改，清理临时文件
+        if (isFinishing && !isModified) {
+            autoSaveSession?.delete()
+            AutoSaveManager.clearAutosaveFlag(this)
+        }
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -1139,6 +1183,9 @@ class MarkdownEditorActivity : android.app.Activity() {
             // 暂时禁用 Core 文档集成，因为 JNI 接口未完全实现
             // 如需启用，需先完善 core/src/bridge/jni.rs 中的 nativeSearch 等函数
             Log.d("MarkdownEditorActivity", "Loaded file: $path, size: ${content.length}")
+
+            // 初始化自动保存会话
+            initAutoSaveSession()
         } catch (e: Exception) {
             Log.e("MarkdownEditorActivity", "Failed to load file", e)
             Toast.makeText(this, "加载文件失败: ${e.message}", Toast.LENGTH_LONG).show()
@@ -1164,6 +1211,9 @@ class MarkdownEditorActivity : android.app.Activity() {
             undoStack.clear()
             redoStack.clear()
             undoStack.add(editorText.text.toString())
+
+            // 初始化自动保存会话
+            initAutoSaveSession()
 
             Toast.makeText(this, "已创建新文件", Toast.LENGTH_SHORT).show()
         }
@@ -3859,6 +3909,7 @@ class MarkdownEditorActivity : android.app.Activity() {
         override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
             if (!isSyncing && !isUndoingOrRedoing) {
                 markAsModified()
+                scheduleAutoSave()  // 调度自动保存
                 updatePreview()
             }
         }
@@ -4285,6 +4336,9 @@ class MarkdownEditorActivity : android.app.Activity() {
         redoStack.clear()
         undoStack.add(content)
 
+        // 初始化自动保存会话
+        initAutoSaveSession()
+
         Log.d("MarkdownEditorActivity", "Loaded file: $filePath, size: ${content.length}")
     }
 
@@ -4307,5 +4361,154 @@ class MarkdownEditorActivity : android.app.Activity() {
             result = uri.lastPathSegment ?: "未命名.md"
         }
         return result
+    }
+
+    // =========================================================================
+    // 自动保存
+    // =========================================================================
+
+    /**
+     * 初始化自动保存会话
+     */
+    private fun initAutoSaveSession() {
+        autoSaveSession = AutoSaveManager.createSession(this, filePath, fileUri)
+        Log.d("MarkdownEditorActivity", "初始化自动保存会话")
+    }
+
+    /**
+     * 调度自动保存（防抖）
+     * 用户停止输入 3 秒后执行保存
+     */
+    private fun scheduleAutoSave() {
+        // 取消之前的保存任务
+        autoSaveRunnable?.let { autoSaveHandler.removeCallbacks(it) }
+
+        // 创建新的保存任务
+        autoSaveRunnable = Runnable {
+            if (isModified) {
+                performAutoSave()
+            }
+        }
+
+        // 延迟执行
+        autoSaveHandler.postDelayed(autoSaveRunnable!!, AUTO_SAVE_DELAY)
+    }
+
+    /**
+     * 执行自动保存
+     */
+    private fun performAutoSave() {
+        val now = System.currentTimeMillis()
+        // 检查最小保存间隔，避免频繁保存
+        if (now - lastAutoSaveTime < MIN_AUTO_SAVE_INTERVAL) {
+            Log.d("MarkdownEditorActivity", "跳过频繁自动保存")
+            return
+        }
+
+        lastAutoSaveTime = now
+
+        Thread {
+            try {
+                val content = getCurrentContent()
+                val session = autoSaveSession ?: run {
+                    Log.w("MarkdownEditorActivity", "自动保存会话不存在")
+                    return@Thread
+                }
+
+                val success = session.save(
+                    content = content,
+                    lastSavedContent = lastSavedContent,
+                    isModified = isModified
+                )
+
+                if (success) {
+                    // 记录自动保存状态
+                    AutoSaveManager.markHasAutosave(this, session.sessionId)
+                    Log.d("MarkdownEditorActivity", "自动保存成功: ${session.fileName}")
+                }
+            } catch (e: Exception) {
+                Log.e("MarkdownEditorActivity", "自动保存异常", e)
+            }
+        }.start()
+    }
+
+    /**
+     * 显示恢复对话框
+     */
+    private fun showRecoveryDialog(session: RecoverableSession) {
+        val content = session.loadContent() ?: run {
+            Log.w("MarkdownEditorActivity", "无法加载恢复内容")
+            return
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("发现未保存的内容")
+            .setMessage(buildString {
+                append("检测到上次的编辑未保存，是否恢复？\n\n")
+                append("文件：${session.metadata.fileName}\n")
+                append("时间：${session.getFormattedTime()}\n")
+                append("大小：${session.getFormattedSize()}")
+            })
+            .setPositiveButton("恢复") { _, _ ->
+                recoverContent(session, content)
+            }
+            .setNegativeButton("放弃") { _, _ ->
+                session.delete()
+                AutoSaveManager.clearAutosaveFlag(this)
+                // 继续正常启动流程
+                handleOpenIntent(intent)
+            }
+            .setNeutralButton("稍后") { _, _ ->
+                // 保留临时文件，继续正常启动
+                handleOpenIntent(intent)
+            }
+            .setOnCancelListener {
+                // 取消也保留临时文件，继续启动
+                handleOpenIntent(intent)
+            }
+            .show()
+    }
+
+    /**
+     * 恢复内容
+     */
+    private fun recoverContent(session: RecoverableSession, content: String) {
+        // 恢复状态
+        filePath = session.metadata.originalFilePath
+        fileUri = session.metadata.originalFileUri?.let { android.net.Uri.parse(it) }
+        fileName = session.metadata.fileName
+
+        // 设置当前文档目录，用于图片相对路径解析
+        if (filePath != null) {
+            DocumentContextHolder.setCurrentDocument(filePath)
+        } else {
+            DocumentContextHolder.clear()
+        }
+
+        // 加载内容
+        editorText.setText(content)
+        splitEditorText.setText(content)
+        lastSavedContent = content  // 恢复的内容作为已保存内容
+        isModified = session.metadata.isModified
+
+        // 初始化新会话
+        initAutoSaveSession()
+
+        // 更新 UI
+        updateSaveButton()
+        updateFilenameDisplay()
+        updatePreview()
+
+        // 清空撤销栈
+        undoStack.clear()
+        redoStack.clear()
+        undoStack.add(content)
+
+        // 清除恢复标志
+        session.delete()
+        AutoSaveManager.clearAutosaveFlag(this)
+
+        Toast.makeText(this, "已恢复未保存内容", Toast.LENGTH_SHORT).show()
+        Log.d("MarkdownEditorActivity", "内容已恢复: ${session.metadata.fileName}")
     }
 }
