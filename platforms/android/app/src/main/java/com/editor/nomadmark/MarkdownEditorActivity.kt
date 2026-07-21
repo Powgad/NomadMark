@@ -1722,8 +1722,15 @@ class MarkdownEditorActivity : android.app.Activity() {
             editorLayer.visibility = View.GONE
             previewLayer.visibility = View.VISIBLE
 
-            // 在预览模式下隐藏手势覆盖层
-            gestureLayer.visibility = View.GONE
+            // 预览模式下的手势层处理
+            // 如果在修订模式，启用手势层以支持修订功能
+            if (isRevisionMode) {
+                gestureLayer.visibility = View.VISIBLE
+                gestureLayer.isGestureEnabled = true
+            } else {
+                gestureLayer.visibility = View.GONE
+                gestureLayer.isGestureEnabled = false
+            }
 
             // 预览模式下隐藏光标（不支持编辑）
             editorText.isCursorVisible = false

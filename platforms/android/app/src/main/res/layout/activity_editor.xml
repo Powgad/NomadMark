@@ -389,11 +389,31 @@
                 android:focusableInTouchMode="false" />
         </com.editor.nomadmark.ObservableScrollView>
 
-        <!-- 分隔线 -->
-        <View
+        <!-- 分隔线（双线样式） -->
+        <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="3dp"
-            android:background="#000000" />
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <!-- 第一条线 -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="#000000" />
+
+            <!-- 空隙 -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="2dp"
+                android:background="@android:color/transparent" />
+
+            <!-- 第二条线 -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="#000000" />
+
+        </LinearLayout>
 
         <!-- 下半区：编辑区 -->
         <com.editor.nomadmark.ObservableScrollView
