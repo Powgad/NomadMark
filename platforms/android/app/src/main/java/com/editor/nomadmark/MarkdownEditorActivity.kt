@@ -32,6 +32,9 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.InputMethodManager
 import android.widget.*
+import android.view.LayoutInflater
+import android.view.ViewGroup
+import kotlin.collections.ArrayDeque
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import java.io.File
@@ -3244,27 +3247,66 @@ class MarkdownEditorActivity : android.app.Activity() {
 
     private fun updateToc() {
         val content = getCurrentContent()
-        val headings = mutableListOf<TocItem>()
+        val rawHeadings = mutableListOf<TocItem>()
 
+        // 解析所有标题
         content.lines().forEachIndexed { index, line ->
             when {
-                line.startsWith("# ") -> headings.add(TocItem(line.substring(2), 1, index))
-                line.startsWith("## ") -> headings.add(TocItem(line.substring(3), 2, index))
-                line.startsWith("### ") -> headings.add(TocItem(line.substring(4), 3, index))
-                line.startsWith("#### ") -> headings.add(TocItem(line.substring(5), 4, index))
-                line.startsWith("##### ") -> headings.add(TocItem(line.substring(6), 5, index))
-                line.startsWith("###### ") -> headings.add(TocItem(line.substring(7), 6, index))
+                line.startsWith("# ") -> rawHeadings.add(TocItem(line.substring(2).trim(), 1, index))
+                line.startsWith("## ") -> rawHeadings.add(TocItem(line.substring(3).trim(), 2, index))
+                line.startsWith("### ") -> rawHeadings.add(TocItem(line.substring(4).trim(), 3, index))
+                line.startsWith("#### ") -> rawHeadings.add(TocItem(line.substring(5).trim(), 4, index))
+                line.startsWith("##### ") -> rawHeadings.add(TocItem(line.substring(6).trim(), 5, index))
+                line.startsWith("###### ") -> rawHeadings.add(TocItem(line.substring(7).trim(), 6, index))
             }
         }
 
-        val adapter = TocSimpleAdapter(this, headings)
+        // 构建层级树结构
+        val rootHeadings = buildTocTree(rawHeadings)
+
+        val adapter = TocSimpleAdapter(this, rootHeadings)
         tocList.adapter = adapter
 
+        // 点击标题跳转（注意：点击展开图标不会触发）
+        tocList.onItemClickListener = null  // 先清除之前的
         tocList.setOnItemClickListener { _, _, position, _ ->
-            val item = headings[position]
+            val adapter = tocList.adapter as? TocSimpleAdapter ?: return@setOnItemClickListener
+            val item = adapter.getItem(position) ?: return@setOnItemClickListener
+
+            // 只有点击标题文本区域才跳转，点击图标是展开/收起
             scrollToLine(item.lineNumber)
             toggleToc()
         }
+    }
+
+    /** 构建目录树结构 */
+    private fun buildTocTree(items: List<TocItem>): List<TocItem> {
+        val root = mutableListOf<TocItem>()
+        val stack = ArrayDeque<TocItem>()
+
+        for (item in items) {
+            // 找到父级（移除同级或更高级的）
+            while (stack.isNotEmpty() && stack.last().level >= item.level) {
+                stack.removeLast()
+            }
+
+            if (stack.isEmpty()) {
+                // 根级标题
+                root.add(item)
+            } else {
+                // 子级标题
+                val parent = stack.last()
+                parent.children.add(item)
+                item.parent = parent
+            }
+
+            // 如果可能还有子级，压入栈
+            if (item.level < 6) {
+                stack.addLast(item)
+            }
+        }
+
+        return root
     }
 
     private fun scrollToLine(lineNumber: Int) {
@@ -3720,50 +3762,116 @@ class MarkdownEditorActivity : android.app.Activity() {
     // 目录项数据类
     // =========================================================================
 
-    data class TocItem(val title: String, val level: Int, val lineNumber: Int)
+    // =========================================================================
+    // 目录项数据类
+    // =========================================================================
 
-    // 目录适配器 - 统一格式规范
-    // - 标题不包含 # 符号
-    // - 所有标题字体大小统一
-    // - 仅通过缩进区分层级 (H1=0, H2=40px, H3=80px...)
-    class TocSimpleAdapter(context: Context, items: List<TocItem>) : ArrayAdapter<TocItem>(context, android.R.layout.simple_list_item_1, items) {
+    data class TocItem(
+        val title: String,
+        val level: Int,
+        val lineNumber: Int,
+        var isExpanded: Boolean = true,
+        val children: MutableList<TocItem> = mutableListOf(),
+        var parent: TocItem? = null
+    ) {
+        val hasChildren: Boolean
+            get() = children.isNotEmpty()
+    }
+
+    // 目录适配器 - 支持展开/收起
+    class TocSimpleAdapter(
+        private val context: Context,
+        private var items: List<TocItem>
+    ) : BaseAdapter() {
+
+        /** 扁平化的显示列表 */
+        private val flatList: MutableList<TocItem> = mutableListOf()
+
         companion object {
             /** 统一字体大小 (sp) */
-            const val UNIFIED_TEXT_SIZE = 20f
+            const val UNIFIED_TEXT_SIZE = 18f
 
             /** 每级缩进 (dp) - H1=0, H2=1单位, H3=2单位... */
-            const val INDENT_PER_LEVEL_DP = 16
+            const val INDENT_PER_LEVEL_DP = 20
+
+            /** 图标大小 */
+            const val ICON_SIZE_DP = 32
         }
 
+        init {
+            buildFlatList()
+        }
+
+        /** 构建扁平化显示列表 */
+        private fun buildFlatList() {
+            flatList.clear()
+            for (item in items) {
+                addToList(item, flatList)
+            }
+        }
+
+        /** 递归添加到列表 */
+        private fun addToList(item: TocItem, list: MutableList<TocItem>) {
+            list.add(item)
+            if (item.isExpanded) {
+                for (child in item.children) {
+                    addToList(child, list)
+                }
+            }
+        }
+
+        /** 切换展开/收起 */
+        fun toggleExpanded(position: Int) {
+            if (position !in 0 until flatList.size) return
+
+            val item = flatList[position]
+            if (!item.hasChildren) return
+
+            item.isExpanded = !item.isExpanded
+            buildFlatList()
+            notifyDataSetChanged()
+        }
+
+        override fun getCount(): Int = flatList.size
+
+        override fun getItem(position: Int): TocItem? {
+            return if (position in 0 until flatList.size) flatList[position] else null
+        }
+
+        override fun getItemId(position: Int): Long = position.toLong()
+
         override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
-            val view = super.getView(position, convertView, parent)
+            val view = convertView ?: LayoutInflater.from(context)
+                .inflate(R.layout.toc_item_layout, parent, false)
+
             val item = getItem(position) ?: return view
-            val textView = view as TextView
+            val iconView = view.findViewById<TextView>(R.id.toc_expand_icon)
+            val titleView = view.findViewById<TextView>(R.id.toc_title)
 
-            // 标题文本不包含 # 符号
-            textView.text = item.title
+            // 设置标题文本
+            titleView.text = item.title
+            titleView.textSize = UNIFIED_TEXT_SIZE
 
-            // 统一字体大小，不根据级别变化
-            textView.textSize = UNIFIED_TEXT_SIZE
-
-            // 👇 添加以下代码设置 0.5 倍行距
-            textView.setLineSpacing(0f, 0.5f)  // (add, multiplier)
-            textView.includeFontPadding = false
-
-            // 通过缩进区分层级
-            // H1 (level=1): 无缩进
-            // H2 (level=2): 1单位缩进
-            // H3 (level=3): 2单位缩进
+            // 设置缩进
             val indentDp = (item.level - 1) * INDENT_PER_LEVEL_DP
-            val indentPx = (indentDp * textView.resources.displayMetrics.density).toInt()
-
-            // 设置左边距实现缩进
-            textView.setPadding(
+            val indentPx = (indentDp * context.resources.displayMetrics.density).toInt()
+            view.setPadding(
                 indentPx,
-                textView.paddingTop,
-                textView.paddingRight,
-                textView.paddingBottom
+                view.paddingTop,
+                view.paddingRight,
+                view.paddingBottom
             )
+
+            // 设置展开/收起图标
+            if (item.hasChildren) {
+                iconView.visibility = View.VISIBLE
+                iconView.text = if (item.isExpanded) "▼" else "▶"
+                iconView.setOnClickListener {
+                    toggleExpanded(position)
+                }
+            } else {
+                iconView.visibility = View.GONE
+            }
 
             return view
         }
