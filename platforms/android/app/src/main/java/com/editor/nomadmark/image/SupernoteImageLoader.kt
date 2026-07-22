@@ -66,7 +66,7 @@ object SupernoteImageLoader {
             .data(uri)
             .precision(Precision.INEXACT)
             .allowHardware(false)
-            .allowRgb565(true)
+            .allowRgb565(false)  // 禁用 RGB_565 以避免图片渲染问题
             .crossfade(false)
             .build()
     }

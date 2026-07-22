@@ -378,7 +378,9 @@
             android:layout_height="0dp"
             android:layout_weight="6"
             android:background="#FAFAFA"
-            android:fillViewport="true">
+            android:fillViewport="true"
+            android:scrollbars="none"
+            android:overScrollMode="never">
 
             <TextView
                 android:id="@+id/split_preview_text"
@@ -424,7 +426,9 @@
             android:layout_height="0dp"
             android:layout_weight="4"
             android:background="#FFFFFF"
-            android:fillViewport="true">
+            android:fillViewport="true"
+            android:scrollbars="none"
+            android:overScrollMode="never">
 
             <com.editor.nomadmark.RefreshEditText
                 android:id="@+id/split_editor_text"

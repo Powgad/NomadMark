@@ -40,6 +40,10 @@ class ObservableScrollView @JvmOverloads constructor(
     override fun onScrollChanged(scrollX: Int, scrollY: Int, oldScrollX: Int, oldScrollY: Int) {
         super.onScrollChanged(scrollX, scrollY, oldScrollX, oldScrollY)
 
+        // 调试日志：检测滚动状态变化
+        val isScrolling = scrollY != oldScrollY
+        android.util.Log.v("ObservableScrollView", "Scroll: x=$scrollX, y=$scrollY, oldX=$oldScrollX, oldY=$oldScrollY, scrolling=$isScrolling")
+
         // 通知回调
         onScrollChangedCallback?.invoke(scrollX, scrollY, oldScrollX, oldScrollY)
 

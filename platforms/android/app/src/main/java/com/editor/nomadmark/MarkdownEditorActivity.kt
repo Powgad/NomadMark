@@ -576,6 +576,13 @@ class MarkdownEditorActivity : android.app.Activity() {
                 val end = spannable.getSpanEnd(span)
                 val flags = spannable.getSpanFlags(span)
 
+                // 检查代码块范围内是否包含图片（ReplacementSpan）
+                val replacementSpans = spannable.getSpans(start, end, android.text.style.ReplacementSpan::class.java)
+                if (replacementSpans.isNotEmpty()) {
+                    Log.d("CodeBlockBorder", "跳过包含图片的代码块: [$start-$end], ${replacementSpans.size} 个 ReplacementSpan")
+                    continue  // 跳过包含图片的代码块
+                }
+
                 // 为代码块的每一行应用边框
                 applyBorderToLines(spannable, start, end, flags)
                 foundCodeBlocks = true
@@ -594,6 +601,13 @@ class MarkdownEditorActivity : android.app.Activity() {
                 val end = spannable.getSpanEnd(span)
                 val flags = spannable.getSpanFlags(span)
 
+                // 检查代码块范围内是否包含图片（ReplacementSpan）
+                val replacementSpans = spannable.getSpans(start, end, android.text.style.ReplacementSpan::class.java)
+                if (replacementSpans.isNotEmpty()) {
+                    Log.d("CodeBlockBorder", "跳过包含图片的 FencedCodeBlock: [$start-$end], ${replacementSpans.size} 个 ReplacementSpan")
+                    continue  // 跳过包含图片的代码块
+                }
+
                 // 为代码块的每一行应用边框
                 applyBorderToLines(spannable, start, end, flags)
                 foundCodeBlocks = true
@@ -606,8 +620,21 @@ class MarkdownEditorActivity : android.app.Activity() {
         if (!foundCodeBlocks) {
             val bgSpans = spannable.getSpans(0, spanned.length, android.text.style.BackgroundColorSpan::class.java)
 
+            // 过滤掉包含图片的 BackgroundColorSpan
+            val filteredBgSpans = bgSpans.filterNot { bgSpan ->
+                val start = spannable.getSpanStart(bgSpan)
+                val end = spannable.getSpanEnd(bgSpan)
+                val replacementSpans = spannable.getSpans(start, end, android.text.style.ReplacementSpan::class.java)
+                if (replacementSpans.isNotEmpty()) {
+                    Log.d("CodeBlockBorder", "跳过包含图片的 BackgroundColorSpan: [$start-$end]")
+                }
+                replacementSpans.isNotEmpty()
+            }.toTypedArray()
+
+            Log.d("CodeBlockBorder", "找到 ${bgSpans.size} 个 BackgroundColorSpan，过滤后 ${filteredBgSpans.size} 个")
+
             // 将相邻的背景色 span 合并为代码块
-            mergeAdjacentBackgroundSpans(spannable, bgSpans)
+            mergeAdjacentBackgroundSpans(spannable, filteredBgSpans)
         }
     }
 
@@ -615,6 +642,13 @@ class MarkdownEditorActivity : android.app.Activity() {
      * 为代码块的每一行应用边框 Span
      */
     private fun applyBorderToLines(spannable: Spannable, blockStart: Int, blockEnd: Int, flags: Int) {
+        // 双重检查：确保代码块中不包含图片（防止误判）
+        val replacementSpans = spannable.getSpans(blockStart, blockEnd, android.text.style.ReplacementSpan::class.java)
+        if (replacementSpans.isNotEmpty()) {
+            Log.d("CodeBlockBorder", "安全检查：跳过包含图片的代码块: [$blockStart-$blockEnd], ${replacementSpans.size} 个 ReplacementSpan")
+            return  // 不应用边框
+        }
+
         // 转换 dp 到 px
         val density = resources.displayMetrics.density
         val horizontalMarginPx = (codeBlockHorizontalMarginDp * density).toInt()
@@ -643,6 +677,13 @@ class MarkdownEditorActivity : android.app.Activity() {
             val (lineStart, lineEnd) = linePositions[i]
             val isFirstLine = (i == 0)
             val isLastLine = (i == linePositions.size - 1)
+
+            // 检查当前行是否包含图片（ReplacementSpan，包括 ImageSpan）
+            val lineReplacementSpans = spannable.getSpans(lineStart, lineEnd, android.text.style.ReplacementSpan::class.java)
+            if (lineReplacementSpans.isNotEmpty()) {
+                Log.d("CodeBlockBorder", "跳过包含图片的行: [$lineStart-$lineEnd], ${lineReplacementSpans.size} 个 ReplacementSpan")
+                continue  // 跳过包含图片的行，不应用边框
+            }
 
             spannable.setSpan(
                 CodeBlockBorderSpan(isFirstLine, isLastLine, screenWidth, horizontalMarginPx),
@@ -694,6 +735,14 @@ class MarkdownEditorActivity : android.app.Activity() {
         // 为每个合并后的范围应用边框
         for ((start, end) in mergedRanges) {
             val flags = Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+
+            // 在应用边框前再次检查整个范围是否包含图片
+            val rangeReplacementSpans = spannable.getSpans(start, end, android.text.style.ReplacementSpan::class.java)
+            if (rangeReplacementSpans.isNotEmpty()) {
+                Log.d("CodeBlockBorder", "跳过包含图片的合并范围: [$start-$end], ${rangeReplacementSpans.size} 个 ReplacementSpan")
+                continue  // 跳过包含图片的范围
+            }
+
             applyBorderToLines(spannable, start, end, flags)
         }
 
@@ -3348,6 +3397,12 @@ class MarkdownEditorActivity : android.app.Activity() {
             removeUnderlines(previewText.text as Spanned)
             // 应用代码块边框
             applyCodeBlockBorder(previewText.text as Spanned)
+            // 延迟刷新以确图片加载完成后重新渲染
+            previewLayer.postDelayed({
+                previewText.requestLayout()
+                previewText.invalidate()
+                Log.d("ImageRefresh", "预览区延迟刷新完成")
+            }, 100)
         }
         if (isSplitMode) {
             markwon.setMarkdown(splitPreviewText, content)
@@ -3355,6 +3410,12 @@ class MarkdownEditorActivity : android.app.Activity() {
             removeUnderlines(splitPreviewText.text as Spanned)
             // 应用代码块边框
             applyCodeBlockBorder(splitPreviewText.text as Spanned)
+            // 延迟刷新以确图片加载完成后重新渲染（解决滚动后图片竖线问题）
+            splitPreviewScroll.postDelayed({
+                splitPreviewText.requestLayout()
+                splitPreviewText.invalidate()
+                Log.d("ImageRefresh", "分屏预览区延迟刷新完成")
+            }, 100)
         }
     }
 
