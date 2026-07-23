@@ -63,6 +63,10 @@ import android.text.style.URLSpan
 import android.text.style.UnderlineSpan
 import com.editor.nomadmark.format.ThematicBreakFormatter
 import com.editor.nomadmark.markwon.StrictThematicBreakPlugin
+import com.editor.nomadmark.markwon.MusicSheetPlugin
+import com.editor.nomadmark.markwon.MusicSheetDetector
+import com.editor.nomadmark.markwon.MusicSheetSpan
+import com.editor.nomadmark.music.MusicSheetRenderer
 import com.editor.nomadmark.image.ImageProcessor
 import com.editor.nomadmark.image.SupernoteImageLoader
 import com.editor.nomadmark.image.DocumentContextHolder
@@ -181,6 +185,15 @@ class MarkdownEditorActivity : android.app.Activity() {
 
     /** 图片处理器（针对 Supernote 优化） */
     private val imageProcessor: ImageProcessor by lazy { ImageProcessor(this) }
+
+    /** 乐谱渲染器 */
+    private val musicSheetRenderer: MusicSheetRenderer by lazy {
+        Log.d("MusicSheet", "初始化 MusicSheetRenderer")
+        MusicSheetRenderer(this)
+    }
+
+    /** 当前活动的 MusicSheetSpan 列表 */
+    private val activeMusicSheetSpans = mutableListOf<MusicSheetSpan>()
 
     /** 滚动同步管理器 */
     private var scrollSyncManager: ScrollSyncManager? = null
@@ -427,6 +440,14 @@ class MarkdownEditorActivity : android.app.Activity() {
                 .color(Color.rgb(80, 80, 80))  // 深灰色，墨水屏友好
                 .height(2)                        // 2dp 高度
                 .padding(24, 24)                 // 上下各 24dp 间距
+                .build())
+            // 添加乐谱渲染插件（支持 ABC 记谱法和简谱）
+            .usePlugin(MusicSheetPlugin.builder()
+                .defaultTempo(120)
+                .enablePlayback(true)
+                .backgroundColor(Color.rgb(245, 245, 245))
+                .borderColor(Color.rgb(80, 80, 80))
+                .borderWidth(2)
                 .build())
             // 添加自定义主题配置，移除标题下方的分隔线
             .usePlugin(object : AbstractMarkwonPlugin() {
@@ -747,6 +768,111 @@ class MarkdownEditorActivity : android.app.Activity() {
         }
 
         Log.d("CodeBlockBorder", "Merged ${bgSpans.size} BackgroundColorSpan into ${mergedRanges.size} code blocks")
+    }
+
+    /**
+     * 应用乐谱块渲染
+     *
+     * 检测 ```music 和 ```简谱 代码块，并应用特殊渲染
+     */
+    private fun applyMusicSheetRendering(spanned: Spanned) {
+        val spannable = spanned as Spannable
+
+        try {
+            // 清除旧的 MusicSheetSpan 引用
+            activeMusicSheetSpans.clear()
+
+            // 使用 MusicSheetDetector 检测乐谱块
+            val musicSheets = MusicSheetDetector.detectMusicSheets(spanned)
+
+            if (musicSheets.isEmpty()) {
+                Log.d("MusicSheet", "未检测到乐谱块")
+                return
+            }
+
+            Log.d("MusicSheet", "检测到 ${musicSheets.size} 个乐谱块")
+
+            // 获取 CodeBlockSpan 类（用于移除）
+            val codeBlockSpanClass = Class.forName("io.noties.markwon.core.spans.CodeBlockSpan")
+
+            // 为每个乐谱块应用 MusicSheetSpan 并触发异步渲染
+            for (musicSheet in musicSheets) {
+                Log.d("MusicSheet", "处理乐谱块: [${musicSheet.blockStart}-${musicSheet.blockEnd}], 标题=${musicSheet.musicData.title}")
+
+                // 打印该范围内的所有 Span（调试用）
+                val allSpans = spannable.getSpans(musicSheet.blockStart, musicSheet.blockEnd, Any::class.java)
+                Log.d("MusicSheet", "范围内的 Span 数量: ${allSpans.size}")
+                for (s in allSpans.take(5)) {
+                    Log.d("MusicSheet", "  Span: ${s.javaClass.simpleName}")
+                }
+
+                val musicSpan = MusicSheetSpan(
+                    this,
+                    musicSheet.musicData,
+                    screenWidth
+                )
+
+                // 设置播放按钮点击监听器（未来功能）
+                musicSpan.onPlayButtonClickListener = { musicData ->
+                    Log.d("MusicSheet", "播放乐谱: ${musicData.title ?: musicData.id}")
+                    // TODO: 实现音频播放
+                    // MusicPlayerManager.play(this, musicData)
+                }
+
+                // 移除原始的 CodeBlockSpan（避免影响显示）
+                try {
+                    val codeSpans = spannable.getSpans(musicSheet.blockStart, musicSheet.blockEnd, codeBlockSpanClass)
+                    for (codeSpan in codeSpans) {
+                        spannable.removeSpan(codeSpan)
+                    }
+                    Log.d("MusicSheet", "移除了 ${codeSpans.size} 个 CodeBlockSpan")
+                } catch (e: Exception) {
+                    Log.e("MusicSheet", "移除 CodeBlockSpan 失败", e)
+                }
+
+                // 应用 MusicSheetSpan
+                spannable.setSpan(
+                    musicSpan,
+                    musicSheet.blockStart,
+                    musicSheet.blockEnd,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+
+                // 添加到活动列表
+                activeMusicSheetSpans.add(musicSpan)
+
+                Log.d("MusicSheet", "应用 MusicSheetSpan: [${musicSheet.blockStart}-${musicSheet.blockEnd}]")
+
+                // 触发异步渲染
+                try {
+                    Log.d("MusicSheet", "准备调用渲染器: ${musicSheet.musicData.title ?: musicSheet.musicData.id}")
+                    musicSheetRenderer.renderMusicToBitmap(musicSheet.musicData) { bitmap ->
+                        // 渲染完成，更新显示
+                        Log.d("MusicSheet", "渲染回调触发: ${musicSheet.musicData.title ?: musicSheet.musicData.id}, bitmap=${bitmap?.width}x${bitmap?.height}")
+
+                        // 更新 Span 的位图
+                        val heightChanged = musicSpan.updateBitmap(bitmap)
+
+                        // 刷新显示
+                        runOnUiThread {
+                            if (heightChanged) {
+                                // 高度变化，需要重新布局
+                                previewText.requestLayout()
+                                splitPreviewText?.requestLayout()
+                            } else {
+                                // 仅重绘
+                                previewText.invalidate()
+                                splitPreviewText?.invalidate()
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("MusicSheet", "渲染调用失败", e)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("MusicSheet", "处理乐谱块时出错", e)
+        }
     }
 
     /**
@@ -3395,7 +3521,9 @@ class MarkdownEditorActivity : android.app.Activity() {
             markwon.setMarkdown(previewText, content)
             // 移除下划线
             removeUnderlines(previewText.text as Spanned)
-            // 应用代码块边框
+            // 先应用乐谱渲染（乐谱块需要先处理，避免被代码块边框覆盖）
+            applyMusicSheetRendering(previewText.text as Spanned)
+            // 应用代码块边框（会跳过乐谱块）
             applyCodeBlockBorder(previewText.text as Spanned)
             // 延迟刷新以确图片加载完成后重新渲染
             previewLayer.postDelayed({
@@ -3408,7 +3536,9 @@ class MarkdownEditorActivity : android.app.Activity() {
             markwon.setMarkdown(splitPreviewText, content)
             // 移除下划线
             removeUnderlines(splitPreviewText.text as Spanned)
-            // 应用代码块边框
+            // 先应用乐谱渲染（乐谱块需要先处理，避免被代码块边框覆盖）
+            applyMusicSheetRendering(splitPreviewText.text as Spanned)
+            // 应用代码块边框（会跳过乐谱块）
             applyCodeBlockBorder(splitPreviewText.text as Spanned)
             // 延迟刷新以确图片加载完成后重新渲染（解决滚动后图片竖线问题）
             splitPreviewScroll.postDelayed({

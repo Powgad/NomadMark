@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    android:sharedUserId="android.uid.system">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- Notification permission for crash reports (API 33+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
