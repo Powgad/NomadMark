@@ -201,9 +201,6 @@ class MarkdownEditorActivity : android.app.Activity() {
     /** 当前活动的 MusicSheetSpan 列表 */
     private val activeMusicSheetSpans = mutableListOf<MusicSheetSpan>()
 
-    /** 是否正在更新预览（防止无限循环） */
-    private var isUpdatingPreviewWithMusicSheets = false
-
     // =========================================================================
     // 渲染引擎设置
     // =========================================================================
@@ -654,20 +651,29 @@ class MarkdownEditorActivity : android.app.Activity() {
                 val musicSheetWidth = screenWidth - horizontalMarginPx * 2
                 musicSheetRenderer.renderToBitmap(musicSheet.musicData, musicSheetWidth) { bitmap ->
                     Log.d(TAG, "渲染回调: title=${musicSheet.musicData.title}, bitmap=${if (bitmap != null) "${bitmap.width}x${bitmap.height}" else "null"}")
-                    val wasEmpty = musicSpan.bitmap == null
                     val heightChanged = musicSpan.updateBitmap(bitmap)
 
-                    // 刷新显示 - 只在首次设置 Bitmap 且没有正在更新时重新渲染，避免无限循环
+                    // 刷新显示 - MusicSheetSpan 是 ReplacementSpan，updateBitmap() 后只需 invalidate()
+                    // 下次 draw() 会自动使用新 bitmap
                     runOnUiThread {
-                        if (wasEmpty && bitmap != null && !isUpdatingPreviewWithMusicSheets) {
-                            // 首次设置 Bitmap，需要重新渲染文本
-                            isUpdatingPreviewWithMusicSheets = true
-                            updatePreview()
-                            isUpdatingPreviewWithMusicSheets = false
-                        } else if (heightChanged) {
-                            // 高度变化，只需重绘
-                            previewText.invalidate()
-                            splitPreviewText?.invalidate()
+                        if (heightChanged) {
+                            // 高度变化，需要重新布局
+                            if (isPreviewMode) {
+                                previewText.requestLayout()
+                                previewText.invalidate()
+                            }
+                            if (isSplitMode) {
+                                splitPreviewText?.requestLayout()
+                                splitPreviewText?.invalidate()
+                            }
+                        } else {
+                            // 只是 bitmap 内容更新，只需重绘
+                            if (isPreviewMode) {
+                                previewText.invalidate()
+                            }
+                            if (isSplitMode) {
+                                splitPreviewText?.invalidate()
+                            }
                         }
                     }
                 }

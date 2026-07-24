@@ -160,6 +160,14 @@ class WebViewMusicRenderer(private val context: Context) {
                     min-width: ${width}px;
                 }
                 .abcjs-play { display: none !important; }
+                /* 增加标题和乐谱之间的间距 */
+                .abcjs-header {
+                    margin-bottom: 60px !important;
+                }
+                /* 增加乐谱各部分之间的间距 */
+                .abcjs-row {
+                    margin-bottom: 20px;
+                }
             </style>
             <script src="file:///android_asset/abcjs/abcjs-basic-min.js"></script>
         </head>

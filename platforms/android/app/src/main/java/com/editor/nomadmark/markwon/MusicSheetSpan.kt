@@ -42,13 +42,19 @@ class MusicSheetSpan(
         end: Int,
         fm: Paint.FontMetricsInt?
     ): Int {
-        val height = bitmap?.height ?: 200 // 默认高度
+        // 上下间距，确保乐谱不与相邻内容重叠
+        val verticalPadding = 80  // 上下各预留 40px
+        val height = (bitmap?.height ?: 200) + verticalPadding
+
         if (fm != null) {
             // 设置 FontMetricsInt 以正确计算行高
+            // ascent 和 descent 决定了文本的基线位置
+            // 我们让基线在中心，这样上下都有空间
             fm.ascent = -height / 2
             fm.descent = height / 2
-            fm.top = fm.ascent
-            fm.bottom = fm.descent
+            // top 和 bottom 决定了行的扩展边界，留出额外间距
+            fm.top = fm.ascent - verticalPadding / 2
+            fm.bottom = fm.descent + verticalPadding / 2
         }
         return screenWidth
     }
@@ -80,10 +86,16 @@ class MusicSheetSpan(
             android.util.Log.d("MusicSheetSpan", "Bitmap pixels: $pixelColors, isRecycled=${it.isRecycled}")
 
             // 绘制 Bitmap，使用独立的 Paint 避免受原始 paint 影响
-            val bitmapTop = top + 10 // 上边距
+            // 计算垂直居中位置：总高度减去 bitmap 高度后除以 2，得到上边距
+            val totalHeight = bottom - top
+            val bitmapHeight = it.height
+            val verticalPadding = 80  // 与 getSize() 中保持一致
+            val topMargin = (totalHeight - bitmapHeight) / 2
+            val bitmapTop = top + topMargin.coerceAtLeast(verticalPadding / 2)
+
             val bitmapPaint = Paint()
             canvas.drawBitmap(it, x, bitmapTop.toFloat(), bitmapPaint)
-            android.util.Log.d("MusicSheetSpan", "drawn bitmap at x=$x, y=$bitmapTop, size=${it.width}x${it.height}")
+            android.util.Log.d("MusicSheetSpan", "drawn bitmap at x=$x, y=$bitmapTop, size=${it.width}x${it.height}, totalHeight=$totalHeight, topMargin=$topMargin")
         } ?: run {
             android.util.Log.d("MusicSheetSpan", "draw: showing placeholder for ${musicData.title}")
             // 显示占位符
