@@ -74,6 +74,22 @@ import com.editor.nomadmark.autosave.AutoSaveSession
 import com.editor.nomadmark.autosave.AutoSaveManager
 import com.editor.nomadmark.autosave.RecoverableSession
 
+// =============================================================================
+// 撤销/重做状态数据类
+// =============================================================================
+
+/**
+ * 撤销/重做状态
+ *
+ * 保存文本内容和光标位置，用于撤销/重做时恢复完整状态
+ */
+private data class UndoState(
+    /** 文本内容 */
+    val content: String,
+    /** 光标位置 */
+    val cursorPosition: Int
+)
+
 /**
  * Markdown Editor Activity
  *
@@ -242,9 +258,9 @@ class MarkdownEditorActivity : android.app.Activity() {
     /** 是否显示工具栏 */
     private var isToolbarVisible: Boolean = false
 
-    /** 撤销/重做栈 */
-    private val undoStack = mutableListOf<String>()
-    private val redoStack = mutableListOf<String>()
+    /** 撤销/重做栈 - 保存文本内容和光标位置 */
+    private val undoStack = mutableListOf<UndoState>()
+    private val redoStack = mutableListOf<UndoState>()
 
     /** 保存状态前的文本内容 */
     private var lastSavedContent: String = ""
@@ -1363,7 +1379,7 @@ class MarkdownEditorActivity : android.app.Activity() {
             // 清空撤销重做栈并保存初始状态
             undoStack.clear()
             redoStack.clear()
-            undoStack.add(content)
+            undoStack.add(UndoState(content = content, cursorPosition = 0))
 
             Log.d("MarkdownEditorActivity", "Loaded asset sample, size: ${content.length}")
         } catch (e: Exception) {
@@ -1390,7 +1406,7 @@ class MarkdownEditorActivity : android.app.Activity() {
             // 清空撤销重做栈并保存初始状态
             undoStack.clear()
             redoStack.clear()
-            undoStack.add(content)
+            undoStack.add(UndoState(content = content, cursorPosition = 0))
 
             // 暂时禁用 Core 文档集成，因为 JNI 接口未完全实现
             // 如需启用，需先完善 core/src/bridge/jni.rs 中的 nativeSearch 等函数
@@ -1422,7 +1438,7 @@ class MarkdownEditorActivity : android.app.Activity() {
             // 清空撤销重做栈并保存初始状态
             undoStack.clear()
             redoStack.clear()
-            undoStack.add(editorText.text.toString())
+            undoStack.add(UndoState(content = editorText.text.toString(), cursorPosition = 0))
 
             // 初始化自动保存会话
             initAutoSaveSession()
@@ -3459,12 +3475,24 @@ class MarkdownEditorActivity : android.app.Activity() {
 
     private fun undo() {
         // 使用本地撤销实现（Core 层 JNI 接口未完全实现）
-        performLocalUndo()
+        Log.d(TAG, "Undo clicked, undoStack.size = ${undoStack.size}")
+        try {
+            performLocalUndo()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during undo", e)
+            Toast.makeText(this, "撤销出错: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun redo() {
         // 使用本地重做实现（Core 层 JNI 接口未完全实现）
-        performLocalRedo()
+        Log.d(TAG, "Redo clicked, redoStack.size = ${redoStack.size}")
+        try {
+            performLocalRedo()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during redo", e)
+            Toast.makeText(this, "重做出错: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
     }
 
     /**
@@ -3478,12 +3506,43 @@ class MarkdownEditorActivity : android.app.Activity() {
 
         isUndoingOrRedoing = true
         try {
-            redoStack.add(getCurrentContent())
+            // 保存当前状态到重做栈
+            val editor = getCurrentEditor()
+            val currentState = UndoState(
+                content = getCurrentContent(),
+                cursorPosition = editor.selectionStart
+            )
+            redoStack.add(currentState)
+
+            // 从撤销栈取出上一个状态
             val previous = undoStack.removeAt(undoStack.size - 1)
-            getCurrentEditor().setText(previous)
+
+            Log.d(TAG, "Undo: restoring content (length=${previous.content.length}), cursor=${previous.cursorPosition}")
+
+            // 恢复内容和光标位置
+            editor.setText(previous.content)
+
+            // 安全地设置光标位置（只在有内容时设置）
+            if (previous.content.isNotEmpty()) {
+                val cursorPos = previous.cursorPosition.coerceIn(0, previous.content.length)
+                try {
+                    editor.setSelection(cursorPos)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error setting cursor position", e)
+                    // 如果设置光标失败，至少确保光标在有效位置
+                    try {
+                        editor.setSelection(0)
+                    } catch (e2: Exception) {
+                        Log.e(TAG, "Error setting cursor to 0", e2)
+                    }
+                }
+            }
+
             isModified = true
             updateSaveButton()
             updatePreview()
+
+            Log.d(TAG, "Undo completed, undoStack.size = ${undoStack.size}")
         } finally {
             isUndoingOrRedoing = false
         }
@@ -3500,12 +3559,43 @@ class MarkdownEditorActivity : android.app.Activity() {
 
         isUndoingOrRedoing = true
         try {
-            undoStack.add(getCurrentContent())
+            // 保存当前状态到撤销栈
+            val editor = getCurrentEditor()
+            val currentState = UndoState(
+                content = getCurrentContent(),
+                cursorPosition = editor.selectionStart
+            )
+            undoStack.add(currentState)
+
+            // 从重做栈取出下一个状态
             val next = redoStack.removeAt(redoStack.size - 1)
-            getCurrentEditor().setText(next)
+
+            Log.d(TAG, "Redo: restoring content (length=${next.content.length}), cursor=${next.cursorPosition}")
+
+            // 恢复内容和光标位置
+            editor.setText(next.content)
+
+            // 安全地设置光标位置（只在有内容时设置）
+            if (next.content.isNotEmpty()) {
+                val cursorPos = next.cursorPosition.coerceIn(0, next.content.length)
+                try {
+                    editor.setSelection(cursorPos)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error setting cursor position", e)
+                    // 如果设置光标失败，至少确保光标在有效位置
+                    try {
+                        editor.setSelection(0)
+                    } catch (e2: Exception) {
+                        Log.e(TAG, "Error setting cursor to 0", e2)
+                    }
+                }
+            }
+
             isModified = true
             updateSaveButton()
             updatePreview()
+
+            Log.d(TAG, "Redo completed, redoStack.size = ${redoStack.size}")
         } finally {
             isUndoingOrRedoing = false
         }
@@ -4133,12 +4223,16 @@ class MarkdownEditorActivity : android.app.Activity() {
 
     // 文本变化监听器
     private val textWatcher = object : TextWatcher {
-        private var beforeChangeContent: String = ""
+        private var beforeChangeState: UndoState? = null
 
         override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {
-            // 保存变化前的内容（撤销/重做操作时不保存）
+            // 保存变化前的状态（撤销/重做操作时不保存）
             if (!isSyncing && !isUndoingOrRedoing && s != null) {
-                beforeChangeContent = s.toString()
+                val editor = getCurrentEditor()
+                beforeChangeState = UndoState(
+                    content = s.toString(),
+                    cursorPosition = editor.selectionStart
+                )
             }
         }
 
@@ -4152,10 +4246,11 @@ class MarkdownEditorActivity : android.app.Activity() {
 
         override fun afterTextChanged(s: Editable?) {
             // 文本变化后，将变化前的状态保存到撤销栈（撤销/重做操作时不保存）
-            if (!isSyncing && !isUndoingOrRedoing && beforeChangeContent.isNotEmpty()) {
+            if (!isSyncing && !isUndoingOrRedoing && beforeChangeState != null) {
+                val state = beforeChangeState!!
                 // 只有内容真正变化时才保存（避免重复保存相同内容）
-                if (undoStack.isEmpty() || undoStack.last() != beforeChangeContent) {
-                    undoStack.add(beforeChangeContent)
+                if (undoStack.isEmpty() || undoStack.last().content != state.content) {
+                    undoStack.add(state)
                     // 限制撤销栈大小，避免内存占用过大
                     if (undoStack.size > 50) {
                         undoStack.removeAt(0)
@@ -4163,7 +4258,7 @@ class MarkdownEditorActivity : android.app.Activity() {
                 }
                 // 文本变化后清空重做栈
                 redoStack.clear()
-                beforeChangeContent = ""
+                beforeChangeState = null
             }
         }
     }
@@ -4571,7 +4666,7 @@ class MarkdownEditorActivity : android.app.Activity() {
         // 清空撤销重做栈并保存初始状态
         undoStack.clear()
         redoStack.clear()
-        undoStack.add(content)
+        undoStack.add(UndoState(content = content, cursorPosition = 0))
 
         // 初始化自动保存会话
         initAutoSaveSession()
@@ -4739,7 +4834,7 @@ class MarkdownEditorActivity : android.app.Activity() {
         // 清空撤销栈
         undoStack.clear()
         redoStack.clear()
-        undoStack.add(content)
+        undoStack.add(UndoState(content = content, cursorPosition = 0))
 
         // 清除恢复标志
         session.delete()
