@@ -5,7 +5,6 @@ import android.util.Log
 import coil.Coil
 import coil.ImageLoader
 import coil.annotation.ExperimentalCoilApi
-import coil.decode.SvgDecoder
 import coil.request.ImageRequest
 import coil.size.Precision
 import okhttp3.OkHttpClient
@@ -30,7 +29,7 @@ object SupernoteImageLoader {
     fun init(context: Context) {
         val imageLoader = ImageLoader.Builder(context)
             .components {
-                add(SvgDecoder.Factory())
+                // SVG 解析器已移除（使用 AndroidSVG 代替）
                 // 添加文件路径 Mapper，支持相对路径和 file:// 协议
                 add(CoilFileMapper(context))
             }

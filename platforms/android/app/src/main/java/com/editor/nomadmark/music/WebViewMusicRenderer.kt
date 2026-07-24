@@ -77,10 +77,9 @@ class WebViewMusicRenderer(private val context: Context) {
                 null
             )
 
-            // 设置超时保护（10秒后强制执行）
             handler.postDelayed({
-                captureBitmap(webView, musicData, width, callback) {
-                    webView.destroy()
+                    captureBitmap(webView, musicData, width, callback) {
+                        webView.destroy()   
                 }
             }, 10000)
 
@@ -411,12 +410,19 @@ class WebViewMusicRenderer(private val context: Context) {
 
             // 如果高度太小，使用更大的默认高度
             var measuredHeight = webView.measuredHeight
+            Log.d(TAG, "WebView 测量尺寸: ${webView.measuredWidth}x$measuredHeight")
+
             if (measuredHeight < 100) {
                 measuredHeight = 400 // 使用更大的默认高度
                 Log.w(TAG, "WebView 高度太小，使用默认高度: $measuredHeight")
             }
 
             webView.layout(0, 0, webView.measuredWidth, measuredHeight)
+
+            // 获取 WebView 内容高度（通过 JavaScript）
+            webView.evaluateJavascript("(function() { return document.body.scrollHeight; })();") { height ->
+                Log.d(TAG, "WebView 内容高度: $height")
+            }
 
             // 创建 Bitmap
             val bitmap = Bitmap.createBitmap(
@@ -433,19 +439,34 @@ class WebViewMusicRenderer(private val context: Context) {
             webView.draw(canvas)
             webView.setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
 
-            // 检查 Bitmap 是否为空（全白）
+            // 检查 Bitmap 是否为空（全白）并统计内容分布
             var hasContent = false
+            var nonWhiteCount = 0
+            var firstNonWhiteX = -1
+            var firstNonWhiteY = -1
             val pixels = IntArray(Math.min(bitmap.width * bitmap.height, 10000))
             bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, Math.min(bitmap.height, 10000 / bitmap.width))
-            for (pixel in pixels) {
-                if (pixel != Color.WHITE) {
+            for (i in pixels.indices) {
+                if (pixels[i] != Color.WHITE) {
                     hasContent = true
-                    break
+                    nonWhiteCount++
+                    if (firstNonWhiteX == -1) {
+                        firstNonWhiteX = i % bitmap.width
+                        firstNonWhiteY = i / bitmap.width
+                    }
                 }
             }
 
+            // 检查特定位置的像素
+            val centerX = bitmap.width / 2
+            val centerY = bitmap.height / 2
+            val centerPixel = bitmap.getPixel(centerX, centerY)
+            Log.d(TAG, "Bitmap 中心像素 ($centerX,$centerY): 0x${Integer.toHexString(centerPixel)}")
+
             if (!hasContent) {
                 Log.w(TAG, "Bitmap 渲染为空（全白）")
+            } else {
+                Log.d(TAG, "Bitmap 有内容，非白色像素数: $nonWhiteCount, 第一个非白色像素位置: ($firstNonWhiteX,$firstNonWhiteY)")
             }
 
             // 缓存 Bitmap

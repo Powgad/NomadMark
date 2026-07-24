@@ -35,8 +35,17 @@ object MusicSheetCache {
      * 缓存 Bitmap
      */
     fun put(key: String, bitmap: Bitmap) {
+        // 检查原始 Bitmap 内容
+        val samplePixel = bitmap.getPixel(bitmap.width / 2, bitmap.height / 2)
+        Log.d(TAG, "缓存前原始 Bitmap (${bitmap.width}x${bitmap.height}) 中心像素: 0x${Integer.toHexString(samplePixel)}")
+
         // 复制 Bitmap 以避免原始 Bitmap 被回收
         val copied = bitmap.copy(bitmap.config, false)
+
+        // 检查复制后的 Bitmap 内容
+        val copiedSamplePixel = copied.getPixel(copied.width / 2, copied.height / 2)
+        Log.d(TAG, "复制后 Bitmap (${copied.width}x${copied.height}) 中心像素: 0x${Integer.toHexString(copiedSamplePixel)}")
+
         cache.put(key, copied)
         Log.d(TAG, "缓存乐谱图片: $key, 当前缓存数量: ${cache.size()}")
     }
