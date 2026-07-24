@@ -63,6 +63,10 @@ import android.text.style.URLSpan
 import android.text.style.UnderlineSpan
 import com.editor.nomadmark.format.ThematicBreakFormatter
 import com.editor.nomadmark.markwon.StrictThematicBreakPlugin
+import com.editor.nomadmark.markwon.MusicSheetSpan
+import com.editor.nomadmark.music.WebViewMusicRenderer
+import com.editor.nomadmark.music.MusicSheetDetector
+import com.editor.nomadmark.music.MusicSheetCache
 import com.editor.nomadmark.image.ImageProcessor
 import com.editor.nomadmark.image.SupernoteImageLoader
 import com.editor.nomadmark.image.DocumentContextHolder
@@ -184,6 +188,21 @@ class MarkdownEditorActivity : android.app.Activity() {
 
     /** 滚动同步管理器 */
     private var scrollSyncManager: ScrollSyncManager? = null
+
+    // =========================================================================
+    // 乐谱渲染组件
+    // =========================================================================
+
+    /** 乐谱渲染器 */
+    private val musicSheetRenderer: WebViewMusicRenderer by lazy {
+        WebViewMusicRenderer(this)
+    }
+
+    /** 当前活动的 MusicSheetSpan 列表 */
+    private val activeMusicSheetSpans = mutableListOf<MusicSheetSpan>()
+
+    /** 是否正在更新预览（防止无限循环） */
+    private var isUpdatingPreviewWithMusicSheets = false
 
     // =========================================================================
     // 渲染引擎设置
@@ -387,6 +406,17 @@ class MarkdownEditorActivity : android.app.Activity() {
         hideSoftKeyboardFromAll()
         // 清理自动保存 Handler
         autoSaveHandler.removeCallbacksAndMessages(null)
+        // 清理乐谱缓存
+        try {
+            MusicSheetCache.clear()
+            // 清理活动中的 Span
+            activeMusicSheetSpans.forEach { span ->
+                span.bitmap?.recycle()
+            }
+            activeMusicSheetSpans.clear()
+        } catch (e: Exception) {
+            Log.e(TAG, "清理乐谱缓存时出错", e)
+        }
         // 如果是正常退出且没有未保存修改，清理临时文件
         if (isFinishing && !isModified) {
             autoSaveSession?.delete()
@@ -458,6 +488,9 @@ class MarkdownEditorActivity : android.app.Activity() {
 
     /** 代码块边框的水平边距（dp） */
     private val codeBlockHorizontalMarginDp = 48f  // 增加到 48dp 以防止滑动容器覆盖边框
+
+    /** 代码块边框的水平边距（px） */
+    private var horizontalMarginPx: Int = 0
 
     /**
      * 自定义代码块边框 Span
@@ -556,6 +589,98 @@ class MarkdownEditorActivity : android.app.Activity() {
     }
 
     /**
+     * 应用乐谱块渲染
+     *
+     * 使用已检测的乐谱块列表进行渲染
+     */
+    private fun applyMusicSheetRendering(spanned: Spanned, musicSheets: List<MusicSheetDetector.MusicBlock>) {
+        val spannable = spanned as Spannable
+
+        try {
+            // 清除旧的 MusicSheetSpan 引用
+            activeMusicSheetSpans.clear()
+
+            if (musicSheets.isEmpty()) return
+
+            Log.d(TAG, "开始渲染 ${musicSheets.size} 个乐谱块")
+
+            // 为每个乐谱块应用 MusicSheetSpan 并触发异步渲染
+            for (musicSheet in musicSheets) {
+                // 在渲染后的文本中查找乐谱内容的位置
+                val contentInRendered = spannable.toString()
+                val startPos: Int = contentInRendered.indexOf(musicSheet.musicData.content.take(20))
+
+                if (startPos == -1) {
+                    Log.d(TAG, "未找到乐谱内容位置: ${musicSheet.musicData.title}")
+                    continue
+                }
+
+                val endPos: Int = startPos + musicSheet.musicData.content.length
+
+                val musicSpan = MusicSheetSpan(
+                    this,
+                    musicSheet.musicData,
+                    screenWidth
+                )
+
+                // 移除该范围内的所有现有 span（避免重复显示）
+                val allSpans = spannable.getSpans(
+                    startPos,
+                    endPos,
+                    Any::class.java
+                )
+                for (span in allSpans) {
+                    val spanStart: Int = spannable.getSpanStart(span)
+                    val spanEnd: Int = spannable.getSpanEnd(span)
+                    if (spanStart >= startPos && spanEnd <= endPos) {
+                        if (span !is MusicSheetSpan) {
+                            spannable.removeSpan(span)
+                        }
+                    }
+                }
+
+                // 应用 MusicSheetSpan
+                spannable.setSpan(
+                    musicSpan,
+                    startPos,
+                    endPos,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+
+                // 添加到活动列表
+                activeMusicSheetSpans.add(musicSpan)
+
+                // 触发异步渲染，使用考虑边距后的宽度
+                val musicSheetWidth = screenWidth - horizontalMarginPx * 2
+                musicSheetRenderer.renderToBitmap(musicSheet.musicData, musicSheetWidth) { bitmap ->
+                    Log.d(TAG, "渲染回调: title=${musicSheet.musicData.title}, bitmap=${if (bitmap != null) "${bitmap.width}x${bitmap.height}" else "null"}")
+                    val wasEmpty = musicSpan.bitmap == null
+                    val heightChanged = musicSpan.updateBitmap(bitmap)
+
+                    // 刷新显示 - 只在首次设置 Bitmap 且没有正在更新时重新渲染，避免无限循环
+                    runOnUiThread {
+                        if (wasEmpty && bitmap != null && !isUpdatingPreviewWithMusicSheets) {
+                            // 首次设置 Bitmap，需要重新渲染文本
+                            isUpdatingPreviewWithMusicSheets = true
+                            updatePreview()
+                            isUpdatingPreviewWithMusicSheets = false
+                        } else if (heightChanged) {
+                            // 高度变化，只需重绘
+                            previewText.invalidate()
+                            splitPreviewText?.invalidate()
+                        }
+                    }
+                }
+
+                Log.d(TAG, "应用 MusicSheetSpan: [$startPos-$endPos], title=${musicSheet.musicData.title}")
+            }
+
+        } catch (e: Exception) {
+            Log.e(TAG, "处理乐谱块时出错", e)
+        }
+    }
+
+    /**
      * 为渲染后的代码添加边框样式
      * 需要在渲染后调用此方法
      */
@@ -648,10 +773,6 @@ class MarkdownEditorActivity : android.app.Activity() {
             Log.d("CodeBlockBorder", "安全检查：跳过包含图片的代码块: [$blockStart-$blockEnd], ${replacementSpans.size} 个 ReplacementSpan")
             return  // 不应用边框
         }
-
-        // 转换 dp 到 px
-        val density = resources.displayMetrics.density
-        val horizontalMarginPx = (codeBlockHorizontalMarginDp * density).toInt()
 
         // 遍历代码块中的每一行
         var currentPos = blockStart
@@ -3391,12 +3512,21 @@ class MarkdownEditorActivity : android.app.Activity() {
     private fun updatePreview() {
         val content = preprocessMarkdownForBreak(getCurrentContent())
 
+        // 计算水平边距（dp 转 px）
+        horizontalMarginPx = (codeBlockHorizontalMarginDp * resources.displayMetrics.density).toInt()
+
+        // 先检测乐谱块（在 Markwon 渲染前）
+        val musicSheets = MusicSheetDetector.detectMusicSheetsFromMarkdown(content)
+        Log.d(TAG, "检测到 ${musicSheets.size} 个乐谱块")
+
         // 使用 Markwon 渲染 Markdown
         if (isPreviewMode) {
             markwon.setMarkdown(previewText, content)
             // 移除下划线
             removeUnderlines(previewText.text as Spanned)
-            // 应用代码块边框
+            // 先应用乐谱渲染（使用已检测的乐谱块）
+            applyMusicSheetRendering(previewText.text as Spanned, musicSheets)
+            // 再应用代码块边框（会跳过乐谱块）
             applyCodeBlockBorder(previewText.text as Spanned)
             // 延迟刷新以确图片加载完成后重新渲染
             previewLayer.postDelayed({
@@ -3409,7 +3539,9 @@ class MarkdownEditorActivity : android.app.Activity() {
             markwon.setMarkdown(splitPreviewText, content)
             // 移除下划线
             removeUnderlines(splitPreviewText.text as Spanned)
-            // 应用代码块边框
+            // 先应用乐谱渲染（使用已检测的乐谱块）
+            applyMusicSheetRendering(splitPreviewText.text as Spanned, musicSheets)
+            // 再应用代码块边框（会跳过乐谱块）
             applyCodeBlockBorder(splitPreviewText.text as Spanned)
             // 延迟刷新以确图片加载完成后重新渲染（解决滚动后图片竖线问题）
             splitPreviewScroll.postDelayed({
@@ -4154,6 +4286,7 @@ class MarkdownEditorActivity : android.app.Activity() {
     // =========================================================================
 
     companion object {
+        private const val TAG = "MarkdownEditorActivity"
         private const val OPEN_FILE_REQUEST_CODE = 1001
         private const val OPEN_SAMPLE_REQUEST_CODE = 1002
         private const val PICK_IMAGE_REQUEST_CODE = 1003

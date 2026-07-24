@@ -137,11 +137,14 @@ dependencies {
     // Coil - 轻量级图片加载库（用于 Markwon 图片渲染）
     def coilVersion = '2.5.0'
     implementation "io.coil-kt:coil:$coilVersion"
-    implementation "io.coil-kt:coil-svg:$coilVersion"
+    // implementation "io.coil-kt:coil-svg:$coilVersion"  // 与 AndroidSVG 冲突，移除
     implementation "io.coil-kt:coil-gif:$coilVersion"
 
     // WiFi 打印支持 (可选)
     implementation 'androidx.print:print:1.0.0'
+
+    // AndroidSVG - SVG 渲染库（用于乐谱渲染）
+    implementation 'com.caverock:androidsvg:1.4'
 
     // Testing
     testImplementation 'junit:junit:4.13.2'
