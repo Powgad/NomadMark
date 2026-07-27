@@ -25,11 +25,11 @@ import java.util.UUID
 class ImageProcessor(private val context: Context) {
 
     companion object {
-        /** Supernote A6 X2 Nomad 屏幕宽度（物理像素） */
-        const val MAX_SCREEN_WIDTH = 1872
+        /** Supernote A6 X2 Nomad 屏幕宽度（物理像素，竖屏） */
+        const val MAX_SCREEN_WIDTH = 1404
 
-        /** Supernote A6 X2 Nomad 屏幕高度（物理像素） */
-        const val MAX_SCREEN_HEIGHT = 1404
+        /** Supernote A6 X2 Nomad 屏幕高度（物理像素，竖屏） */
+        const val MAX_SCREEN_HEIGHT = 1872
 
         /** JPEG 压缩质量（85% 平衡清晰度与体积） */
         const val JPEG_QUALITY = 85
@@ -107,9 +107,10 @@ class ImageProcessor(private val context: Context) {
             val originalMemory = calculateMemoryBytes(originalWidth, originalHeight)
             Log.d(TAG, "原始尺寸: ${originalWidth}×${originalHeight}, 内存: ${formatMemorySize(originalMemory)}")
 
-            // Step 2: 计算采样率
-            val inSampleSize = calculateInSampleSize(originalWidth, originalHeight, MAX_SCREEN_WIDTH)
-            Log.d(TAG, "采样率 inSampleSize: $inSampleSize")
+            // Step 2: 计算采样率（宽度限制用运行时屏幕宽度，适配横竖屏）
+            val screenWidth = context.resources.displayMetrics.widthPixels
+            val inSampleSize = calculateInSampleSize(originalWidth, originalHeight, screenWidth)
+            Log.d(TAG, "采样率 inSampleSize: $inSampleSize (原图 ${originalWidth}×${originalHeight}, 屏幕宽 $screenWidth)")
 
             // Step 3: 采样解码
             val sampledSize = Pair(
@@ -174,30 +175,43 @@ class ImageProcessor(private val context: Context) {
     /**
      * 计算采样率（inSampleSize）
      *
-     * 确保解码后的图片长边不超过目标尺寸（1872px）
+     * 同时按两个维度限制，确保解码后的图片：
+     * - 长边不超过屏幕高度（MAX_SCREEN_HEIGHT），控制内存占用
+     * - 宽度不超过屏幕宽度（maxWidth），避免在 TextView 中被二次缩放而产生竖线伪影
      *
      * @param width 原始宽度
      * @param height 原始高度
-     * @param targetSize 目标最大边长（像素）
-     * @return inSampleSize（必须是 2 的幂次方）
+     * @param maxWidth 目标最大宽度（像素），默认为屏幕宽度；运行时可传入实际文本区宽度
+     * @return inSampleSize（2 的幂次方，至少为 1）
      */
-    fun calculateInSampleSize(width: Int, height: Int, targetSize: Int = MAX_SCREEN_WIDTH): Int {
-        var inSampleSize = 1
-
+    fun calculateInSampleSize(width: Int, height: Int, maxWidth: Int = MAX_SCREEN_WIDTH): Int {
         val maxEdge = maxOf(width, height)
 
-        if (maxEdge > targetSize) {
-            val halfMax = maxEdge / 2
-            while (halfMax / inSampleSize > targetSize) {
-                inSampleSize *= 2
-            }
+        // 长边限制（屏幕高度）：控制总像素，避免 OOM
+        val sampleByEdge = computeSampleForSize(maxEdge, MAX_SCREEN_HEIGHT)
+        // 宽度限制（屏幕宽度）：避免横向溢出导致 TextView 缩放竖线
+        val sampleByWidth = computeSampleForSize(width, maxWidth)
+
+        return maxOf(1, maxOf(sampleByEdge, sampleByWidth))
+    }
+
+    /**
+     * 计算单个维度满足目标尺寸所需的采样率
+     *
+     * 保证采样后尺寸 <= targetSize（不是原来的 2*targetSize），
+     * 从而避免宽度仍超出文本区被二次缩放。
+     *
+     * @param dimension 原始尺寸（宽或长边）
+     * @param targetSize 目标最大尺寸
+     * @return 采样率（2 的幂次方，至少为 1）
+     */
+    private fun computeSampleForSize(dimension: Int, targetSize: Int): Int {
+        if (dimension <= targetSize) return 1
+        var sampleSize = 1
+        while (dimension / sampleSize > targetSize) {
+            sampleSize *= 2
         }
-
-        // 确保是 2 的幂次方
-        inSampleSize = Integer.highestOneBit(inSampleSize)
-
-        // 至少为 1
-        return maxOf(1, inSampleSize)
+        return sampleSize
     }
 
     /**
