@@ -22,9 +22,11 @@ data class MusicData(
 
     /**
      * 获取缓存键
+     *
+     * @param width 渲染宽度，纳入 key 以区分不同屏宽（预览/分屏）下的渲染结果
      */
-    fun getCacheKey(): String {
-        return "${type.name}_${content.hashCode()}"
+    fun getCacheKey(width: Int): String {
+        return "${type.name}_${content.hashCode()}_$width"
     }
 }
 

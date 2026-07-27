@@ -37,7 +37,7 @@ class WebViewMusicRenderer(private val context: Context) {
         callback: (Bitmap?) -> Unit
     ) {
         // 检查缓存
-        val cached = MusicSheetCache.get(musicData.getCacheKey())
+        val cached = MusicSheetCache.get(musicData.getCacheKey(width))
         if (cached != null) {
             Log.d(TAG, "使用缓存的乐谱图片: ${musicData.title ?: musicData.id}")
             callback(cached)
@@ -181,9 +181,11 @@ class WebViewMusicRenderer(private val context: Context) {
                     try {
                         const abcCode = "$escapedContent";
                         ABCJS.renderAbc("paper", abcCode, {
-                            responsive: 'resize',
+                            // 不使用 responsive:'resize'：它会把 SVG 宽度变成百分比，
+                            // AndroidSVG 无法读取绝对尺寸，导致多行乐谱高度被截断
                             scale: 1.2,
                             staffwidth: $staffWidth,
+                            wrap: true,  // 按谱表宽度自动换行，长乐谱在小节线处断行
                             paddingtop: 20,
                             paddingbottom: 20,
                             paddingright: 20,
@@ -315,7 +317,7 @@ class WebViewMusicRenderer(private val context: Context) {
                                 }
 
                                 if (hasContent) {
-                                    MusicSheetCache.put(musicData.getCacheKey(), bitmap)
+                                    MusicSheetCache.put(musicData.getCacheKey(width), bitmap)
                                     Log.d(TAG, "从 SVG 渲染完成: ${bitmap.width}x${bitmap.height}")
                                     callback(bitmap)
                                     onDestroy()
@@ -350,39 +352,59 @@ class WebViewMusicRenderer(private val context: Context) {
     }
 
     /**
+     * 从 SVG 字符串解析像素尺寸
+     *
+     * AndroidSVG 的 documentWidth/Height 在 SVG 使用百分比宽度（如 width="100%"）时返回 -1，
+     * 不可靠。这里直接解析 width/height/viewBox 属性，保证多行（wrap）乐谱的完整高度
+     * 不被错误地按默认值截断。
+     */
+    private data class SvgSize(val width: Float, val height: Float)
+
+    private fun parseSvgSize(svgString: String, fallbackWidth: Int): SvgSize {
+        // 仅匹配纯数字或带 px 单位的尺寸，排除百分比（如 width="100%"）
+        val widthAttr = Regex("""<svg[^>]*\bwidth\s*=\s*["']([\d.]+)(?:px)?["']""").find(svgString)?.groupValues?.get(1)?.toFloatOrNull()
+        val heightAttr = Regex("""<svg[^>]*\bheight\s*=\s*["']([\d.]+)(?:px)?["']""").find(svgString)?.groupValues?.get(1)?.toFloatOrNull()
+        val viewBox = Regex("""<svg[^>]*\bviewBox\s*=\s*["']([-\d.\s]+)["']""").find(svgString)
+            ?.groupValues?.get(1)?.trim()?.split(Regex("""\s+"""))
+        val vbW = viewBox?.getOrNull(2)?.toFloatOrNull()
+        val vbH = viewBox?.getOrNull(3)?.toFloatOrNull()
+
+        val w = when {
+            widthAttr != null && widthAttr > 0 -> widthAttr
+            vbW != null && vbW > 0 -> vbW
+            else -> fallbackWidth.toFloat()
+        }
+        val h = when {
+            heightAttr != null && heightAttr > 0 -> heightAttr
+            vbH != null && vbH > 0 -> vbH
+            else -> 0f
+        }
+        return SvgSize(w, h)
+    }
+
+    /**
      * 从 SVG 字符串创建 Picture（使用 AndroidSVG）
      */
     private fun createPictureFromSvg(svgString: String, width: Int): Picture? {
         return try {
             val svg = SVG.getFromString(svgString)
 
-            // 设置渲染宽度和高度
-            val documentWidth = svg.documentWidth
-            val documentHeight = svg.documentHeight
+            // 直接解析 SVG 的像素尺寸，避免 AndroidSVG 在百分比宽度下返回 -1 而误裁高度
+            val size = parseSvgSize(svgString, width)
+            svg.setDocumentWidth(size.width)
+            if (size.height > 0) svg.setDocumentHeight(size.height)
 
-            if (documentWidth <= 0 || documentHeight <= 0) {
-                // 如果 SVG 没有设置尺寸，使用默认值
-                svg.setDocumentWidth(width.toFloat())
-                svg.setDocumentHeight(400f)
-            }
+            val picWidth = size.width.toInt().coerceAtLeast(width)
+            val picHeight = if (size.height > 0) size.height.toInt() else 400
 
-            // 创建 Picture 并渲染 SVG
             val picture = Picture()
-            val canvas = picture.beginRecording(
-                svg.documentWidth.toInt().coerceAtLeast(width),
-                svg.documentHeight.toInt().coerceAtLeast(100)
-            )
+            val canvas = picture.beginRecording(picWidth, picHeight)
             canvas.drawColor(Color.WHITE)
-
-            // 渲染 SVG 到 Canvas
-            val renderWidth = svg.documentWidth.toInt().coerceAtLeast(width)
-            val renderHeight = svg.documentHeight.toInt().coerceAtLeast(100)
-
             svg.renderToCanvas(canvas)
-
             picture.endRecording()
 
-            Log.d(TAG, "SVG 渲染成功: ${svg.documentWidth}x${svg.documentHeight}")
+            val svgCount = svgString.split("<svg").size - 1
+            Log.d(TAG, "SVG 渲染成功: parsed=${size.width}x${size.height}, androidSvg=(${svg.documentWidth}x${svg.documentHeight}), pic=${picWidth}x${picHeight}, svgCount=$svgCount, len=${svgString.length}")
             picture
         } catch (e: Exception) {
             Log.e(TAG, "SVG 解析失败", e)
@@ -478,7 +500,7 @@ class WebViewMusicRenderer(private val context: Context) {
             }
 
             // 缓存 Bitmap
-            MusicSheetCache.put(musicData.getCacheKey(), bitmap)
+            MusicSheetCache.put(musicData.getCacheKey(width), bitmap)
 
             Log.d(TAG, "渲染完成: ${bitmap.width}x${bitmap.height}, hasContent=$hasContent")
             callback(bitmap)
