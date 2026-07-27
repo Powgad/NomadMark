@@ -28,6 +28,9 @@ class WebViewMusicRenderer(private val context: Context) {
 
     private val handler = Handler(Looper.getMainLooper())
 
+    // 【去重】记录正在渲染的乐谱，防止重复渲染
+    private val pendingRenders = mutableSetOf<String>()
+
     /**
      * 渲染 ABC 乐谱为 Bitmap
      */
@@ -36,12 +39,37 @@ class WebViewMusicRenderer(private val context: Context) {
         width: Int,
         callback: (Bitmap?) -> Unit
     ) {
+        // 【去重】生成渲染键
+        val renderKey = "${musicData.getCacheKey(width)}"
+
+        // 【去重】检查是否正在渲染中
+        if (pendingRenders.contains(renderKey)) {
+            Log.d(TAG, "跳过重复渲染: ${musicData.title ?: musicData.id}, key=$renderKey")
+            callback(null)
+            return
+        }
+
         // 检查缓存
-        val cached = MusicSheetCache.get(musicData.getCacheKey(width))
+        val cached = MusicSheetCache.get(renderKey)
         if (cached != null) {
             Log.d(TAG, "使用缓存的乐谱图片: ${musicData.title ?: musicData.id}")
             callback(cached)
             return
+        }
+
+        // 【去重】标记为正在渲染
+        pendingRenders.add(renderKey)
+        Log.d(TAG, "开始渲染: ${musicData.title ?: musicData.id}, key=$renderKey, 当前pending: ${pendingRenders.size}")
+
+        // 包装回调，确保完成后清理
+        val wrappedCallback = { bitmap: Bitmap? ->
+            try {
+                callback(bitmap)
+            } finally {
+                // 【去重】无论成功失败，都从待渲染列表中移除
+                pendingRenders.remove(renderKey)
+                Log.d(TAG, "渲染完成: ${musicData.title ?: musicData.id}, key=$renderKey, 剩余pending: ${pendingRenders.size}")
+            }
         }
 
         // 每次创建新的 WebView，避免并发冲突
@@ -60,7 +88,7 @@ class WebViewMusicRenderer(private val context: Context) {
                     // 页面加载完成后，等待 JavaScript 执行完成
                     handler.postDelayed({
                         Log.d(TAG, "延迟后开始捕获 Bitmap")
-                        captureBitmap(webView, musicData, width, callback) {
+                        captureBitmap(webView, musicData, width, wrappedCallback) {
                             // 渲染完成后销毁 WebView
                             webView.destroy()
                         }
@@ -78,14 +106,14 @@ class WebViewMusicRenderer(private val context: Context) {
             )
 
             handler.postDelayed({
-                    captureBitmap(webView, musicData, width, callback) {
+                    captureBitmap(webView, musicData, width, wrappedCallback) {
                         webView.destroy()   
                 }
             }, 10000)
 
         } catch (e: Exception) {
             Log.e(TAG, "渲染失败", e)
-            callback(null)
+            wrappedCallback(null)
             webView.destroy()
         }
     }
@@ -179,7 +207,23 @@ class WebViewMusicRenderer(private val context: Context) {
                     document.body.innerHTML = '<div style="color:red;padding:20px;">ABCJS library failed to load</div>';
                 } else {
                     try {
+                        // 【调试】拦截 ABCJS.renderAbc 调用
+                        const origRenderAbc = ABCJS.renderAbc;
+                        ABCJS.renderAbc = function(container, source, options) {
+                            const lines = source.split('\\n').length;
+                            console.log('[ABC-RENDER-DEBUG] renderAbc called:');
+                            console.log('  - source length:', source.length);
+                            console.log('  - lines:', lines);
+                            console.log('  - first 100 chars:', source.substring(0, 100));
+                            console.log('  - container:', container);
+                            return origRenderAbc.call(this, container, source, options);
+                        };
+
                         const abcCode = "$escapedContent";
+                        console.log('[ABC-RENDER-DEBUG] About to render ABC code:');
+                        console.log('  - abcCode length:', abcCode.length);
+                        console.log('  - abcCode lines:', abcCode.split('\\n').length);
+
                         ABCJS.renderAbc("paper", abcCode, {
                             // 不使用 responsive:'resize'：它会把 SVG 宽度变成百分比，
                             // AndroidSVG 无法读取绝对尺寸，导致多行乐谱高度被截断
@@ -198,16 +242,16 @@ class WebViewMusicRenderer(private val context: Context) {
                             if (svg) {
                                 var svgString = new XMLSerializer().serializeToString(svg);
                                 window.ABCJS_SVG_RESULT = svgString;
-                                console.log('SVG extracted, length:', svgString.length);
+                                console.log('[ABC-RENDER-DEBUG] SVG extracted, length:', svgString.length);
                             } else {
-                                console.error('No SVG found');
+                                console.error('[ABC-RENDER-DEBUG] No SVG found');
                                 window.SVG_ERROR = 'No SVG element found';
                             }
                         }, 300);
 
                         window.renderComplete = true;
                     } catch(e) {
-                        console.error('ABC rendering error:', e);
+                        console.error('[ABC-RENDER-DEBUG] ABC rendering error:', e);
                         document.body.innerHTML = '<div style="color:red;padding:20px;">Error: ' + e.message + '</div>';
                         window.renderError = e.message;
                     }

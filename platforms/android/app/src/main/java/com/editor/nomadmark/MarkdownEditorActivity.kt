@@ -67,6 +67,8 @@ import com.editor.nomadmark.markwon.MusicSheetSpan
 import com.editor.nomadmark.music.WebViewMusicRenderer
 import com.editor.nomadmark.music.MusicSheetDetector
 import com.editor.nomadmark.music.MusicSheetCache
+import com.editor.nomadmark.music.MusicData
+import com.editor.nomadmark.music.MusicType
 import com.editor.nomadmark.image.ImageProcessor
 import com.editor.nomadmark.image.SupernoteImageLoader
 import com.editor.nomadmark.image.DocumentContextHolder
@@ -605,30 +607,71 @@ class MarkdownEditorActivity : android.app.Activity() {
      * 应用乐谱块渲染
      *
      * 使用已检测的乐谱块列表进行渲染
+     * 按顺序匹配：第 i 个乐谱块对应第 i 个代码块 span
+     * 确保每个乐谱块只渲染一次，不允许重复调用
      */
     private fun applyMusicSheetRendering(spanned: Spanned, musicSheets: List<MusicSheetDetector.MusicBlock>) {
         val spannable = spanned as Spannable
 
         try {
-            // 清除旧的 MusicSheetSpan 引用
-            activeMusicSheetSpans.clear()
-
             if (musicSheets.isEmpty()) return
 
             Log.d(TAG, "开始渲染 ${musicSheets.size} 个乐谱块")
 
-            // 为每个乐谱块应用 MusicSheetSpan 并触发异步渲染
-            for (musicSheet in musicSheets) {
-                // 在渲染后的文本中查找乐谱内容的位置
-                val contentInRendered = spannable.toString()
-                val startPos: Int = contentInRendered.indexOf(musicSheet.musicData.content.take(20))
+            // 【关键】清理所有已存在的 MusicSheetSpan，防止重复渲染
+            val existingMusicSpans = spannable.getSpans(0, spanned.length, MusicSheetSpan::class.java)
+            for (span in existingMusicSpans) {
+                val start = spannable.getSpanStart(span)
+                val end = spannable.getSpanEnd(span)
+                spannable.removeSpan(span)
+                Log.d(TAG, "移除已存在的 MusicSheetSpan: [$start-$end]")
+            }
+            activeMusicSheetSpans.clear()
 
-                if (startPos == -1) {
-                    Log.d(TAG, "未找到乐谱内容位置: ${musicSheet.musicData.title}")
-                    continue
+            // 查找所有 FencedCodeBlockSpan
+            val fencedCodeBlocks = mutableListOf<Triple<Int, Any, Int>>()
+
+            try {
+                val fencedCodeClass = Class.forName(FENCED_CODE_BLOCK_SPAN)
+                val fencedSpans = spannable.getSpans(0, spanned.length, fencedCodeClass)
+
+                for (span in fencedSpans) {
+                    val start = spannable.getSpanStart(span)
+                    val end = spannable.getSpanEnd(span)
+                    fencedCodeBlocks.add(Triple(start, span, end))
+                    Log.d(TAG, "找到 FencedCodeBlockSpan: [$start-$end]")
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "查找 FencedCodeBlockSpan 失败", e)
+            }
 
-                val endPos: Int = startPos + musicSheet.musicData.content.length
+            // 尝试查找 CodeBlockSpan 作为后备
+            if (fencedCodeBlocks.isEmpty()) {
+                try {
+                    val codeBlockClass = Class.forName(CODE_BLOCK_SPAN)
+                    val codeSpans = spannable.getSpans(0, spanned.length, codeBlockClass)
+
+                    for (span in codeSpans) {
+                        val start = spannable.getSpanStart(span)
+                        val end = spannable.getSpanEnd(span)
+                        fencedCodeBlocks.add(Triple(start, span, end))
+                        Log.d(TAG, "找到 CodeBlockSpan: [$start-$end]")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "查找 CodeBlockSpan 失败", e)
+                }
+            }
+
+            Log.d(TAG, "找到 ${fencedCodeBlocks.size} 个代码块 span，需要处理 ${musicSheets.size} 个乐谱块")
+
+            // 【关键】按顺序一一对应：第 i 个乐谱块对应第 i 个代码块
+            val renderCount = minOf(musicSheets.size, fencedCodeBlocks.size)
+
+            for (i in 0 until renderCount) {
+                val musicSheet = musicSheets[i]
+                val (startPos, _, endPos) = fencedCodeBlocks[i]
+
+                Log.d(TAG, "处理乐谱[$i]: [$startPos-$endPos], type=${musicSheet.musicData.type}, title=${musicSheet.musicData.title}")
 
                 val musicSpan = MusicSheetSpan(
                     this,
