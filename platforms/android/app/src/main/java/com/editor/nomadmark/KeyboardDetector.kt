@@ -19,19 +19,12 @@ enum class KeyboardType {
  * 功能：
  * - 检测外接键盘状态
  * - 检测软键盘状态
- * - 获取最优分屏比例
  */
 class KeyboardDetector(private val context: Context) {
 
     companion object {
         /** F11 键盘标识码 */
         const val F11_KEYBOARD_ID = "f11"
-
-        /** 软键盘分屏比例 (编辑区:预览区) */
-        const val SOFT_KEYBOARD_SPLIT_RATIO = 0.5f
-
-        /** F11 键盘分屏比例 */
-        const val F11_KEYBOARD_SPLIT_RATIO = 0.4f
     }
 
     /**
@@ -80,19 +73,6 @@ class KeyboardDetector(private val context: Context) {
         // TODO: 与 Ratta SDK 集成
         // 暂时返回 true，假设检测到的物理键盘就是 F11
         return true
-    }
-
-    /**
-     * 获取最优分屏比例
-     *
-     * @return 编辑区占比 (0.0 - 1.0)
-     */
-    fun getOptimalSplitRatio(): Float {
-        return when (detectKeyboardType()) {
-            KeyboardType.F11_PHYSICAL -> F11_KEYBOARD_SPLIT_RATIO
-            KeyboardType.SOFT_KEYBOARD -> SOFT_KEYBOARD_SPLIT_RATIO
-            KeyboardType.NONE -> SOFT_KEYBOARD_SPLIT_RATIO
-        }
     }
 
     /**

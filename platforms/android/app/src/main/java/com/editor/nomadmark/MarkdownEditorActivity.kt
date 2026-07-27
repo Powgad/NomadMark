@@ -4150,22 +4150,12 @@ class MarkdownEditorActivity : android.app.Activity() {
                         // 外接物理键盘连接：隐藏软键盘
                         hideSoftKeyboardFromAll()
                         Toast.makeText(this, "外接键盘已连接", Toast.LENGTH_SHORT).show()
-
-                        // 分屏模式下调整比例
-                        if (isSplitMode) {
-                            adjustSplitRatioForKeyboard()
-                        }
                     }
                     KeyboardType.SOFT_KEYBOARD -> {
                         // 物理键盘断开，使用软键盘
                         // 如果编辑器有焦点，确保软键盘可以正常显示
                         if (getCurrentEditor().isFocused) {
                             // 软键盘应该会自动显示，不需要额外操作
-                        }
-
-                        // 分屏模式下调整比例
-                        if (isSplitMode) {
-                            adjustSplitRatioForKeyboard()
                         }
                     }
                     KeyboardType.NONE -> {
@@ -4178,46 +4168,6 @@ class MarkdownEditorActivity : android.app.Activity() {
             }
         } catch (e: Exception) {
             Log.e("MarkdownEditorActivity", "Error detecting keyboard status", e)
-        }
-    }
-
-    /**
-     * 根据键盘类型调整分屏比例
-     *
-     * F11 物理键盘：预览区 60% : 编辑区 40% (weight = 6 : 4)
-     * 软键盘/无键盘：预览区 50% : 编辑区 50% (weight = 5 : 5)
-     */
-    private fun adjustSplitRatioForKeyboard() {
-        try {
-            val keyboardType = keyboardDetector.detectKeyboardType()
-            val ratio = keyboardDetector.getOptimalSplitRatio()
-
-            if (::splitPreviewScroll.isInitialized && ::splitEditorScroll.isInitialized) {
-                // 计算权重：编辑区占比 = ratio，预览区占比 = 1 - ratio
-                // 为了使用整数权重，我们乘以 10
-                val editorWeight = (ratio * 10).toInt()
-                val previewWeight = 10 - editorWeight
-
-                // 更新布局权重
-                val previewParams = splitPreviewScroll.layoutParams as? LinearLayout.LayoutParams
-                val editorParams = splitEditorScroll.layoutParams as? LinearLayout.LayoutParams
-
-                if (previewParams != null && editorParams != null) {
-                    previewParams.weight = previewWeight.toFloat()
-                    editorParams.weight = editorWeight.toFloat()
-
-                    splitPreviewScroll.layoutParams = previewParams
-                    splitEditorScroll.layoutParams = editorParams
-
-                    Log.d("MarkdownEditorActivity", "Split ratio adjusted: preview=$previewWeight, editor=$editorWeight (keyboard=$keyboardType)")
-                } else {
-                    Log.w("MarkdownEditorActivity", "Layout params are not LinearLayout.LayoutParams")
-                }
-            } else {
-                Log.d("MarkdownEditorActivity", "Split views not initialized, skipping ratio adjustment")
-            }
-        } catch (e: Exception) {
-            Log.e("MarkdownEditorActivity", "Error adjusting split ratio", e)
         }
     }
 
