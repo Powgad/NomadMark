@@ -3649,7 +3649,10 @@ class MarkdownEditorActivity : android.app.Activity() {
     // =========================================================================
 
     private fun updatePreview() {
-        val content = preprocessMarkdownForBreak(getCurrentContent())
+        // 先修复不完整的代码块
+        val rawContent = getCurrentContent()
+        val fixedContent = fixIncompleteCodeBlocks(rawContent)
+        val content = preprocessMarkdownForBreak(fixedContent)
 
         // 计算水平边距（dp 转 px）
         horizontalMarginPx = (codeBlockHorizontalMarginDp * resources.displayMetrics.density).toInt()
@@ -3776,6 +3779,90 @@ class MarkdownEditorActivity : android.app.Activity() {
                 result.append(line)
                 result.append('\n')
             }
+            i++
+        }
+
+        return result.toString()
+    }
+
+    /**
+     * 代码块围栏信息
+     */
+    private data class FenceInfo(
+        val lineIndex: Int,
+        val fence: String,
+        val language: String
+    )
+
+    /**
+     * 修复不完整的代码块
+     *
+     * 检测不完整的代码块（有开始围栏但没有结束围栏），将其转换为普通文本。
+     * 只有首尾都有三引号的完整代码块才会被渲染成代码块。
+     */
+    private fun fixIncompleteCodeBlocks(content: String): String {
+        val result = StringBuilder()
+        val lines = content.split('\n')
+        var i = 0
+        val count = lines.size
+
+        while (i < count) {
+            val line = lines[i]
+            val trimmed = line.trim()
+
+            // 检测代码块开始围栏（``` 或 ~~~）
+            if (trimmed.startsWith("```") || trimmed.startsWith("~~~")) {
+                val fence = if (trimmed.startsWith("```")) "```" else "~~~"
+                val blockStartLine = i
+
+                // 查找结束围栏
+                i++
+                var foundEnd = false
+                while (i < count) {
+                    val currentLine = lines[i]
+                    val currentTrimmed = currentLine.trim()
+
+                    // 找到结束围栏
+                    if (currentTrimmed.startsWith(fence)) {
+                        foundEnd = true
+                        break
+                    }
+                    i++
+                }
+
+                if (foundEnd) {
+                    // 找到结束围栏，这是一个完整的代码块
+                    // 输出整个代码块（包括开始和结束围栏）
+                    for (j in blockStartLine..i) {
+                        result.append(lines[j])
+                        if (j < count - 1) result.append('\n')
+                    }
+                    i++
+                } else {
+                    // 没有找到结束围栏，这是一个不完整的代码块
+                    // 将开始围栏行转换为普通文本（在行首添加反斜杠转义）
+                    Log.d(TAG, "检测到不完整的代码块，行 $blockStartLine，转换为普通文本")
+                    // 在行首添加反斜杠，转义反引号
+                    val originalLine = lines[blockStartLine]
+                    val fenceIndex = originalLine.indexOf(fence)
+                    if (fenceIndex >= 0) {
+                        // 在反引号前添加反斜杠
+                        val escapedLine = originalLine.substring(0, fenceIndex) + "\\`\\`\\`" + originalLine.substring(fenceIndex + 3)
+                        result.append(escapedLine)
+                    } else {
+                        // 保留原行（不应该到这里）
+                        result.append(originalLine)
+                    }
+                    if (blockStartLine < count - 1) result.append('\n')
+                    // 重置 i，继续处理下一行
+                    i = blockStartLine + 1
+                }
+                continue
+            }
+
+            // 普通行，直接输出
+            result.append(line)
+            if (i < count - 1) result.append('\n')
             i++
         }
 
