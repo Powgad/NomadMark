@@ -5,6 +5,7 @@
 // 支持标准 Markdown 之外的扩展语法：
 // - 下划线: <u>text</u>
 // - 高亮: ==text==
+// - 行内代码: `code`
 // - Callout: > [!INFO] 或 > [!TIP] 等
 // =============================================================================
 
@@ -120,7 +121,7 @@ pub fn find_image(text: &str) -> Option<(usize, String, String, Option<String>)>
     }
 }
 
-/// 解析行内扩展语法（删除线、下划线、高亮）
+/// 解析行内扩展语法（删除线、下划线、高亮、行内代码）
 pub fn parse_inline_extensions(text: &str) -> Vec<InlineNode> {
     let mut nodes = Vec::new();
     let mut i = 0;
@@ -165,6 +166,21 @@ pub fn parse_inline_extensions(text: &str) -> Vec<InlineNode> {
 
             // 跳过整个 [text](url)
             i += end_offset;
+            continue;
+        }
+
+        // 检测行内代码 `code`
+        if let Some((end_offset, content)) = find_inline_code(remaining) {
+            // 添加缓冲区中的文本（如果有）
+            if !text_buffer.is_empty() {
+                nodes.push(InlineNode::Text(std::mem::take(&mut text_buffer)));
+            }
+
+            // 添加行内代码节点
+            nodes.push(InlineNode::Code(content));
+
+            // 跳过整个 `code`
+            i += end_offset + 1; // +1 for closing `
             continue;
         }
 
@@ -339,6 +355,25 @@ pub fn find_underline(text: &str) -> Option<(usize, String)> {
         if !content.is_empty() {
             return Some((3 + end_pos, content.to_string()));
         }
+    }
+
+    None
+}
+
+/// 查找行内代码语法 `code`
+pub fn find_inline_code(text: &str) -> Option<(usize, String)> {
+    if !text.starts_with('`') {
+        return None;
+    }
+
+    // 跳过开头的 `
+    let remaining = text.get(1..)?;
+
+    // 查找结束的 `
+    if let Some(end_pos) = remaining.find('`') {
+        let content = &remaining[..end_pos];
+        // 行内代码允许空内容（如 ````），但不推荐
+        return Some((end_pos + 1, content.to_string()));
     }
 
     None
@@ -577,6 +612,59 @@ mod tests {
         assert_eq!(find_underline("<u>world</u> text"), Some((8, "world".to_string())));
         assert_eq!(find_underline("<u></u>"), None); // 空内容
         assert_eq!(find_underline("<u>test"), None); // 没有结束
+    }
+
+    #[test]
+    fn test_find_inline_code() {
+        // 返回值: (结束位置, 内容)
+        // "`hello`" -> 位置6是结束`的位置（从开头算起）
+        assert_eq!(find_inline_code("`hello`"), Some((6, "hello".to_string())));
+        assert_eq!(find_inline_code("`world` text"), Some((6, "world".to_string())));
+        assert_eq!(find_inline_code("``"), Some((1, "".to_string()))); // 空内容也允许
+        assert_eq!(find_inline_code("`test"), None); // 没有结束
+        assert_eq!(find_inline_code("normal"), None); // 不是代码
+    }
+
+    #[test]
+    fn test_parse_inline_extensions_code() {
+        let nodes = parse_inline_extensions("这是`代码`文本");
+        assert_eq!(nodes.len(), 3); // "这是", Code, "文本"
+
+        match &nodes[0] {
+            InlineNode::Text(s) => assert_eq!(s, "这是"),
+            _ => panic!("Expected Text node"),
+        }
+
+        match &nodes[1] {
+            InlineNode::Code(s) => assert_eq!(s, "代码"),
+            _ => panic!("Expected Code node"),
+        }
+
+        match &nodes[2] {
+            InlineNode::Text(s) => assert_eq!(s, "文本"),
+            _ => panic!("Expected Text node"),
+        }
+    }
+
+    #[test]
+    fn test_parse_inline_extensions_code_multiple() {
+        let nodes = parse_inline_extensions("`code1` and `code2`");
+        assert_eq!(nodes.len(), 3); // Code, " and ", Code
+
+        match &nodes[0] {
+            InlineNode::Code(s) => assert_eq!(s, "code1"),
+            _ => panic!("Expected Code node"),
+        }
+
+        match &nodes[1] {
+            InlineNode::Text(s) => assert_eq!(s, " and "),
+            _ => panic!("Expected Text node"),
+        }
+
+        match &nodes[2] {
+            InlineNode::Code(s) => assert_eq!(s, "code2"),
+            _ => panic!("Expected Code node"),
+        }
     }
 
     #[test]

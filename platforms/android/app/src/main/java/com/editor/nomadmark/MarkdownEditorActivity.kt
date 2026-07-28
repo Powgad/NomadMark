@@ -2997,7 +2997,7 @@ class MarkdownEditorActivity : android.app.Activity() {
 
         if (start == end) {
             // 没有选中文本，直接插入
-            editor.text.insert(start, "$prefix$suffix$")
+            editor.text.insert(start, "$prefix$suffix")
             editor.setSelection(start + prefix.length)
         } else {
             // 包裹选中的文本
