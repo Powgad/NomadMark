@@ -604,17 +604,38 @@ class MarkdownEditorActivity : android.app.Activity() {
     }
 
     /**
+     * 代码块匹配信息
+     * 用于存储代码块的范围和内容，用于乐谱匹配
+     */
+    private data class CodeBlockMatchInfo(
+        val start: Int,
+        val end: Int,
+        val span: Any,
+        val content: String
+    )
+
+    /**
      * 应用乐谱块渲染
      *
-     * 使用已检测的乐谱块列表进行渲染
-     * 按顺序匹配：第 i 个乐谱块对应第 i 个代码块 span
-     * 确保每个乐谱块只渲染一次，不允许重复调用
+     * 修复重复显示问题：
+     * 1. Markwon 在代码块前后插入 NBSP，导致多行范围
+     * 2. StaticLayout 对跨多行的 ReplacementSpan 每行都调用 draw()
+     * 3. 解决方案：将多行折叠为单个占位符，只挂 Span 在占位符上
+     *
+     * @param spanned 渲染后的文本
+     * @param musicSheets 检测到的乐谱块列表
+     * @return 修改后的文本（需要设置回 TextView）
      */
-    private fun applyMusicSheetRendering(spanned: Spanned, musicSheets: List<MusicSheetDetector.MusicBlock>) {
-        val spannable = spanned as Spannable
+    private fun applyMusicSheetRendering(spanned: Spanned, musicSheets: List<MusicSheetDetector.MusicBlock>): SpannableStringBuilder {
+        // 需要使用 SpannableStringBuilder 才能调用 replace()
+        val spannable = if (spanned is SpannableStringBuilder) {
+            spanned
+        } else {
+            SpannableStringBuilder(spanned)
+        }
 
         try {
-            if (musicSheets.isEmpty()) return
+            if (musicSheets.isEmpty()) return spannable
 
             Log.d(TAG, "开始渲染 ${musicSheets.size} 个乐谱块")
 
@@ -628,9 +649,10 @@ class MarkdownEditorActivity : android.app.Activity() {
             }
             activeMusicSheetSpans.clear()
 
-            // 查找所有 FencedCodeBlockSpan
-            val fencedCodeBlocks = mutableListOf<Triple<Int, Any, Int>>()
+            // 查找所有代码块 span（FencedCodeBlockSpan 或 CodeBlockSpan）
+            val codeBlockInfos = mutableListOf<CodeBlockMatchInfo>()
 
+            // 收集 FencedCodeBlockSpan
             try {
                 val fencedCodeClass = Class.forName(FENCED_CODE_BLOCK_SPAN)
                 val fencedSpans = spannable.getSpans(0, spanned.length, fencedCodeClass)
@@ -638,15 +660,16 @@ class MarkdownEditorActivity : android.app.Activity() {
                 for (span in fencedSpans) {
                     val start = spannable.getSpanStart(span)
                     val end = spannable.getSpanEnd(span)
-                    fencedCodeBlocks.add(Triple(start, span, end))
-                    Log.d(TAG, "找到 FencedCodeBlockSpan: [$start-$end]")
+                    val content = spanned.subSequence(start, end).toString()
+                    codeBlockInfos.add(CodeBlockMatchInfo(start, end, span, content))
+                    Log.d(TAG, "找到 FencedCodeBlockSpan: [$start-$end], content=${content.take(30)}...")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "查找 FencedCodeBlockSpan 失败", e)
             }
 
-            // 尝试查找 CodeBlockSpan 作为后备
-            if (fencedCodeBlocks.isEmpty()) {
+            // 收集 CodeBlockSpan 作为后备
+            if (codeBlockInfos.isEmpty()) {
                 try {
                     val codeBlockClass = Class.forName(CODE_BLOCK_SPAN)
                     val codeSpans = spannable.getSpans(0, spanned.length, codeBlockClass)
@@ -654,52 +677,89 @@ class MarkdownEditorActivity : android.app.Activity() {
                     for (span in codeSpans) {
                         val start = spannable.getSpanStart(span)
                         val end = spannable.getSpanEnd(span)
-                        fencedCodeBlocks.add(Triple(start, span, end))
-                        Log.d(TAG, "找到 CodeBlockSpan: [$start-$end]")
+                        val content = spanned.subSequence(start, end).toString()
+                        codeBlockInfos.add(CodeBlockMatchInfo(start, end, span, content))
+                        Log.d(TAG, "找到 CodeBlockSpan: [$start-$end], content=${content.take(30)}...")
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "查找 CodeBlockSpan 失败", e)
                 }
             }
 
-            Log.d(TAG, "找到 ${fencedCodeBlocks.size} 个代码块 span，需要处理 ${musicSheets.size} 个乐谱块")
+            if (codeBlockInfos.isEmpty()) {
+                Log.w(TAG, "未找到任何代码块 span，跳过乐谱渲染")
+                return spannable
+            }
 
-            // 【关键】按顺序一一对应：第 i 个乐谱块对应第 i 个代码块
-            val renderCount = minOf(musicSheets.size, fencedCodeBlocks.size)
+            Log.d(TAG, "找到 ${codeBlockInfos.size} 个代码块，${musicSheets.size} 个乐谱块")
 
-            for (i in 0 until renderCount) {
-                val musicSheet = musicSheets[i]
-                val (startPos, _, endPos) = fencedCodeBlocks[i]
+            // 【关键】用内容匹配乐谱块和代码块（不要硬配对）
+            // 构建匹配结果：(乐谱块, 代码块信息)
+            val matchResults = mutableListOf<Pair<MusicSheetDetector.MusicBlock, CodeBlockMatchInfo>>()
+
+            for (musicSheet in musicSheets) {
+                // 使用乐谱的首行来匹配代码块
+                val firstLine = musicSheet.musicData.content.lines().firstOrNull()
+                if (firstLine != null) {
+                    // 查找包含此首行的代码块
+                    val firstLineStr: CharSequence = firstLine
+                    val matched = codeBlockInfos.find { info ->
+                        info.content.contains(firstLineStr, ignoreCase = false) ||
+                        info.content.contains(firstLineStr.trim(), ignoreCase = false)
+                    }
+                    if (matched != null) {
+                        matchResults.add(musicSheet to matched)
+                        Log.d(TAG, "匹配乐谱: '${firstLine}' -> 代码块 [${matched.start}-${matched.end}]")
+                    } else {
+                        Log.w(TAG, "未找到匹配的代码块: '${firstLine}'")
+                    }
+                }
+            }
+
+            Log.d(TAG, "成功匹配 ${matchResults.size} 个乐谱块")
+
+            // 【关键】从后往前处理，避免 replace 导致的偏移错乱
+            // 因为每次 replace 会改变文本长度，从前向后会导致后续位置失效
+            for (i in matchResults.indices.reversed()) {
+                val (musicSheet, codeBlockInfo) = matchResults[i]
+
+                // 获取当前实际位置（因为之前的 replace 可能改变了偏移）
+                // 注意：由于从后往前处理，当前位置应该是准确的
+                val startPos = codeBlockInfo.start
+                val endPos = codeBlockInfo.end
 
                 Log.d(TAG, "处理乐谱[$i]: [$startPos-$endPos], type=${musicSheet.musicData.type}, title=${musicSheet.musicData.title}")
 
-                val musicSpan = MusicSheetSpan(
-                    this,
-                    musicSheet.musicData,
-                    screenWidth
-                )
+                // 【关键修复】用占位符替换多行代码块
+                // 将整个代码块范围折叠为单个字符
+                spannable.replace(startPos, endPos, MUSIC_SHEET_PLACEHOLDER.toString())
 
-                // 移除该范围内的所有现有 span（避免重复显示）
-                val allSpans = spannable.getSpans(
-                    startPos,
-                    endPos,
-                    Any::class.java
-                )
+                // 移除该范围内的所有现有 span（避免冲突）
+                // 注意：replace 后范围变成 startPos ~ startPos+1
+                val allSpans = spannable.getSpans(startPos, startPos + 1, Any::class.java)
                 for (span in allSpans) {
-                    val spanStart: Int = spannable.getSpanStart(span)
-                    val spanEnd: Int = spannable.getSpanEnd(span)
-                    if (spanStart >= startPos && spanEnd <= endPos) {
+                    val spanStart = spannable.getSpanStart(span)
+                    val spanEnd = spannable.getSpanEnd(span)
+                    // 只移除完全在占位符范围内的 span
+                    if (spanStart >= startPos && spanEnd <= startPos + 1) {
                         if (span !is MusicSheetSpan) {
                             spannable.removeSpan(span)
                         }
                     }
                 }
 
-                // 应用 MusicSheetSpan
+                // 创建 MusicSheetSpan 并挂在占位符上
+                val musicSpan = MusicSheetSpan(
+                    this,
+                    musicSheet.musicData,
+                    screenWidth
+                )
+
+                // 只挂在这一格上（startPos ~ startPos+1）
                 spannable.setSpan(
                     musicSpan,
                     startPos,
-                    endPos,
+                    startPos + 1,
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
                 )
 
@@ -737,12 +797,14 @@ class MarkdownEditorActivity : android.app.Activity() {
                     }
                 }
 
-                Log.d(TAG, "应用 MusicSheetSpan: [$startPos-$endPos], title=${musicSheet.musicData.title}")
+                Log.d(TAG, "应用 MusicSheetSpan: [$startPos-${startPos + 1}], title=${musicSheet.musicData.title}")
             }
 
         } catch (e: Exception) {
             Log.e(TAG, "处理乐谱块时出错", e)
         }
+
+        return spannable
     }
 
     /**
@@ -3667,9 +3729,11 @@ class MarkdownEditorActivity : android.app.Activity() {
             // 移除下划线
             removeUnderlines(previewText.text as Spanned)
             // 先应用乐谱渲染（使用已检测的乐谱块）
-            applyMusicSheetRendering(previewText.text as Spanned, musicSheets)
+            val renderedText = applyMusicSheetRendering(previewText.text as Spanned, musicSheets)
+            // 将修改后的文本设置回 TextView
+            previewText.text = renderedText
             // 再应用代码块边框（会跳过乐谱块）
-            applyCodeBlockBorder(previewText.text as Spanned)
+            applyCodeBlockBorder(renderedText)
             // 延迟刷新以确图片加载完成后重新渲染
             previewLayer.postDelayed({
                 previewText.requestLayout()
@@ -3682,9 +3746,11 @@ class MarkdownEditorActivity : android.app.Activity() {
             // 移除下划线
             removeUnderlines(splitPreviewText.text as Spanned)
             // 先应用乐谱渲染（使用已检测的乐谱块）
-            applyMusicSheetRendering(splitPreviewText.text as Spanned, musicSheets)
+            val renderedText = applyMusicSheetRendering(splitPreviewText.text as Spanned, musicSheets)
+            // 将修改后的文本设置回 TextView
+            splitPreviewText.text = renderedText
             // 再应用代码块边框（会跳过乐谱块）
-            applyCodeBlockBorder(splitPreviewText.text as Spanned)
+            applyCodeBlockBorder(renderedText)
             // 延迟刷新以确图片加载完成后重新渲染（解决滚动后图片竖线问题）
             splitPreviewScroll.postDelayed({
                 splitPreviewText.requestLayout()
@@ -4485,6 +4551,9 @@ class MarkdownEditorActivity : android.app.Activity() {
         private const val FENCED_CODE_BLOCK_SPAN = "io.noties.markwon.core.spans.FencedCodeBlockSpan"
         private const val LINK_SPAN = "io.noties.markwon.core.span.LinkSpan"
         private const val THEMATIC_BREAK_SPAN = "io.noties.markwon.core.spans.ThematicBreakSpan"
+
+        // 乐谱占位符常量（用于将多行代码块折叠为单个字符）
+        private const val MUSIC_SHEET_PLACEHOLDER = '￼'  // Object Replacement Character
     }
 
     /**
