@@ -161,8 +161,20 @@ class WebViewMusicRenderer(private val context: Context) {
      * 生成 abcjs HTML（使用 SVG 输出）
      */
     private fun generateAbcHtml(musicData: MusicData, width: Int): String {
+        // 【简谱转换】如果是简谱类型，先转换为 ABC 记谱法
+        val contentToRender = if (musicData.type == MusicType.JIANPU) {
+            Log.d(TAG, "检测到简谱类型，执行转换...")
+            val conversionResult = JianpuConverter.convert(musicData.content, musicData.id)
+            Log.d(TAG, "简谱转换完成: warnings=${conversionResult.warnings.size}")
+            conversionResult.warnings.forEach { Log.w(TAG, "简谱转换警告: $it") }
+            Log.d(TAG, "转换后的 ABC 代码:\n${conversionResult.abc}")
+            conversionResult.abc
+        } else {
+            musicData.content
+        }
+
         // 转义内容中的特殊字符
-        val escapedContent = musicData.content
+        val escapedContent = contentToRender
             .replace("\\", "\\\\")
             .replace("\"", "\\\"")
             .replace("\n", "\\n")
