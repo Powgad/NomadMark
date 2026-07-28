@@ -237,21 +237,20 @@ class WebViewMusicRenderer(private val context: Context) {
                         console.log('  - abcCode lines:', abcCode.split('\\n').length);
 
                         ABCJS.renderAbc("paper", abcCode, {
-                            // 不使用 responsive:'resize'：它会把 SVG 宽度变成百分比，
-                            // AndroidSVG 无法读取绝对尺寸，导致多行乐谱高度被截断
-                            scale: 1.2,
+                            // 缩小比例确保乐谱完全显示在屏幕内
+                            scale: 0.9,
                             staffwidth: $staffWidth,
                             wrap: {
-                                minSpacing: 1.0,
-                                maxSpacing: 3.0,
-                                preferredMeasuresPerLine: 4
+                                minSpacing: 0.8,
+                                maxSpacing: 2.5,
+                                preferredMeasuresPerLine: 5
                             },
-                            paddingtop: 20,
-                            paddingbottom: 20,
-                            paddingright: 20,
-                            paddingleft: 20
+                            paddingtop: 15,
+                            paddingbottom: 15,
+                            paddingright: 30,
+                            paddingleft: 30
                         });
-                        console.log('[ABC-RENDER-DEBUG] renderAbc options: staffwidth=$staffWidth, wrap enabled');
+                        console.log('[ABC-RENDER-DEBUG] renderAbc options: staffwidth=$staffWidth, scale=0.9, wrap enabled');
 
                         // 获取所有 SVG 内容并合并
                         setTimeout(function() {
