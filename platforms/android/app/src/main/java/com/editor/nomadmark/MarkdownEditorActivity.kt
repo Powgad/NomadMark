@@ -655,12 +655,12 @@ class MarkdownEditorActivity : android.app.Activity() {
             // 收集 FencedCodeBlockSpan
             try {
                 val fencedCodeClass = Class.forName(FENCED_CODE_BLOCK_SPAN)
-                val fencedSpans = spannable.getSpans(0, spanned.length, fencedCodeClass)
+                val fencedSpans = spannable.getSpans(0, spannable.length, fencedCodeClass)
 
                 for (span in fencedSpans) {
                     val start = spannable.getSpanStart(span)
                     val end = spannable.getSpanEnd(span)
-                    val content = spanned.subSequence(start, end).toString()
+                    val content = spannable.subSequence(start, end).toString()
                     codeBlockInfos.add(CodeBlockMatchInfo(start, end, span, content))
                     Log.d(TAG, "找到 FencedCodeBlockSpan: [$start-$end], content=${content.take(30)}...")
                 }
@@ -672,12 +672,12 @@ class MarkdownEditorActivity : android.app.Activity() {
             if (codeBlockInfos.isEmpty()) {
                 try {
                     val codeBlockClass = Class.forName(CODE_BLOCK_SPAN)
-                    val codeSpans = spannable.getSpans(0, spanned.length, codeBlockClass)
+                    val codeSpans = spannable.getSpans(0, spannable.length, codeBlockClass)
 
                     for (span in codeSpans) {
                         val start = spannable.getSpanStart(span)
                         val end = spannable.getSpanEnd(span)
-                        val content = spanned.subSequence(start, end).toString()
+                        val content = spannable.subSequence(start, end).toString()
                         codeBlockInfos.add(CodeBlockMatchInfo(start, end, span, content))
                         Log.d(TAG, "找到 CodeBlockSpan: [$start-$end], content=${content.take(30)}...")
                     }
@@ -693,30 +693,55 @@ class MarkdownEditorActivity : android.app.Activity() {
 
             Log.d(TAG, "找到 ${codeBlockInfos.size} 个代码块，${musicSheets.size} 个乐谱块")
 
-            // 【关键】用内容匹配乐谱块和代码块（不要硬配对）
-            // 构建匹配结果：(乐谱块, 代码块信息)
+            // 【关键修复】使用位置匹配 + 内容验证的双重策略
+            // 原始问题：如果代码块中混有普通代码块，按索引或简单内容匹配会错位
+            // 解决方案：按位置顺序匹配，并用多行内容验证确保正确性
             val matchResults = mutableListOf<Pair<MusicSheetDetector.MusicBlock, CodeBlockMatchInfo>>()
 
-            for (musicSheet in musicSheets) {
-                // 使用乐谱的首行来匹配代码块
-                val firstLine = musicSheet.musicData.content.lines().firstOrNull()
-                if (firstLine != null) {
-                    // 查找包含此首行的代码块
-                    val firstLineStr: CharSequence = firstLine
-                    val matched = codeBlockInfos.find { info ->
-                        info.content.contains(firstLineStr, ignoreCase = false) ||
-                        info.content.contains(firstLineStr.trim(), ignoreCase = false)
-                    }
-                    if (matched != null) {
-                        matchResults.add(musicSheet to matched)
-                        Log.d(TAG, "匹配乐谱: '${firstLine}' -> 代码块 [${matched.start}-${matched.end}]")
-                    } else {
-                        Log.w(TAG, "未找到匹配的代码块: '${firstLine}'")
-                    }
+            // 按位置排序，确保顺序一致
+            val sortedMusicSheets = musicSheets.sortedBy { it.blockStart }
+            val sortedCodeBlocks = codeBlockInfos.sortedBy { it.start }
+
+            // 使用多行内容进行匹配验证（不只看首行）
+            fun isContentMatch(musicContent: String, codeBlockContent: String): Boolean {
+                val musicLines = musicContent.lines().filter { it.isNotBlank() }
+                if (musicLines.isEmpty()) return false
+
+                // 使用前3行（或全部，如果少于3行）进行匹配
+                val checkLines = musicLines.take(3)
+
+                // 检查所有关键行都存在于代码块中
+                return checkLines.all { line ->
+                    codeBlockContent.contains(line, ignoreCase = false) ||
+                    codeBlockContent.contains(line.trim(), ignoreCase = false)
                 }
             }
 
-            Log.d(TAG, "成功匹配 ${matchResults.size} 个乐谱块")
+            // 逐个匹配乐谱块到代码块（按顺序）
+            var codeBlockIndex = 0
+            for (musicSheet in sortedMusicSheets) {
+                var matched: CodeBlockMatchInfo? = null
+
+                // 从当前位置向后查找匹配的代码块
+                for (i in codeBlockIndex until sortedCodeBlocks.size) {
+                    val codeBlock = sortedCodeBlocks[i]
+
+                    if (isContentMatch(musicSheet.musicData.content, codeBlock.content)) {
+                        matched = codeBlock
+                        codeBlockIndex = i + 1  // 下次从下一个代码块开始
+                        Log.d(TAG, "匹配乐谱 [${musicSheet.blockStart}-${musicSheet.blockEnd}] -> 代码块 [${codeBlock.start}-${codeBlock.end}], title=${musicSheet.musicData.title}")
+                        break
+                    }
+                }
+
+                if (matched != null) {
+                    matchResults.add(musicSheet to matched)
+                } else {
+                    Log.w(TAG, "未找到匹配的代码块: [${musicSheet.blockStart}-${musicSheet.blockEnd}], title=${musicSheet.musicData.title}")
+                }
+            }
+
+            Log.d(TAG, "成功匹配 ${matchResults.size}/${sortedMusicSheets.size} 个乐谱块")
 
             // 【关键】从后往前处理，避免 replace 导致的偏移错乱
             // 因为每次 replace 会改变文本长度，从前向后会导致后续位置失效
