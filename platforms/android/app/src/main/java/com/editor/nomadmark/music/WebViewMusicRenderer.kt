@@ -241,23 +241,111 @@ class WebViewMusicRenderer(private val context: Context) {
                             // AndroidSVG 无法读取绝对尺寸，导致多行乐谱高度被截断
                             scale: 1.2,
                             staffwidth: $staffWidth,
-                            wrap: true,  // 按谱表宽度自动换行，长乐谱在小节线处断行
+                            wrap: {
+                                minSpacing: 1.0,
+                                maxSpacing: 3.0,
+                                preferredMeasuresPerLine: 4
+                            },
                             paddingtop: 20,
                             paddingbottom: 20,
                             paddingright: 20,
                             paddingleft: 20
                         });
+                        console.log('[ABC-RENDER-DEBUG] renderAbc options: staffwidth=$staffWidth, wrap enabled');
 
-                        // 获取 SVG 内容并通知原生
+                        // 获取所有 SVG 内容并合并
                         setTimeout(function() {
-                            var svg = document.querySelector('#paper svg');
-                            if (svg) {
-                                var svgString = new XMLSerializer().serializeToString(svg);
-                                window.ABCJS_SVG_RESULT = svgString;
-                                console.log('[ABC-RENDER-DEBUG] SVG extracted, length:', svgString.length);
-                            } else {
+                            var svgs = document.querySelectorAll('#paper svg');
+                            console.log('[ABC-RENDER-DEBUG] Found', svgs.length, 'SVG elements');
+
+                            if (svgs.length === 0) {
                                 console.error('[ABC-RENDER-DEBUG] No SVG found');
                                 window.SVG_ERROR = 'No SVG element found';
+                                window.ABCJS_SVG_RESULT = '';
+                            } else if (svgs.length === 1) {
+                                // 单个 SVG，直接序列化
+                                var svg = svgs[0];
+                                var viewBox = svg.getAttribute('viewBox');
+                                var width = svg.getAttribute('width');
+                                var height = svg.getAttribute('height');
+                                console.log('[ABC-RENDER-DEBUG] Single SVG - viewBox:', viewBox, 'width:', width, 'height:', height);
+                                var svgString = new XMLSerializer().serializeToString(svg);
+                                window.ABCJS_SVG_RESULT = svgString;
+                                console.log('[ABC-RENDER-DEBUG] Single SVG extracted, length:', svgString.length);
+                            } else {
+                                // 多个 SVG，需要合并
+                                var totalHeight = 0;
+                                var maxWidth = 0;
+                                var svgStrings = [];
+
+                                // 计算总高度和最大宽度
+                                for (var i = 0; i < svgs.length; i++) {
+                                    var svg = svgs[i];
+                                    var viewBox = svg.getAttribute('viewBox');
+                                    var w = 0, h = 0;
+
+                                    if (viewBox) {
+                                        var parts = viewBox.trim().split(/\s+/);
+                                        if (parts.length >= 4) {
+                                            w = parseFloat(parts[2]) || 0;
+                                            h = parseFloat(parts[3]) || 0;
+                                        }
+                                    }
+
+                                    // 如果 viewBox 解析失败，尝试从属性获取
+                                    if (w === 0) w = parseFloat(svg.getAttribute('width')) || 0;
+                                    if (h === 0) h = parseFloat(svg.getAttribute('height')) || 0;
+
+                                    // 如果还是失败，尝试从 BBox 获取
+                                    if (w === 0 || h === 0) {
+                                        var bbox = svg.getBBox();
+                                        w = bbox.width || 0;
+                                        h = bbox.height || 0;
+                                    }
+
+                                    console.log('[ABC-RENDER-DEBUG] SVG', i, 'dimensions:', w, 'x', h);
+                                    totalHeight += h;
+                                    if (w > maxWidth) maxWidth = w;
+                                    svgStrings.push(new XMLSerializer().serializeToString(svg));
+                                }
+
+                                console.log('[ABC-RENDER-DEBUG] Merging', svgs.length, 'SVGs, totalHeight:', totalHeight, ', maxWidth:', maxWidth);
+
+                                // 创建合并后的 SVG
+                                var mergedSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + maxWidth + ' ' + totalHeight + '" width="' + maxWidth + '" height="' + totalHeight + '">';
+                                var currentY = 0;
+
+                                for (var i = 0; i < svgStrings.length; i++) {
+                                    var svgStr = svgStrings[i];
+                                    var h = 0;
+                                    var viewBox = svgs[i].getAttribute('viewBox');
+                                    if (viewBox) {
+                                        var parts = viewBox.trim().split(/\s+/);
+                                        if (parts.length >= 4) h = parseFloat(parts[3]) || 0;
+                                    }
+                                    if (h === 0) h = parseFloat(svgs[i].getAttribute('height')) || 0;
+                                    if (h === 0) {
+                                        var bbox = svgs[i].getBBox();
+                                        h = bbox.height || 0;
+                                    }
+
+                                    // 提取原始 SVG 的内容（去掉 <svg> 标签）
+                                    var contentMatch = svgStr.match(/<svg[^>]*>([\s\S]*)<\/svg>/);
+                                    if (contentMatch) {
+                                        var content = contentMatch[1];
+                                        mergedSvg += '<g transform="translate(0, ' + currentY + ')">';
+                                        mergedSvg += content;
+                                        mergedSvg += '</g>';
+                                        currentY += h;
+                                        console.log('[ABC-RENDER-DEBUG] Merged SVG', i, 'at Y:', currentY - h, 'height:', h);
+                                    } else {
+                                        console.error('[ABC-RENDER-DEBUG] Failed to extract SVG content for index', i);
+                                    }
+                                }
+                                mergedSvg += '</svg>';
+
+                                window.ABCJS_SVG_RESULT = mergedSvg;
+                                console.log('[ABC-RENDER-DEBUG] Merged SVG created, length:', mergedSvg.length);
                             }
                         }, 300);
 
@@ -340,7 +428,16 @@ class WebViewMusicRenderer(private val context: Context) {
                             Log.d(TAG, "获取到 SVG，长度: ${svgString.length}")
                             Log.d(TAG, "SVG 开头: ${svgString.take(100)}")
 
-                            if (svgString.isEmpty()) {
+                            // 清理 SVG 字符串，移除 AndroidSVG 不支持的属性
+                            val cleanedSvg = svgString
+                                .replace(Regex("""role="[^"]*""""), "")
+                                .replace(Regex("""aria-[a-z]+="[^"]*""""), "")
+                                .replace(Regex("""class="[^"]*""""), "")
+                                .replace(Regex("""data-[a-z-]+="[^"]*""""), "")
+
+                            Log.d(TAG, "清理后 SVG 长度: ${cleanedSvg.length}")
+
+                            if (cleanedSvg.isEmpty()) {
                                 Log.w(TAG, "SVG 字符串为空，使用备用方法")
                                 captureBitmapFallback(webView, musicData, width, callback) {
                                     onDestroy()
@@ -349,7 +446,7 @@ class WebViewMusicRenderer(private val context: Context) {
                             }
 
                             // 第四步：创建 Picture 并绘制 SVG
-                            val picture = createPictureFromSvg(svgString, width)
+                            val picture = createPictureFromSvg(cleanedSvg, width)
                             if (picture != null) {
                                 // 从 Picture 创建 Bitmap
                                 val bitmap = Bitmap.createBitmap(
@@ -505,62 +602,77 @@ class WebViewMusicRenderer(private val context: Context) {
 
             webView.layout(0, 0, webView.measuredWidth, measuredHeight)
 
-            // 获取 WebView 内容高度（通过 JavaScript）
-            webView.evaluateJavascript("(function() { return document.body.scrollHeight; })();") { height ->
-                Log.d(TAG, "WebView 内容高度: $height")
-            }
+            // 获取 SVG 元素的实际高度（通过 JavaScript）
+            webView.evaluateJavascript("(function() { " +
+                "var svg = document.querySelector('#paper svg'); " +
+                "if (svg) { " +
+                "var viewBox = svg.getAttribute('viewBox'); " +
+                "if (viewBox) { " +
+                "var parts = viewBox.trim().split(/\\s+/); " +
+                "return parts[3] || '0'; " +
+                "} " +
+                "var height = svg.getAttribute('height'); " +
+                "if (height) return height.replace('px', ''); " +
+                "var bbox = svg.getBBox(); " +
+                "return (bbox.height || 0).toString(); " +
+                "} " +
+                "return document.body.scrollHeight.toString(); " +
+                "})()") { heightStr ->
+                val svgHeight = heightStr?.toFloatOrNull()?.toInt() ?: measuredHeight
+                val finalHeight = maxOf(measuredHeight, svgHeight, 400)
+                Log.d(TAG, "SVG 计算高度: $svgHeight, 最终使用高度: $finalHeight")
 
-            // 创建 Bitmap
-            val bitmap = Bitmap.createBitmap(
-                webView.measuredWidth,
-                measuredHeight,
-                Bitmap.Config.ARGB_8888
-            )
+                // 创建 Bitmap，使用实际内容高度
+                val bitmap = Bitmap.createBitmap(
+                    webView.measuredWidth,
+                    finalHeight,
+                    Bitmap.Config.ARGB_8888
+                )
 
-            val canvas = Canvas(bitmap)
-            canvas.drawColor(Color.WHITE)
+                val canvas = Canvas(bitmap)
+                canvas.drawColor(Color.WHITE)
 
-            // 使用软件层绘制
-            webView.setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, null)
-            webView.draw(canvas)
-            webView.setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
+                // 使用软件层绘制
+                webView.setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, null)
+                webView.draw(canvas)
+                webView.setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
 
-            // 检查 Bitmap 是否为空（全白）并统计内容分布
-            var hasContent = false
-            var nonWhiteCount = 0
-            var firstNonWhiteX = -1
-            var firstNonWhiteY = -1
-            val pixels = IntArray(Math.min(bitmap.width * bitmap.height, 10000))
-            bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, Math.min(bitmap.height, 10000 / bitmap.width))
-            for (i in pixels.indices) {
-                if (pixels[i] != Color.WHITE) {
-                    hasContent = true
-                    nonWhiteCount++
-                    if (firstNonWhiteX == -1) {
-                        firstNonWhiteX = i % bitmap.width
-                        firstNonWhiteY = i / bitmap.width
+                // 检查 Bitmap 是否为空（全白）并统计内容分布
+                var hasContent = false
+                var nonWhiteCount = 0
+                var firstNonWhiteX = -1
+                var firstNonWhiteY = -1
+                val pixels = IntArray(Math.min(bitmap.width * bitmap.height, 10000))
+                bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, Math.min(bitmap.height, 10000 / bitmap.width))
+                for (i in pixels.indices) {
+                    if (pixels[i] != Color.WHITE) {
+                        hasContent = true
+                        nonWhiteCount++
+                        if (firstNonWhiteX == -1) {
+                            firstNonWhiteX = i % bitmap.width
+                            firstNonWhiteY = i / bitmap.width
+                        }
                     }
                 }
+
+                // 检查特定位置的像素
+                val centerX = bitmap.width / 2
+                val centerY = bitmap.height / 2
+                val centerPixel = bitmap.getPixel(centerX, centerY)
+                Log.d(TAG, "Bitmap 中心像素 ($centerX,$centerY): 0x${Integer.toHexString(centerPixel)}")
+
+                if (!hasContent) {
+                    Log.w(TAG, "Bitmap 渲染为空（全白）")
+                } else {
+                    Log.d(TAG, "Bitmap 有内容，非白色像素数: $nonWhiteCount, 第一个非白色像素位置: ($firstNonWhiteX,$firstNonWhiteY)")
+                }
+
+                // 缓存 Bitmap
+                MusicSheetCache.put(musicData.getCacheKey(width), bitmap)
+
+                Log.d(TAG, "渲染完成: ${bitmap.width}x${bitmap.height}, hasContent=$hasContent")
+                callback(bitmap)
             }
-
-            // 检查特定位置的像素
-            val centerX = bitmap.width / 2
-            val centerY = bitmap.height / 2
-            val centerPixel = bitmap.getPixel(centerX, centerY)
-            Log.d(TAG, "Bitmap 中心像素 ($centerX,$centerY): 0x${Integer.toHexString(centerPixel)}")
-
-            if (!hasContent) {
-                Log.w(TAG, "Bitmap 渲染为空（全白）")
-            } else {
-                Log.d(TAG, "Bitmap 有内容，非白色像素数: $nonWhiteCount, 第一个非白色像素位置: ($firstNonWhiteX,$firstNonWhiteY)")
-            }
-
-            // 缓存 Bitmap
-            MusicSheetCache.put(musicData.getCacheKey(width), bitmap)
-
-            Log.d(TAG, "渲染完成: ${bitmap.width}x${bitmap.height}, hasContent=$hasContent")
-            callback(bitmap)
-
         } catch (e: Exception) {
             Log.e(TAG, "截取 Bitmap 失败", e)
             callback(null)
