@@ -18,6 +18,7 @@ import android.os.Looper
 import android.provider.DocumentsContract
 import android.provider.Settings
 import android.net.Uri
+import android.view.MotionEvent
 import android.text.Editable
 import android.text.Spannable
 import android.text.SpannableString
@@ -780,6 +781,32 @@ class MarkdownEditorActivity : android.app.Activity() {
                     screenWidth
                 )
 
+                // 设置渲染器和回调
+                musicSpan.setRenderer(musicSheetRenderer)
+                musicSpan.onBitmapUpdated = { heightChanged ->
+                    runOnUiThread {
+                        if (heightChanged) {
+                            // 高度变化，需要重新布局
+                            if (isPreviewMode) {
+                                previewText.requestLayout()
+                                previewText.invalidate()
+                            }
+                            if (isSplitMode) {
+                                splitPreviewText?.requestLayout()
+                                splitPreviewText?.invalidate()
+                            }
+                        } else {
+                            // 只是 bitmap 内容更新，只需重绘
+                            if (isPreviewMode) {
+                                previewText.invalidate()
+                            }
+                            if (isSplitMode) {
+                                splitPreviewText?.invalidate()
+                            }
+                        }
+                    }
+                }
+
                 // 只挂在这一格上（startPos ~ startPos+1）
                 spannable.setSpan(
                     musicSpan,
@@ -1205,6 +1232,24 @@ class MarkdownEditorActivity : android.app.Activity() {
 
         // 确保编辑器获得焦点以显示光标
         editorText.requestFocus()
+
+        // 设置滚动监听（用于更新乐谱可见性）
+        setupScrollListeners()
+    }
+
+    /**
+     * 设置滚动监听器
+     */
+    private fun setupScrollListeners() {
+        // 预览模式滚动监听
+        previewLayer.viewTreeObserver.addOnScrollChangedListener {
+            updateMusicSheetVisibility()
+        }
+
+        // 分屏模式滚动监听
+        splitPreviewScroll?.viewTreeObserver?.addOnScrollChangedListener {
+            updateMusicSheetVisibility()
+        }
     }
 
     // =========================================================================
@@ -1453,6 +1498,134 @@ class MarkdownEditorActivity : android.app.Activity() {
 
         // 目录关闭
         tocCloseArea.setOnClickListener { toggleToc() }
+
+        // 设置预览区的触摸监听（用于乐谱点击）
+        setupMusicSheetTouchListeners()
+    }
+
+    /**
+     * 设置乐谱点击监听器
+     */
+    private fun setupMusicSheetTouchListeners() {
+        // 预览模式
+        previewText.setOnTouchListener { _, event ->
+            if (event.action == MotionEvent.ACTION_UP) {
+                handleMusicSheetTap(event.x, event.y, previewText)
+            }
+            false
+        }
+
+        // 分屏模式
+        splitPreviewText?.setOnTouchListener { _, event ->
+            if (event.action == MotionEvent.ACTION_UP) {
+                handleMusicSheetTap(event.x, event.y, splitPreviewText!!)
+            }
+            false
+        }
+    }
+
+    /**
+     * 处理乐谱区域点击
+     */
+    private fun handleMusicSheetTap(x: Float, y: Float, textView: TextView) {
+        val layout = textView.layout ?: return
+        val text = textView.text as? Spannable ?: return
+
+        // 获取点击位置的行号和偏移
+        val line = layout.getLineForVertical(y.toInt())
+        val offset = layout.getOffsetForHorizontal(line, x)
+
+        // 检查该位置是否有 MusicSheetSpan
+        val spans = text.getSpans(
+            layout.getLineStart(line).coerceAtLeast(0),
+            layout.getLineEnd(line).coerceAtMost(text.length),
+            MusicSheetSpan::class.java
+        )
+
+        for (span in spans) {
+            // 检查点击是否在 Span 的范围内
+            val spanStart = text.getSpanStart(span)
+            val spanEnd = text.getSpanEnd(span)
+
+            if (offset in spanStart..spanEnd) {
+                // 更新 Span 的屏幕边界
+                updateMusicSheetSpanBounds(span, textView, layout, line)
+
+                // 处理点击
+                if (span.handleTap(x, y)) {
+                    Log.d(TAG, "乐谱被点击: ${span.music.title ?: span.music.id}")
+                    invalidateMusicSheets()
+                    return
+                }
+            }
+        }
+    }
+
+    /**
+     * 更新 MusicSheetSpan 的屏幕边界
+     */
+    private fun updateMusicSheetSpanBounds(span: MusicSheetSpan, textView: TextView, layout: android.text.Layout, line: Int) {
+        // 获取 Span 的视觉位置
+        val lineTop = layout.getLineTop(line)
+        val lineBottom = layout.getLineBottom(line)
+        val lineLeft = layout.getLineLeft(line)
+        val lineRight = layout.getLineRight(line)
+
+        // 使用整个行范围作为边界
+        val bounds = android.graphics.RectF(
+            lineLeft,
+            lineTop.toFloat(),
+            lineRight,
+            lineBottom.toFloat()
+        )
+
+        // 直接设置
+        span.screenBounds = bounds
+        Log.d(TAG, "更新 MusicSheetSpan 边界: line=$line, bounds=$bounds")
+    }
+
+    /**
+     * 刷新所有乐谱显示
+     */
+    private fun invalidateMusicSheets() {
+        previewText.invalidate()
+        splitPreviewText?.invalidate()
+    }
+
+    /**
+     * 检查并更新所有乐谱的可见性状态
+     */
+    private fun updateMusicSheetVisibility() {
+        updateMusicSheetVisibilityForTextView(previewText)
+        splitPreviewText?.let { updateMusicSheetVisibilityForTextView(it) }
+    }
+
+    /**
+     * 检查并更新指定 TextView 中乐谱的可见性
+     */
+    private fun updateMusicSheetVisibilityForTextView(textView: TextView) {
+        val layout = textView.layout ?: return
+        val text = textView.text as? Spannable ?: return
+
+        val viewportTop = 0
+        val viewportBottom = textView.height
+
+        val spans = text.getSpans(0, text.length, MusicSheetSpan::class.java)
+        for (span in spans) {
+            val spanStart = text.getSpanStart(span)
+            val spanEnd = text.getSpanEnd(span)
+
+            // 获取 Span 的行范围
+            val startLine = layout.getLineForOffset(spanStart.coerceIn(0, text.length - 1))
+            val endLine = layout.getLineForOffset((spanEnd - 1).coerceIn(0, text.length - 1))
+
+            val spanTop = layout.getLineTop(startLine)
+            val spanBottom = layout.getLineBottom(endLine)
+
+            // 检查是否在可视区域内
+            val isVisible = spanBottom > viewportTop && spanTop < viewportBottom
+            span.updateVisibility(isVisible)
+        }
     }
 
     // =========================================================================
