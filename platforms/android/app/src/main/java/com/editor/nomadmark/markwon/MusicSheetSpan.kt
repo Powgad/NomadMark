@@ -42,8 +42,8 @@ class MusicSheetSpan(
     /** 渲染器引用 */
     private var renderer: WebViewMusicRenderer? = null
 
-    /** 当前高亮的音符 ID */
-    private var highlightedNoteId: String? = null
+    /** 当前高亮的音符事件 */
+    private var highlightedNote: NoteEvent? = null
 
     /** 乐谱在屏幕上的边界（用于点击检测） */
     var screenBounds: RectF? = null
@@ -54,6 +54,12 @@ class MusicSheetSpan(
 
     /** 是否正在初始化播放 */
     private var isInitializingPlayback: Boolean = false
+
+    /** 音符时间轴（在首次分析后缓存） */
+    private var noteTimeline: List<NoteEvent>? = null
+
+    /** 是否正在分析音符时间轴 */
+    private var isAnalyzingTimeline: Boolean = false
 
     /**
      * 设置渲染器（在 Span 创建后调用）
@@ -134,33 +140,31 @@ class MusicSheetSpan(
     private fun startPlayback() {
         android.util.Log.d(TAG, "开始播放: ${musicData.title ?: musicData.id}")
 
-        // 估算音符数量（从内容长度估算）
-        val totalNotes = estimateNoteCount(musicData.content)
-
         // 创建播放控制器
         if (playbackController == null) {
             playbackController = MusicPlaybackController(musicData)
         }
 
-        // 开始播放
-        playbackController?.startPlayback(
-            totalNotes = totalNotes,
-            tempo = musicData.tempo,
-            listener = createPlaybackListener()
-        )
-    }
+        // 检查是否已有音符时间轴
+        if (noteTimeline != null) {
+            // 直接开始播放
+            playbackController?.startPlayback(noteTimeline!!, createPlaybackListener())
+        } else if (!isAnalyzingTimeline) {
+            // 首次播放，需要分析音符时间轴
+            isAnalyzingTimeline = true
+            renderer?.analyzeNoteTimeline(musicData) { events ->
+                noteTimeline = events
+                isAnalyzingTimeline = false
+                android.util.Log.d(TAG, "音符时间轴分析完成: ${events.size} 个音符")
 
-    /**
-     * 估算音符数量
-     */
-    private fun estimateNoteCount(content: String): Int {
-        // 简单估算：统计可能为音符的字符
-        val noteChars = setOf('C', 'D', 'E', 'F', 'G', 'A', 'B', 'c', 'd', 'e', 'f', 'g', 'a', 'b')
-        var count = 0
-        for (char in content) {
-            if (char in noteChars) count++
+                // 分析完成后开始播放
+                if (events.isNotEmpty()) {
+                    playbackController?.startPlayback(events, createPlaybackListener())
+                } else {
+                    android.util.Log.w(TAG, "音符事件列表为空，无法播放")
+                }
+            }
         }
-        return count.coerceAtLeast(8)  // 至少 8 个音符
     }
 
     /**
@@ -168,16 +172,18 @@ class MusicSheetSpan(
      */
     private fun createPlaybackListener(): MusicPlaybackController.OnPlaybackProgressListener {
         return object : MusicPlaybackController.OnPlaybackProgressListener {
-            override fun onProgressUpdate(progress: Float, isPlaying: Boolean) {
-                android.util.Log.d(TAG, "播放进度: $progress")
-                // 不需要重新渲染，只是更新进度显示
+            override fun onNoteHighlight(noteEvent: NoteEvent, progress: Float, isPlaying: Boolean) {
+                android.util.Log.d(TAG, "音符高亮: ${noteEvent.elementId}, progress=$progress")
+                highlightedNote = noteEvent
+                // 触发重绘以显示高亮
                 onBitmapUpdated?.invoke(false)
             }
 
             override fun onPlaybackComplete() {
                 android.util.Log.d(TAG, "播放完成")
-                highlightedNoteId = null
+                highlightedNote = null
                 showCompleteIndicator()
+                onBitmapUpdated?.invoke(false)
             }
         }
     }
@@ -232,6 +238,69 @@ class MusicSheetSpan(
     private fun showCompleteIndicator() {
         showCompleteIndicator = true
         onBitmapUpdated?.invoke(false)
+    }
+
+    // =========================================================================
+    // 音符高亮绘制
+    // =========================================================================
+
+    /**
+     * 绘制音符高亮效果（墨水屏反色填充）
+     */
+    private fun drawNoteHighlight(
+        canvas: Canvas,
+        bitmapX: Float,
+        bitmapY: Float,
+        bitmapWidth: Int,
+        bitmapHeight: Int
+    ) {
+        val note = highlightedNote
+        android.util.Log.d(TAG, "drawNoteHighlight: note=$note, hasNote=${note != null}")
+
+        if (note == null) return
+
+        val position = note.position
+        android.util.Log.d(TAG, "drawNoteHighlight: position=$position")
+
+        if (position == null) {
+            android.util.Log.w(TAG, "音符位置信息为空，无法绘制高亮")
+            return
+        }
+
+        // 将归一化坐标转换为实际像素坐标
+        val highlightX = bitmapX + position.x * bitmapWidth
+        val highlightY = bitmapY + position.y * bitmapHeight
+        val highlightW = position.width * bitmapWidth
+        val highlightH = position.height * bitmapHeight
+
+        // 确保高亮区域有最小尺寸可见（墨水屏需要更大）
+        val minSize = 48f  // 增加到 48 像素
+        val finalW = maxOf(highlightW, minSize)
+        val finalH = maxOf(highlightH, minSize)
+        val finalX = highlightX + (highlightW - finalW) / 2
+        val finalY = highlightY + (highlightH - finalH) / 2
+
+        android.util.Log.d(TAG, "绘制音符反色高亮: x=$finalX, y=$finalY, w=$finalW, h=$finalH, bitmapX=$bitmapX, bitmapY=$bitmapY")
+
+        // 创建反色效果（黑变白，白变黑）
+        val rect = android.graphics.RectF(
+            finalX,
+            finalY,
+            finalX + finalW,
+            finalY + finalH
+        )
+
+        // 墨水屏高亮效果 - 只绘制边框
+        val paint = Paint().apply {
+            isAntiAlias = false
+            style = Paint.Style.STROKE
+            strokeWidth = 4f
+            color = Color.BLACK
+        }
+
+        canvas.drawRect(rect, paint)
+
+        android.util.Log.d(TAG, "✓ 音符高亮边框绘制完成")
     }
 
     // =========================================================================
@@ -433,6 +502,23 @@ class MusicSheetSpan(
 
             val bitmapPaint = Paint()
             canvas.drawBitmap(it, x, bitmapTop.toFloat(), bitmapPaint)
+
+            // 【调试】如果正在播放，在乐谱中心绘制一个测试矩形
+            val controller = playbackController
+            if (controller?.isPlaying == true) {
+                val testPaint = Paint().apply {
+                    color = Color.BLACK
+                    style = Paint.Style.FILL
+                }
+                val testSize = 60f
+                val testX = x + it.width / 2 - testSize / 2
+                val testY = bitmapTop + it.height / 2 - testSize / 2
+                canvas.drawRect(testX, testY, testX + testSize, testY + testSize, testPaint)
+                android.util.Log.d(TAG, "【调试】绘制测试矩形: isPlaying=true, at ($testX, $testY)")
+            }
+
+            // 绘制音符高亮
+            drawNoteHighlight(canvas, x, bitmapTop.toFloat(), it.width, it.height)
 
             // 绘制播放状态指示器
             drawPlaybackIndicator(canvas, x, bitmapTop.toFloat(), it.width, it.height)

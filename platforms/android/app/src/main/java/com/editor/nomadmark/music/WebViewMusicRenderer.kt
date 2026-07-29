@@ -806,7 +806,7 @@ class WebViewMusicRenderer(private val context: Context) {
             <script src="file:///android_asset/abcjs/abcjs-basic-min.js"></script>
         </head>
         <body>
-            <div id="paper" style="display:none;"></div>
+            <div id="paper" style="position:absolute;left:-9999px;visibility:hidden;"></div>
             <script>
                 try {
                     const abcCode = "$escapedContent";
@@ -818,7 +818,7 @@ class WebViewMusicRenderer(private val context: Context) {
                         paddingleft: 30
                     });
 
-                    // 提取音符时间轴
+                    // 提取音符时间轴和位置信息
                     function extractNoteTimeline() {
                         const noteEvents = [];
                         let currentTime = 0;
@@ -826,10 +826,26 @@ class WebViewMusicRenderer(private val context: Context) {
 
                         // 遍历所有 SVG 中的音符元素
                         const svg = document.querySelector('#paper svg');
-                        if (!svg) return '[]';
+                        if (!svg) {
+                            console.error('[NOTE-TIMELINE] 找不到 SVG 元素');
+                            return '[]';
+                        }
+
+                        // 使用 getBoundingClientRect 获取实际渲染尺寸
+                        const svgRect = svg.getBoundingClientRect();
+                        const svgWidth = svgRect.width || 800;
+                        const svgHeight = svgRect.height || 400;
+
+                        console.log('[NOTE-TIMELINE] SVG 尺寸:', svgWidth, 'x', svgHeight);
 
                         // 获取所有音符路径（abcjs 生成的音符类名）
-                        const notes = svg.querySelectorAll('[class*="abcjs-note"]');
+                        let notes = svg.querySelectorAll('[class*="abcjs-note"]');
+                        console.log('[NOTE-TIMELINE] 找到音符元素:', notes.length);
+
+                        if (notes.length === 0) {
+                            notes = svg.querySelectorAll('.abcjs-midi-note');
+                            console.log('[NOTE-TIMELINE] 使用备用选择器找到:', notes.length);
+                        }
 
                         // 计算每个音符的时值
                         const tempo = ${musicData.tempo};
@@ -839,7 +855,6 @@ class WebViewMusicRenderer(private val context: Context) {
                             // 获取元素的唯一 ID
                             let elementId = note.id;
                             if (!elementId) {
-                                // 如果没有 ID，生成一个基于位置的 ID
                                 const parent = note.closest('.abcjs-midi-note');
                                 if (parent && parent.id) {
                                     elementId = parent.id;
@@ -848,16 +863,39 @@ class WebViewMusicRenderer(private val context: Context) {
                                 }
                             }
 
+                            // 获取音符位置（归一化到 0-1）
+                            let noteX = 0, noteY = 0, noteW = 0.05, noteH = 0.05;
+                            try {
+                                const bbox = note.getBBox();
+                                const svgBox = svg.getBoundingClientRect();
+
+                                // 归一化坐标
+                                noteX = bbox.x / svgWidth;
+                                noteY = bbox.y / svgHeight;
+                                noteW = bbox.width / svgWidth;
+                                noteH = bbox.height / svgHeight;
+
+                                console.log('[NOTE-POS] Note', index, 'bbox:', bbox.x, bbox.y, bbox.width, bbox.height, 'normalized:', noteX.toFixed(3), noteY.toFixed(3), noteW.toFixed(3), noteH.toFixed(3));
+                            } catch(e) {
+                                console.warn('[NOTE-POS] 无法获取音符位置:', e);
+                            }
+
                             // 简单估算时间（基于顺序）
                             noteEvents.push({
                                 time: Math.round(currentTime),
                                 id: elementId,
-                                index: noteIndex++
+                                index: noteIndex++,
+                                x: parseFloat(noteX.toFixed(3)),
+                                y: parseFloat(noteY.toFixed(3)),
+                                w: parseFloat(noteW.toFixed(3)),
+                                h: parseFloat(noteH.toFixed(3))
                             });
 
                             // 简单的时间递增（每拍约 500ms）
                             currentTime += msPerBeat / 2; // 假设八分音符
                         });
+
+                        console.log('[NOTE-TIMELINE] 提取完成，共', noteEvents.length, '个音符事件');
 
                         return JSON.stringify(noteEvents);
                     }

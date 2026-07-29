@@ -6,9 +6,9 @@ import android.util.Log
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * 乐谱播放控制器（简化版）
+ * 乐谱播放控制器
  *
- * 使用固定间隔播放，不需要分析音符时间轴
+ * 基于音符时间轴实现逐个高亮播放
  */
 class MusicPlaybackController(
     private val musicData: MusicData
@@ -16,8 +16,6 @@ class MusicPlaybackController(
 
     companion object {
         private const val TAG = "MusicPlaybackController"
-        // 每秒显示的音符数（默认）
-        private const val NOTES_PER_SECOND = 2
     }
 
     /**
@@ -25,11 +23,12 @@ class MusicPlaybackController(
      */
     interface OnPlaybackProgressListener {
         /**
-         * 当播放进度更新时调用
-         * @param progress 进度（0.0 到 1.0）
+         * 当播放到某个音符时调用
+         * @param noteEvent 当前音符事件
+         * @param progress 播放进度（0.0 到 1.0）
          * @param isPlaying 是否正在播放
          */
-        fun onProgressUpdate(progress: Float, isPlaying: Boolean)
+        fun onNoteHighlight(noteEvent: NoteEvent, progress: Float, isPlaying: Boolean)
 
         /**
          * 当播放完成时调用
@@ -41,8 +40,8 @@ class MusicPlaybackController(
     // 播放状态
     // =========================================================================
 
-    /** 估算的总音符数（用于计算进度） */
-    private var totalNotes: Int = 0
+    /** 音符时间轴 */
+    private var noteEvents: List<NoteEvent> = emptyList()
 
     /** 当前播放到的音符索引 */
     private var currentNoteIndex: Int = 0
@@ -59,7 +58,6 @@ class MusicPlaybackController(
     /** 是否已暂停（但未停止） */
     private var _isPaused: Boolean = false
 
-    /** 公共属性：检查是否已暂停 */
     val isPaused: Boolean
         get() = _isPaused
 
@@ -69,7 +67,6 @@ class MusicPlaybackController(
             val wasVisible = field
             field = value
             if (!value && wasVisible && isPlaying) {
-                // 离开屏幕时自动暂停
                 Log.d(TAG, "乐谱离开屏幕，自动暂停")
                 pausePlayback()
             }
@@ -84,9 +81,6 @@ class MusicPlaybackController(
     /** 当前待执行的 Runnable */
     private var currentRunnable: Runnable? = null
 
-    /** 播放速度（每秒音符数） */
-    private var notesPerSecond: Float = NOTES_PER_SECOND.toFloat()
-
     // =========================================================================
     // 播放控制
     // =========================================================================
@@ -94,23 +88,22 @@ class MusicPlaybackController(
     /**
      * 开始播放
      *
-     * @param totalNotes 估算的总音符数
-     * @param tempo 播放速度（BPM）
+     * @param noteEvents 音符时间轴列表
      * @param listener 进度监听器
      */
     fun startPlayback(
-        totalNotes: Int,
-        tempo: Int,
+        noteEvents: List<NoteEvent>,
         listener: OnPlaybackProgressListener
     ) {
-        this.totalNotes = totalNotes.coerceAtLeast(1)
+        if (noteEvents.isEmpty()) {
+            Log.w(TAG, "音符事件列表为空，无法播放")
+            return
+        }
+
+        this.noteEvents = noteEvents
         this.listener = listener
 
-        // 根据 tempo 计算每秒音符数
-        // tempo = BPM（每分钟拍数），假设每拍约 4 个音符
-        this.notesPerSecond = (tempo / 60f) * 4
-
-        Log.d(TAG, "开始播放: $totalNotes 个音符, tempo=$tempo, notesPerSec=$notesPerSecond")
+        Log.d(TAG, "开始播放: ${noteEvents.size} 个音符")
 
         // 重置状态
         currentNoteIndex = 0
@@ -118,8 +111,8 @@ class MusicPlaybackController(
         _isPlaying.set(true)
         playbackStartTime = System.currentTimeMillis()
 
-        // 开始播放循环
-        scheduleNextNote(0)
+        // 立即高亮第一个音符
+        highlightCurrentNote()
     }
 
     /**
@@ -141,14 +134,14 @@ class MusicPlaybackController(
      * 恢复播放
      */
     fun resumePlayback() {
-        if (!_isPaused || currentNoteIndex >= totalNotes) return
+        if (!_isPaused || currentNoteIndex >= noteEvents.size) return
 
         Log.d(TAG, "恢复播放, 从音符: $currentNoteIndex")
         _isPaused = false
         _isPlaying.set(true)
 
         // 从当前音符继续
-        scheduleNextNote(currentNoteIndex)
+        scheduleNextNote()
     }
 
     /**
@@ -162,10 +155,12 @@ class MusicPlaybackController(
         currentRunnable?.let { handler.removeCallbacks(it) }
         currentRunnable = null
         listener = null
+        noteEvents = emptyList()
     }
 
     /**
      * 切换播放/暂停
+     * @return 是否正在播放
      */
     fun togglePlayback(): Boolean {
         return if (isPlaying) {
@@ -185,10 +180,10 @@ class MusicPlaybackController(
     // =========================================================================
 
     /**
-     * 调度下一个音符的进度更新
+     * 高亮当前音符并调度下一个
      */
-    private fun scheduleNextNote(noteIndex: Int) {
-        if (noteIndex >= totalNotes) {
+    private fun highlightCurrentNote() {
+        if (currentNoteIndex >= noteEvents.size) {
             // 播放完成
             Log.d(TAG, "播放完成")
             _isPlaying.set(false)
@@ -196,22 +191,54 @@ class MusicPlaybackController(
             return
         }
 
-        currentNoteIndex = noteIndex
+        val currentNote = noteEvents[currentNoteIndex]
+        val progress = if (noteEvents.isNotEmpty()) {
+            currentNoteIndex.toFloat() / noteEvents.size
+        } else {
+            0f
+        }
 
-        // 计算延迟：1000ms / 每秒音符数
-        val delayMillis = (1000f / notesPerSecond).toLong().coerceAtLeast(100)
+        Log.d(TAG, "高亮音符 [$currentNoteIndex/${noteEvents.size}]: id=${currentNote.elementId}, progress=$progress")
+
+        // 通知监听器高亮当前音符
+        listener?.onNoteHighlight(currentNote, progress, true)
+
+        // 调度下一个音符
+        scheduleNextNote()
+    }
+
+    /**
+     * 调度下一个音符的高亮
+     */
+    private fun scheduleNextNote() {
+        if (!isPlaying || _isPaused) return
+
+        // 计算到下一个音符的延迟
+        val currentIndex = currentNoteIndex
+        if (currentIndex + 1 >= noteEvents.size) {
+            // 最后一个音符，等待一小段时间后结束
+            handler.postDelayed({
+                if (isPlaying && !_isPaused) {
+                    currentNoteIndex++
+                    highlightCurrentNote()
+                }
+            }, 500)
+            return
+        }
+
+        val currentNote = noteEvents[currentIndex]
+        val nextNote = noteEvents[currentIndex + 1]
+
+        // 计算延迟：下一个音符时间 - 当前音符时间
+        val delayMillis = (nextNote.timeMillis - currentNote.timeMillis).toLong()
+            .coerceAtLeast(100) // 至少 100ms
 
         val runnable = object : Runnable {
             override fun run() {
                 if (!isPlaying || _isPaused) return
 
-                val progress = noteIndex.toFloat() / totalNotes
-                Log.d(TAG, "播放进度: $noteIndex/$totalNotes = $progress")
-
-                listener?.onProgressUpdate(progress, true)
-
-                // 调度下一个音符
-                scheduleNextNote(noteIndex + 1)
+                currentNoteIndex++
+                highlightCurrentNote()
             }
         }
 
@@ -223,8 +250,16 @@ class MusicPlaybackController(
      * 获取当前播放进度（0.0 到 1.0）
      */
     fun getProgress(): Float {
-        if (totalNotes == 0) return 0f
-        return currentNoteIndex.toFloat() / totalNotes
+        if (noteEvents.isEmpty()) return 0f
+        return currentNoteIndex.toFloat() / noteEvents.size
+    }
+
+    /**
+     * 获取当前高亮的音符事件
+     */
+    fun getCurrentNoteEvent(): NoteEvent? {
+        if (noteEvents.isEmpty() || currentNoteIndex >= noteEvents.size) return null
+        return noteEvents[currentNoteIndex]
     }
 
     /**
