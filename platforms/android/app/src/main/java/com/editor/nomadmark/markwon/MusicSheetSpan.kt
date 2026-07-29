@@ -245,7 +245,7 @@ class MusicSheetSpan(
     // =========================================================================
 
     /**
-     * 绘制音符高亮效果（墨水屏反色填充）
+     * 绘制音符高亮效果（墨水屏边框高亮）
      */
     private fun drawNoteHighlight(
         canvas: Canvas,
@@ -268,21 +268,32 @@ class MusicSheetSpan(
         }
 
         // 将归一化坐标转换为实际像素坐标
-        val highlightX = bitmapX + position.x * bitmapWidth
-        val highlightY = bitmapY + position.y * bitmapHeight
-        val highlightW = position.width * bitmapWidth
-        val highlightH = position.height * bitmapHeight
+        var highlightX = bitmapX + position.x * bitmapWidth
+        var highlightY = bitmapY + position.y * bitmapHeight
+        var highlightW = position.width * bitmapWidth
+        var highlightH = position.height * bitmapHeight
 
-        // 确保高亮区域有最小尺寸可见（墨水屏需要更大）
-        val minSize = 48f  // 增加到 48 像素
-        val finalW = maxOf(highlightW, minSize)
-        val finalH = maxOf(highlightH, minSize)
-        val finalX = highlightX + (highlightW - finalW) / 2
-        val finalY = highlightY + (highlightH - finalH) / 2
+        // 确保高亮区域有最小和最大尺寸限制
+        val minSize = 16f   // 最小 16 像素
+        val maxSize = 64f   // 最大 64 像素（避免太大）
+        val padding = 6f    // 边框外边距
 
-        android.util.Log.d(TAG, "绘制音符反色高亮: x=$finalX, y=$finalY, w=$finalW, h=$finalH, bitmapX=$bitmapX, bitmapY=$bitmapY")
+        highlightW = highlightW.coerceIn(minSize, maxSize)
+        highlightH = highlightH.coerceIn(minSize, maxSize)
 
-        // 创建反色效果（黑变白，白变黑）
+        // 居中对齐
+        highlightX = highlightX + (position.width * bitmapWidth - highlightW) / 2
+        highlightY = highlightY + (position.height * bitmapHeight - highlightH) / 2
+
+        // 应用边距
+        val finalX = highlightX - padding
+        val finalY = highlightY - padding
+        val finalW = highlightW + padding * 2
+        val finalH = highlightH + padding * 2
+
+        android.util.Log.d(TAG, "绘制音符高亮: x=$finalX, y=$finalY, w=$finalW, h=$finalH")
+
+        // 创建高亮矩形
         val rect = android.graphics.RectF(
             finalX,
             finalY,
@@ -290,11 +301,11 @@ class MusicSheetSpan(
             finalY + finalH
         )
 
-        // 墨水屏高亮效果 - 只绘制边框
+        // 墨水屏高亮效果 - 黑色边框
         val paint = Paint().apply {
             isAntiAlias = false
             style = Paint.Style.STROKE
-            strokeWidth = 4f
+            strokeWidth = 3f
             color = Color.BLACK
         }
 
@@ -502,20 +513,6 @@ class MusicSheetSpan(
 
             val bitmapPaint = Paint()
             canvas.drawBitmap(it, x, bitmapTop.toFloat(), bitmapPaint)
-
-            // 【调试】如果正在播放，在乐谱中心绘制一个测试矩形
-            val controller = playbackController
-            if (controller?.isPlaying == true) {
-                val testPaint = Paint().apply {
-                    color = Color.BLACK
-                    style = Paint.Style.FILL
-                }
-                val testSize = 60f
-                val testX = x + it.width / 2 - testSize / 2
-                val testY = bitmapTop + it.height / 2 - testSize / 2
-                canvas.drawRect(testX, testY, testX + testSize, testY + testSize, testPaint)
-                android.util.Log.d(TAG, "【调试】绘制测试矩形: isPlaying=true, at ($testX, $testY)")
-            }
 
             // 绘制音符高亮
             drawNoteHighlight(canvas, x, bitmapTop.toFloat(), it.width, it.height)
