@@ -200,9 +200,22 @@ class WebViewMusicRenderer(private val context: Context) {
                     min-width: ${width}px;
                 }
                 .abcjs-play { display: none !important; }
-                /* 增加标题和乐谱之间的间距 */
+                /* 标题左对齐，与乐谱左边齐平 */
                 .abcjs-header {
                     margin-bottom: 60px !important;
+                    text-align: left !important;
+                    padding-left: 0 !important;
+                    margin-left: 0 !important;
+                }
+                .abcjs-header,
+                .abcjs-header > *,
+                .abcjs-header *,
+                .abcjs-title,
+                .abcjs-composer,
+                .abcjs-meta-top {
+                    text-align: left !important;
+                    margin-left: 0 !important;
+                    padding-left: 0 !important;
                 }
                 /* 增加乐谱各部分之间的间距 */
                 .abcjs-row {
@@ -228,7 +241,24 @@ class WebViewMusicRenderer(private val context: Context) {
                             console.log('  - lines:', lines);
                             console.log('  - first 100 chars:', source.substring(0, 100));
                             console.log('  - container:', container);
-                            return origRenderAbc.call(this, container, source, options);
+                            var result = origRenderAbc.call(this, container, source, options);
+                            // 渲染后立即修改标题对齐
+                            setTimeout(function() {
+                                var header = document.querySelector('.abcjs-header');
+                                if (header) {
+                                    header.style.textAlign = 'left';
+                                    header.style.paddingLeft = '0';
+                                    header.style.marginLeft = '0';
+                                    var children = header.querySelectorAll('*');
+                                    for (var i = 0; i < children.length; i++) {
+                                        children[i].style.textAlign = 'left';
+                                        children[i].style.paddingLeft = '0';
+                                        children[i].style.marginLeft = '0';
+                                    }
+                                    console.log('[ABC-RENDER-DEBUG] Title aligned left after render');
+                                }
+                            }, 50);
+                            return result;
                         };
 
                         const abcCode = "$escapedContent";
@@ -248,12 +278,29 @@ class WebViewMusicRenderer(private val context: Context) {
                             paddingtop: 15,
                             paddingbottom: 15,
                             paddingright: 30,
-                            paddingleft: 30
+                            paddingleft: 30,
+                            format: {
+                                titlefont: "\"Times New Roman\", serif",
+                                titlebox: true,
+                                titlealign: "left"
+                            }
                         });
                         console.log('[ABC-RENDER-DEBUG] renderAbc options: staffwidth=$staffWidth, scale=0.9, wrap enabled');
 
                         // 获取所有 SVG 内容并合并
                         setTimeout(function() {
+                            // 强制标题左对齐（在 SVG 提取时执行）
+                            var header = document.querySelector('.abcjs-header');
+                            if (header) {
+                                header.style.textAlign = 'left';
+                                header.style.paddingLeft = '0';
+                                header.style.marginLeft = '0';
+                                var children = header.querySelectorAll('*');
+                                for (var i = 0; i < children.length; i++) {
+                                    children[i].style.textAlign = 'left';
+                                }
+                                console.log('[ABC-RENDER-DEBUG] Title aligned left');
+                            }
                             var svgs = document.querySelectorAll('#paper svg');
                             console.log('[ABC-RENDER-DEBUG] Found', svgs.length, 'SVG elements');
 
