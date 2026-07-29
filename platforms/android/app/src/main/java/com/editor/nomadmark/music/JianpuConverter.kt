@@ -164,9 +164,17 @@ object JianpuConverter {
 
         melodyLines.forEach { line ->
             val trimmed = line.trim()
-            // 跳过空行和标题行
-            if (trimmed.isEmpty() || trimmed.startsWith("T:", ignoreCase = true) ||
-                trimmed.startsWith("C:", ignoreCase = true) || trimmed.startsWith("Q:", ignoreCase = true)) {
+            // 跳过空行、ABC 元数据行、YAML 风格元数据行和注释行
+            if (trimmed.isEmpty() ||
+                trimmed.startsWith("T:", ignoreCase = true) ||
+                trimmed.startsWith("C:", ignoreCase = true) ||
+                trimmed.startsWith("Q:", ignoreCase = true) ||
+                trimmed.startsWith("K:", ignoreCase = true) ||
+                trimmed.startsWith("M:", ignoreCase = true) ||
+                trimmed.startsWith("L:", ignoreCase = true) ||
+                trimmed.startsWith("title:", ignoreCase = true) ||
+                trimmed.startsWith("composer:", ignoreCase = true) ||
+                trimmed.startsWith("#")) {
                 return@forEach
             }
             val abcLine = convertLine(trimmed, warnings)
