@@ -176,15 +176,19 @@ class WebViewMusicRenderer(private val context: Context) {
             musicData.content
         }
 
+        // 【Supernote 优化】添加 %% 指令，避免 abcjs 依赖容器猜测
+        val contentWithDirectives = "%%staffwidth 900\n%%scale 0.82\n%%wrap\n%%staffsep 24\n" + contentToRender
+
         // 转义内容中的特殊字符
-        val escapedContent = contentToRender
+        val escapedContent = contentWithDirectives
             .replace("\\", "\\\\")
             .replace("\"", "\\\"")
             .replace("\n", "\\n")
             .replace("\r", "")
             .replace("'", "\\'")
 
-        val staffWidth = width - 80 // 左右留白
+        // Supernote 优化：锁死 900 宽度，避免容器探测不准
+        val staffWidth = 900
 
         return """
         <!DOCTYPE html>
@@ -199,8 +203,11 @@ class WebViewMusicRenderer(private val context: Context) {
                     padding: 10px;
                     overflow-x: hidden;
                 }
+                /* Supernote 容器固定宽度 */
                 #paper {
-                    min-width: ${width}px;
+                    width: 936px;
+                    max-width: 100%;
+                    overflow-x: auto;
                 }
                 .abcjs-play { display: none !important; }
                 /* 标题左对齐，与乐谱左边齐平 */
@@ -270,18 +277,15 @@ class WebViewMusicRenderer(private val context: Context) {
                         console.log('  - abcCode lines:', abcCode.split('\\n').length);
 
                         ABCJS.renderAbc("paper", abcCode, {
-                            // 缩小比例确保乐谱完全显示在屏幕内
-                            scale: 0.9,
+                            responsive: "resize",
                             staffwidth: $staffWidth,
-                            wrap: {
-                                minSpacing: 0.8,
-                                maxSpacing: 2.5,
-                                preferredMeasuresPerLine: 5
-                            },
-                            paddingtop: 15,
-                            paddingbottom: 15,
-                            paddingright: 30,
-                            paddingleft: 30,
+                            scale: 0.82,
+                            paddingtop: 8,
+                            paddingbottom: 8,
+                            paddingleft: 6,
+                            paddingright: 6,
+                            showDecorations: true,
+                            add_classes: true,
                             format: {
                                 titlefont: "\"Times New Roman\", serif",
                                 titlebox: true,
@@ -1027,14 +1031,19 @@ class WebViewMusicRenderer(private val context: Context) {
             musicData.content
         }
 
-        val escapedContent = contentToRender
+        // 【Supernote 优化】添加 %% 指令
+        val contentWithDirectives = "%%staffwidth 900\n%%scale 0.82\n%%wrap\n%%staffsep 24\n" + contentToRender
+
+        // 转义内容中的特殊字符
+        val escapedContent = contentWithDirectives
             .replace("\\", "\\\\")
             .replace("\"", "\\\"")
             .replace("\n", "\\n")
             .replace("\r", "")
             .replace("'", "\\'")
 
-        val staffWidth = width - 80
+        // Supernote 优化：锁死 900 宽度
+        val staffWidth = 900
         val highlightScript = if (highlightElementId != null) {
             """
             // 高亮指定音符（发光效果）
@@ -1065,8 +1074,11 @@ class WebViewMusicRenderer(private val context: Context) {
                     padding: 10px;
                     overflow-x: hidden;
                 }
+                /* Supernote 容器固定宽度 */
                 #paper {
-                    min-width: ${width}px;
+                    width: 936px;
+                    max-width: 100%;
+                    overflow-x: auto;
                 }
                 .abcjs-play { display: none !important; }
                 /* 标题左对齐 */
@@ -1102,17 +1114,15 @@ class WebViewMusicRenderer(private val context: Context) {
                     try {
                         const abcCode = "$escapedContent";
                         ABCJS.renderAbc("paper", abcCode, {
-                            scale: 0.9,
+                            responsive: "resize",
                             staffwidth: $staffWidth,
-                            wrap: {
-                                minSpacing: 0.8,
-                                maxSpacing: 2.5,
-                                preferredMeasuresPerLine: 5
-                            },
-                            paddingtop: 15,
-                            paddingbottom: 15,
-                            paddingright: 30,
-                            paddingleft: 30,
+                            scale: 0.82,
+                            paddingtop: 8,
+                            paddingbottom: 8,
+                            paddingleft: 6,
+                            paddingright: 6,
+                            showDecorations: true,
+                            add_classes: true,
                             format: {
                                 titlefont: "\"Times New Roman\", serif",
                                 titlebox: true,
