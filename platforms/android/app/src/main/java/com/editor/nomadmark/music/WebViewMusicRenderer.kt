@@ -603,14 +603,22 @@ class WebViewMusicRenderer(private val context: Context) {
             val picWidth = size.width.toInt().coerceAtLeast(width)
             val picHeight = if (size.height > 0) size.height.toInt() else 400
 
+            // 【非等比缩放】横向 1.2 倍，纵向 1.8 倍
+            val horizontalScale = 1.1f
+            val verticalScale = 1.8f
+            val scaledPicWidth = (picWidth * horizontalScale).toInt()
+            val scaledPicHeight = (picHeight * verticalScale).toInt()
+
             val picture = Picture()
-            val canvas = picture.beginRecording(picWidth, picHeight)
+            val canvas = picture.beginRecording(scaledPicWidth, scaledPicHeight)
             canvas.drawColor(Color.WHITE)
+            // 非等比缩放绘制
+            canvas.scale(horizontalScale, verticalScale)
             svg.renderToCanvas(canvas)
             picture.endRecording()
 
             val svgCount = svgString.split("<svg").size - 1
-            Log.d(TAG, "SVG 渲染成功: parsed=${size.width}x${size.height}, androidSvg=(${svg.documentWidth}x${svg.documentHeight}), pic=${picWidth}x${picHeight}, svgCount=$svgCount, len=${svgString.length}")
+            Log.d(TAG, "SVG 渲染成功: parsed=${size.width}x${size.height}, androidSvg=(${svg.documentWidth}x${svg.documentHeight}), pic=${picWidth}x${picHeight}, scaled=${scaledPicWidth}x${scaledPicHeight}, horizontalScale=$horizontalScale, verticalScale=$verticalScale, svgCount=$svgCount, len=${svgString.length}")
             picture
         } catch (e: Exception) {
             Log.e(TAG, "SVG 解析失败", e)
@@ -675,15 +683,24 @@ class WebViewMusicRenderer(private val context: Context) {
                 val finalHeight = maxOf(measuredHeight, svgHeight, 400)
                 Log.d(TAG, "SVG 计算高度: $svgHeight, 最终使用高度: $finalHeight")
 
-                // 创建 Bitmap，使用实际内容高度
+                // 【非等比缩放】横向 1.2 倍，纵向 1.8 倍
+                val horizontalScale = 1.1f
+                val verticalScale = 1.8f
+                val scaledFinalWidth = (webView.measuredWidth * horizontalScale).toInt()
+                val scaledFinalHeight = (finalHeight * verticalScale).toInt()
+
+                // 创建 Bitmap，使用拉伸后的尺寸
                 val bitmap = Bitmap.createBitmap(
-                    webView.measuredWidth,
-                    finalHeight,
+                    scaledFinalWidth,
+                    scaledFinalHeight,
                     Bitmap.Config.ARGB_8888
                 )
 
                 val canvas = Canvas(bitmap)
                 canvas.drawColor(Color.WHITE)
+
+                // 非等比缩放绘制
+                canvas.scale(horizontalScale, verticalScale)
 
                 // 使用软件层绘制
                 webView.setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, null)

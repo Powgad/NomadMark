@@ -26,7 +26,9 @@ data class MusicData(
      * @param width 渲染宽度，纳入 key 以区分不同屏宽（预览/分屏）下的渲染结果
      */
     fun getCacheKey(width: Int): String {
-        return "${type.name}_${content.hashCode()}_$width"
+        // 添加版本号以在渲染参数变化后使缓存失效
+        val version = "v2"  // 修改此值可强制所有缓存失效
+        return "${type.name}_${content.hashCode()}_${width}_$version"
     }
 }
 
