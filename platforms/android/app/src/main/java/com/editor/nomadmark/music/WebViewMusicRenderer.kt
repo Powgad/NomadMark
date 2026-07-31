@@ -176,8 +176,9 @@ class WebViewMusicRenderer(private val context: Context) {
             musicData.content
         }
 
-        // 【Supernote 优化】添加 %% 指令，避免 abcjs 依赖容器猜测
-        val contentWithDirectives = "%%staffwidth 900\n%%scale 0.82\n%%wrap\n%%staffsep 24\n" + contentToRender
+        // 【Supernote 优化】添加 %% 指令
+        // 移除 %%scale 指令，避免与 renderAbc 参数冲突
+        val contentWithDirectives = "%%wrap\n%%staffsep 24\n" + contentToRender
 
         // 转义内容中的特殊字符
         val escapedContent = contentWithDirectives
@@ -187,8 +188,9 @@ class WebViewMusicRenderer(private val context: Context) {
             .replace("\r", "")
             .replace("'", "\\'")
 
-        // Supernote 优化：锁死 900 宽度，避免容器探测不准
-        val staffWidth = 900
+        // 动态计算 staffwidth，充分利用容器宽度
+        val horizontalPadding = 30  // 左右各 15px padding
+        val staffWidth = (width - horizontalPadding).toInt().coerceAtLeast(850)
 
         return """
         <!DOCTYPE html>
@@ -210,26 +212,27 @@ class WebViewMusicRenderer(private val context: Context) {
                     overflow-x: auto;
                 }
                 .abcjs-play { display: none !important; }
-                /* 标题左对齐，与乐谱左边齐平 */
-                .abcjs-header {
-                    margin-bottom: 60px !important;
-                    text-align: left !important;
-                    padding-left: 0 !important;
-                    margin-left: 0 !important;
+                /* 让 abcjs 自己控制标题/作者位置，禁止被外部居中/对齐规则干扰 */
+                .abcjs-title, .abcjs-composer, .abcjs-tempo {
+                    text-anchor: initial;
                 }
-                .abcjs-header,
-                .abcjs-header > *,
-                .abcjs-header *,
-                .abcjs-title,
-                .abcjs-composer,
-                .abcjs-meta-top {
-                    text-align: left !important;
-                    margin-left: 0 !important;
-                    padding-left: 0 !important;
+                .abcjs-title {
+                    text-anchor: middle;
+                    font-weight: bold;
+                }
+                .abcjs-composer {
+                    text-anchor: end;
                 }
                 /* 增加乐谱各部分之间的间距 */
                 .abcjs-row {
                     margin-bottom: 20px;
+                }
+                /* 让 SVG 自然撑满容器宽度 */
+                #paper svg {
+                    width: 100% !important;
+                    height: auto;
+                    display: block;
+                    margin: 0;
                 }
             </style>
             <script src="file:///android_asset/abcjs/abcjs-basic-min.js"></script>
@@ -251,24 +254,7 @@ class WebViewMusicRenderer(private val context: Context) {
                             console.log('  - lines:', lines);
                             console.log('  - first 100 chars:', source.substring(0, 100));
                             console.log('  - container:', container);
-                            var result = origRenderAbc.call(this, container, source, options);
-                            // 渲染后立即修改标题对齐
-                            setTimeout(function() {
-                                var header = document.querySelector('.abcjs-header');
-                                if (header) {
-                                    header.style.textAlign = 'left';
-                                    header.style.paddingLeft = '0';
-                                    header.style.marginLeft = '0';
-                                    var children = header.querySelectorAll('*');
-                                    for (var i = 0; i < children.length; i++) {
-                                        children[i].style.textAlign = 'left';
-                                        children[i].style.paddingLeft = '0';
-                                        children[i].style.marginLeft = '0';
-                                    }
-                                    console.log('[ABC-RENDER-DEBUG] Title aligned left after render');
-                                }
-                            }, 50);
-                            return result;
+                            return origRenderAbc.call(this, container, source, options);
                         };
 
                         const abcCode = "$escapedContent";
@@ -279,35 +265,24 @@ class WebViewMusicRenderer(private val context: Context) {
                         ABCJS.renderAbc("paper", abcCode, {
                             responsive: "resize",
                             staffwidth: $staffWidth,
-                            scale: 0.82,
-                            paddingtop: 8,
-                            paddingbottom: 8,
-                            paddingleft: 6,
-                            paddingright: 6,
+                            paddingtop: 10,
+                            paddingbottom: 10,
+                            paddingleft: 15,
+                            paddingright: 15,
                             showDecorations: true,
                             add_classes: true,
                             format: {
-                                titlefont: "\"Times New Roman\", serif",
-                                titlebox: true,
-                                titlealign: "left"
+                                titlefont: "Times New Roman 16 bold",
+                                composerfont: "Times New Roman 14",
+                                tempofont: "Times New Roman 14",
+                                titlemargin: 8,
+                                infofont: "Times New Roman 14 italic"
                             }
                         });
-                        console.log('[ABC-RENDER-DEBUG] renderAbc options: staffwidth=$staffWidth, scale=0.9, wrap enabled');
+                        console.log('[ABC-RENDER-DEBUG] renderAbc options: staffwidth=$staffWidth, scale=1.0 (native), wrap enabled');
 
                         // 获取所有 SVG 内容并合并
                         setTimeout(function() {
-                            // 强制标题左对齐（在 SVG 提取时执行）
-                            var header = document.querySelector('.abcjs-header');
-                            if (header) {
-                                header.style.textAlign = 'left';
-                                header.style.paddingLeft = '0';
-                                header.style.marginLeft = '0';
-                                var children = header.querySelectorAll('*');
-                                for (var i = 0; i < children.length; i++) {
-                                    children[i].style.textAlign = 'left';
-                                }
-                                console.log('[ABC-RENDER-DEBUG] Title aligned left');
-                            }
                             var svgs = document.querySelectorAll('#paper svg');
                             console.log('[ABC-RENDER-DEBUG] Found', svgs.length, 'SVG elements');
 
@@ -1098,25 +1073,27 @@ class WebViewMusicRenderer(private val context: Context) {
                     overflow-x: auto;
                 }
                 .abcjs-play { display: none !important; }
-                /* 标题左对齐 */
-                .abcjs-header {
-                    margin-bottom: 60px !important;
-                    text-align: left !important;
-                    padding-left: 0 !important;
-                    margin-left: 0 !important;
+                /* 让 abcjs 自己控制标题/作者位置，禁止被外部居中/对齐规则干扰 */
+                .abcjs-title, .abcjs-composer, .abcjs-tempo {
+                    text-anchor: initial;
                 }
-                .abcjs-header,
-                .abcjs-header > *,
-                .abcjs-header *,
-                .abcjs-title,
-                .abcjs-composer,
-                .abcjs-meta-top {
-                    text-align: left !important;
-                    margin-left: 0 !important;
-                    padding-left: 0 !important;
+                .abcjs-title {
+                    text-anchor: middle;
+                    font-weight: bold;
                 }
+                .abcjs-composer {
+                    text-anchor: end;
+                }
+                /* 增加乐谱各部分之间的间距 */
                 .abcjs-row {
                     margin-bottom: 20px;
+                }
+                /* 让 SVG 自然撑满容器宽度 */
+                #paper svg {
+                    width: 100% !important;
+                    height: auto;
+                    display: block;
+                    margin: 0;
                 }
             </style>
             <script src="file:///android_asset/abcjs/abcjs-basic-min.js"></script>
@@ -1133,17 +1110,18 @@ class WebViewMusicRenderer(private val context: Context) {
                         ABCJS.renderAbc("paper", abcCode, {
                             responsive: "resize",
                             staffwidth: $staffWidth,
-                            scale: 0.82,
-                            paddingtop: 8,
-                            paddingbottom: 8,
-                            paddingleft: 6,
-                            paddingright: 6,
+                            paddingtop: 10,
+                            paddingbottom: 10,
+                            paddingleft: 15,
+                            paddingright: 15,
                             showDecorations: true,
                             add_classes: true,
                             format: {
-                                titlefont: "\"Times New Roman\", serif",
-                                titlebox: true,
-                                titlealign: "left"
+                                titlefont: "Times New Roman 16 bold",
+                                composerfont: "Times New Roman 14",
+                                tempofont: "Times New Roman 14",
+                                titlemargin: 8,
+                                infofont: "Times New Roman 14 italic"
                             }
                         });
 
