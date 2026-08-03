@@ -265,20 +265,21 @@ class AudioMusicRenderer(private val context: Context) {
                 #paper svg path.abcjs-note.abcjs-highlight,
                 #paper svg path.abcjs-rest.abcjs-highlight {
                     fill: #ffffff !important;
-                    stroke: #000000 !important;
-                    stroke-width: 1.2 !important;
+                    stroke: #ffffff !important;
+                    stroke-width: 0 !important;
                 }
                 #paper svg path.abcjs-stem.abcjs-highlight,
                 #paper svg .abcjs-beam.abcjs-highlight path {
-                    stroke: #000000 !important;
+                    stroke: #ffffff !important;
+                    fill: #ffffff !important;
                 }
 
                 .abc-audio-status {
                     position: fixed;
                     top: 20px;
                     right: 20px;
-                    background: rgba(0, 0, 0, 0.7);
-                    color: white;
+                    background: #000000;
+                    color: #FFFFFF;
                     padding: 8px 12px;
                     border-radius: 4px;
                     font-size: 14px;
@@ -306,27 +307,42 @@ class AudioMusicRenderer(private val context: Context) {
                     constructor(container) {
                         this.container = container;
                         this.currentElements = [];
+                        console.log('[NoteHighlighter] Initialized with container:', container.id);
                     }
                     onStart() {
+                        console.log('[NoteHighlighter] onStart called');
                         this.clearHighlights();
                     }
                     onEvent(ev) {
                         if (ev.measureStart && ev.left === null) return;
                         this.clearHighlights();
-                        const highlighted = this.container.querySelectorAll('.abcjs-highlight');
-                        highlighted.forEach(el => {
-                            if (el instanceof SVGElement) {
-                                this.currentElements.push(el);
+
+                        // 使用 data-start-char 查找音符 SVG 元素并添加高亮类
+                        if (ev.startChar !== undefined && ev.endChar !== undefined) {
+                            const svg = this.container.querySelector('svg');
+                            if (svg) {
+                                const selector = `[data-start-char="` + ev.startChar + `"]`;
+                                const elements = svg.querySelectorAll(selector);
+                                elements.forEach(el => {
+                                    if (el) {
+                                        el.classList.add('abcjs-highlight');
+                                        this.currentElements.push(el);
+                                    }
+                                });
                             }
-                        });
+                        }
                     }
                     onFinished() {
+                        console.log('[NoteHighlighter] onFinished called');
                         this.clearHighlights();
-                        document.getElementById('audio-status').classList.remove('playing');
+                        const statusEl = document.getElementById('audio-status');
+                        if (statusEl) statusEl.classList.remove('playing');
                     }
                     clearHighlights() {
                         this.currentElements.forEach(el => {
-                            el.classList.remove('abcjs-highlight');
+                            if (el && el.classList) {
+                                el.classList.remove('abcjs-highlight');
+                            }
                         });
                         this.currentElements = [];
                     }
@@ -336,6 +352,7 @@ class AudioMusicRenderer(private val context: Context) {
                 let visualObj = null;
                 let midiBuffer = null;
                 let synthCtrl = null;
+                let timingCallbacks = null;
                 let lastClickTime = 0;
                 const DOUBLE_CLICK_DELAY = 300;
 
@@ -395,6 +412,29 @@ class AudioMusicRenderer(private val context: Context) {
                             synthCtrl.setTune(visualObj, false, {
                                 audioContext: null
                             });
+
+                            // 使用 TimingCallbacks 实现音符高亮
+                            if (ABCJS.TimingCallbacks && !timingCallbacks) {
+                                timingCallbacks = new ABCJS.TimingCallbacks(visualObj, null);
+                                timingCallbacks.registerCallback(function(callbacks) {
+                                    console.log('[TimingCallbacks] Callback triggered, notes:', callbacks.notes.length);
+                                    // 清除之前的高亮
+                                    const container = document.getElementById('paper');
+                                    container.querySelectorAll('.abcjs-highlight').forEach(el => {
+                                        el.classList.remove('abcjs-highlight');
+                                    });
+
+                                    // 添加新高亮
+                                    callbacks.notes.forEach(note => {
+                                        if (note.element) {
+                                            note.element.classList.add('abcjs-highlight');
+                                        } else {
+                                            console.log('[TimingCallbacks] Note has no element:', note);
+                                        }
+                                    });
+                                });
+                                console.log('[ABC-AUDIO] TimingCallbacks registered');
+                            }
                         }).catch(err => {
                             console.warn('[ABC-AUDIO] Init failed:', err);
                             midiBuffer = null;
@@ -415,10 +455,12 @@ class AudioMusicRenderer(private val context: Context) {
                         // 使用 abcjs 正确的 API
                         if (typeof midiBuffer.isPlaying === 'function' && midiBuffer.isPlaying()) {
                             synthCtrl.pause();
+                            if (timingCallbacks) timingCallbacks.pause();
                             console.log('[ABC-AUDIO] Paused');
-                        } else if (typeof synthCtrl.pause === 'function') {
+                        } else if (typeof synthCtrl.play === 'function') {
                             // 尝试播放
                             synthCtrl.play();
+                            if (timingCallbacks) timingCallbacks.start();
                             console.log('[ABC-AUDIO] Playing');
                             document.getElementById('audio-status').classList.add('playing');
                         }
@@ -434,6 +476,10 @@ class AudioMusicRenderer(private val context: Context) {
                     }
                     try {
                         synthCtrl.restart();
+                        if (timingCallbacks) {
+                            timingCallbacks.stop();
+                            timingCallbacks.start();
+                        }
                         console.log('[ABC-AUDIO] Restarted');
                         document.getElementById('audio-status').classList.add('playing');
                     } catch (e) {
@@ -445,6 +491,12 @@ class AudioMusicRenderer(private val context: Context) {
                     if (synthCtrl) {
                         try {
                             synthCtrl.pause();
+                            if (timingCallbacks) timingCallbacks.stop();
+                            // 清除所有高亮
+                            const container = document.getElementById('paper');
+                            container.querySelectorAll('.abcjs-highlight').forEach(el => {
+                                el.classList.remove('abcjs-highlight');
+                            });
                             console.log('[ABC-AUDIO] Stopped');
                         } catch (e) {
                             console.error('[ABC-AUDIO] Stop error:', e);
