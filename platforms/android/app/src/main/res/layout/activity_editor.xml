@@ -308,6 +308,59 @@
     </LinearLayout>
 
     <!-- =========================================================================
+         乐谱播放模式切换器 (仅在检测到乐谱时显示)
+         ========================================================================= -->
+    <LinearLayout
+        android:id="@+id/music_mode_switcher"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/search_bar"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:padding="8dp"
+        android:background="#F5F5F5"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/music_mode_static"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="📄 图片模式"
+            android:padding="8dp"
+            android:textSize="14sp"
+            android:background="@drawable/music_mode_bg_selected"
+            android:tag="selected"/>
+
+        <TextView
+            android:id="@+id/music_mode_audio"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="🎵 音频模式"
+            android:padding="8dp"
+            android:layout_marginStart="16dp"
+            android:textSize="14sp"
+            android:background="@drawable/music_mode_bg_normal"
+            android:tag="normal"/>
+    </LinearLayout>
+
+    <!-- 音频乐谱容器 (用于放置 WebView) -->
+    <ScrollView
+        android:id="@+id/music_audio_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_below="@id/music_mode_switcher"
+        android:fillViewport="true"
+        android:background="#FFFFFF"
+        android:visibility="gone">
+
+        <FrameLayout
+            android:id="@+id/music_audio_container"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="16dp"/>
+    </ScrollView>
+
+    <!-- =========================================================================
          主内容区域 - 独立层级架构
          ========================================================================= -->
 
@@ -317,7 +370,7 @@
         android:id="@+id/editor_layer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_below="@id/search_bar"
+        android:layout_below="@id/music_mode_switcher"
         android:fillViewport="true"
         android:background="#FFFFFF">
 
@@ -344,7 +397,7 @@
         android:id="@+id/preview_layer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_below="@id/search_bar"
+        android:layout_below="@id/music_mode_switcher"
         android:fillViewport="true"
         android:background="#FFFFFF"
         android:visibility="gone">
@@ -367,7 +420,7 @@
         android:id="@+id/split_layer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_below="@id/search_bar"
+        android:layout_below="@id/music_mode_switcher"
         android:orientation="vertical"
         android:visibility="gone">
 
@@ -454,7 +507,7 @@
         android:id="@+id/gesture_layer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_below="@id/search_bar"
+        android:layout_below="@id/music_mode_switcher"
         android:visibility="gone"
         android:clickable="false"
         android:focusable="false" />

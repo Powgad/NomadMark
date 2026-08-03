@@ -212,13 +212,27 @@ class MarkdownEditorActivity : android.app.Activity() {
     // 乐谱渲染组件
     // =========================================================================
 
-    /** 乐谱渲染器 */
+    /** 乐谱渲染器 (Bitmap 模式) */
     private val musicSheetRenderer: WebViewMusicRenderer by lazy {
         WebViewMusicRenderer(this)
     }
 
+    /** 乐谱音频渲染器 (音频播放模式) */
+    private val audioMusicRenderer: com.editor.nomadmark.music.AudioMusicRenderer by lazy {
+        com.editor.nomadmark.music.AudioMusicRenderer(this)
+    }
+
     /** 当前活动的 MusicSheetSpan 列表 */
     private val activeMusicSheetSpans = mutableListOf<MusicSheetSpan>()
+
+    /** 乐谱播放模式 */
+    private var musicPlaybackMode: MusicPlaybackMode = MusicPlaybackMode.STATIC
+
+    /** 乐谱播放模式枚举 */
+    private enum class MusicPlaybackMode {
+        STATIC,  // 静态图片模式 (默认)
+        AUDIO    // 音频播放模式
+    }
 
     // =========================================================================
     // 渲染引擎设置
@@ -368,6 +382,9 @@ class MarkdownEditorActivity : android.app.Activity() {
         // 设置监听器
         setupListeners()
 
+        // 加载乐谱播放模式偏好
+        loadMusicPlaybackMode()
+
         // 检查和请求存储权限
         checkAndRequestStoragePermissions()
 
@@ -409,6 +426,8 @@ class MarkdownEditorActivity : android.app.Activity() {
         super.onPause()
         // 隐藏软键盘，防止退出到桌面时软键盘仍然显示
         hideSoftKeyboardFromAll()
+        // 停止所有音频播放
+        audioMusicRenderer.stopAllPlayback()
         // 自动保存 - 应用进入后台时保存
         if (isModified) {
             performAutoSave()
@@ -420,6 +439,8 @@ class MarkdownEditorActivity : android.app.Activity() {
         super.onDestroy()
         // 确保软键盘被隐藏（双重保险）
         hideSoftKeyboardFromAll()
+        // 清理音频渲染器
+        audioMusicRenderer.cleanupAll()
         // 清理自动保存 Handler
         autoSaveHandler.removeCallbacksAndMessages(null)
         // 清理乐谱缓存
@@ -1188,6 +1209,27 @@ class MarkdownEditorActivity : android.app.Activity() {
         // 层4：手势层
         gestureLayer = findViewById(R.id.gesture_layer)
 
+        // =========================================================================
+        // 乐谱播放模式 UI 组件
+        // =========================================================================
+
+        // 模式切换器
+        val musicModeSwitcher = findViewById<LinearLayout>(R.id.music_mode_switcher)
+        val musicModeStatic = findViewById<TextView>(R.id.music_mode_static)
+        val musicModeAudio = findViewById<TextView>(R.id.music_mode_audio)
+
+        // 音频乐谱容器
+        val musicAudioScroll = findViewById<ScrollView>(R.id.music_audio_scroll)
+        val musicAudioContainer = findViewById<FrameLayout>(R.id.music_audio_container)
+
+        // 设置模式切换点击监听
+        musicModeStatic?.setOnClickListener {
+            switchMusicMode(MusicPlaybackMode.STATIC)
+        }
+        musicModeAudio?.setOnClickListener {
+            switchMusicMode(MusicPlaybackMode.AUDIO)
+        }
+
         // 底部快捷栏
         toolbarBottom = findViewById(R.id.toolbar_bottom)
         btnBold = findViewById(R.id.btn_bold)
@@ -1243,12 +1285,12 @@ class MarkdownEditorActivity : android.app.Activity() {
     private fun setupScrollListeners() {
         // 预览模式滚动监听
         previewLayer.viewTreeObserver.addOnScrollChangedListener {
-            updateMusicSheetVisibility()
+            // 滚动事件处理（如有需要）
         }
 
         // 分屏模式滚动监听
         splitPreviewScroll?.viewTreeObserver?.addOnScrollChangedListener {
-            updateMusicSheetVisibility()
+            // 滚动事件处理（如有需要）
         }
     }
 
@@ -1509,122 +1551,12 @@ class MarkdownEditorActivity : android.app.Activity() {
     private fun setupMusicSheetTouchListeners() {
         // 预览模式
         previewText.setOnTouchListener { _, event ->
-            if (event.action == MotionEvent.ACTION_UP) {
-                handleMusicSheetTap(event.x, event.y, previewText)
-            }
             false
         }
 
         // 分屏模式
         splitPreviewText?.setOnTouchListener { _, event ->
-            if (event.action == MotionEvent.ACTION_UP) {
-                handleMusicSheetTap(event.x, event.y, splitPreviewText!!)
-            }
             false
-        }
-    }
-
-    /**
-     * 处理乐谱区域点击
-     */
-    private fun handleMusicSheetTap(x: Float, y: Float, textView: TextView) {
-        val layout = textView.layout ?: return
-        val text = textView.text as? Spannable ?: return
-
-        // 获取点击位置的行号和偏移
-        val line = layout.getLineForVertical(y.toInt())
-        val offset = layout.getOffsetForHorizontal(line, x)
-
-        // 检查该位置是否有 MusicSheetSpan
-        val spans = text.getSpans(
-            layout.getLineStart(line).coerceAtLeast(0),
-            layout.getLineEnd(line).coerceAtMost(text.length),
-            MusicSheetSpan::class.java
-        )
-
-        for (span in spans) {
-            // 检查点击是否在 Span 的范围内
-            val spanStart = text.getSpanStart(span)
-            val spanEnd = text.getSpanEnd(span)
-
-            if (offset in spanStart..spanEnd) {
-                // 更新 Span 的屏幕边界
-                updateMusicSheetSpanBounds(span, textView, layout, line)
-
-                // 处理点击
-                if (span.handleTap(x, y)) {
-                    Log.d(TAG, "乐谱被点击: ${span.music.title ?: span.music.id}")
-                    invalidateMusicSheets()
-                    return
-                }
-            }
-        }
-    }
-
-    /**
-     * 更新 MusicSheetSpan 的屏幕边界
-     */
-    private fun updateMusicSheetSpanBounds(span: MusicSheetSpan, textView: TextView, layout: android.text.Layout, line: Int) {
-        // 获取 Span 的视觉位置
-        val lineTop = layout.getLineTop(line)
-        val lineBottom = layout.getLineBottom(line)
-        val lineLeft = layout.getLineLeft(line)
-        val lineRight = layout.getLineRight(line)
-
-        // 使用整个行范围作为边界
-        val bounds = android.graphics.RectF(
-            lineLeft,
-            lineTop.toFloat(),
-            lineRight,
-            lineBottom.toFloat()
-        )
-
-        // 直接设置
-        span.screenBounds = bounds
-        Log.d(TAG, "更新 MusicSheetSpan 边界: line=$line, bounds=$bounds")
-    }
-
-    /**
-     * 刷新所有乐谱显示
-     */
-    private fun invalidateMusicSheets() {
-        previewText.invalidate()
-        splitPreviewText?.invalidate()
-    }
-
-    /**
-     * 检查并更新所有乐谱的可见性状态
-     */
-    private fun updateMusicSheetVisibility() {
-        updateMusicSheetVisibilityForTextView(previewText)
-        splitPreviewText?.let { updateMusicSheetVisibilityForTextView(it) }
-    }
-
-    /**
-     * 检查并更新指定 TextView 中乐谱的可见性
-     */
-    private fun updateMusicSheetVisibilityForTextView(textView: TextView) {
-        val layout = textView.layout ?: return
-        val text = textView.text as? Spannable ?: return
-
-        val viewportTop = 0
-        val viewportBottom = textView.height
-
-        val spans = text.getSpans(0, text.length, MusicSheetSpan::class.java)
-        for (span in spans) {
-            val spanStart = text.getSpanStart(span)
-            val spanEnd = text.getSpanEnd(span)
-
-            // 获取 Span 的行范围
-            val startLine = layout.getLineForOffset(spanStart.coerceIn(0, text.length - 1))
-            val endLine = layout.getLineForOffset((spanEnd - 1).coerceIn(0, text.length - 1))
-
-            val spanTop = layout.getLineTop(startLine)
-            val spanBottom = layout.getLineBottom(endLine)
-
-            // 检查是否在可视区域内
-            val isVisible = spanBottom > viewportTop && spanTop < viewportBottom
-            span.updateVisibility(isVisible)
         }
     }
 
@@ -3919,7 +3851,35 @@ class MarkdownEditorActivity : android.app.Activity() {
 
         // 先检测乐谱块（在 Markwon 渲染前）
         val musicSheets = MusicSheetDetector.detectMusicSheetsFromMarkdown(content)
-        Log.d(TAG, "检测到 ${musicSheets.size} 个乐谱块")
+        Log.d(TAG, "检测到 ${musicSheets.size} 个乐谱块, isPreviewMode=$isPreviewMode, isSplitMode=$isSplitMode, musicPlaybackMode=$musicPlaybackMode")
+
+        // 根据乐谱和模式决定渲染方式
+        if (musicSheets.isNotEmpty() && (isPreviewMode || isSplitMode)) {
+            // 有乐谱且在预览模式或分屏模式
+            Log.d(TAG, "有乐谱且在预览/分屏模式，显示模式切换器")
+
+            if (musicPlaybackMode == MusicPlaybackMode.AUDIO && isPreviewMode) {
+                // 音频模式：渲染音频乐谱（仅在预览模式支持）
+                renderMusicInAudioMode()
+                // 隐藏普通预览
+                previewText.visibility = View.GONE
+                findViewById<ScrollView>(R.id.music_audio_scroll).visibility = View.VISIBLE
+                // 显示模式切换器
+                findViewById<View>(R.id.music_mode_switcher).visibility = View.VISIBLE
+                return
+            } else {
+                // 静态模式或分屏模式：显示模式切换器
+                findViewById<View>(R.id.music_mode_switcher).visibility = View.VISIBLE
+                findViewById<ScrollView>(R.id.music_audio_scroll).visibility = View.GONE
+                previewText.visibility = if (isPreviewMode) View.VISIBLE else View.GONE
+            }
+        } else {
+            // 没有乐谱或不预览/分屏模式，隐藏乐谱相关 UI
+            Log.d(TAG, "没有乐谱或不在预览/分屏模式，隐藏模式切换器")
+            findViewById<View>(R.id.music_mode_switcher).visibility = View.GONE
+            findViewById<ScrollView>(R.id.music_audio_scroll).visibility = View.GONE
+            previewText.visibility = if (isPreviewMode) View.VISIBLE else View.GONE
+        }
 
         // 使用 Markwon 渲染 Markdown
         if (isPreviewMode) {
@@ -4740,6 +4700,9 @@ class MarkdownEditorActivity : android.app.Activity() {
         private const val PREF_KEY_FONT_SIZE = "editor_font_size"
         private const val DEFAULT_FONT_SIZE_SP = 16
 
+        // 乐谱播放模式
+        private const val PREF_MUSIC_PLAYBACK_MODE = "music_playback_mode"
+
         // 存储权限请求码
         private const val REQUEST_STORAGE_PERMISSION = 2001
         private const val REQUEST_MANAGE_EXTERNAL_STORAGE = 2002
@@ -5189,5 +5152,148 @@ class MarkdownEditorActivity : android.app.Activity() {
 
         Toast.makeText(this, "已恢复未保存内容", Toast.LENGTH_SHORT).show()
         Log.d("MarkdownEditorActivity", "内容已恢复: ${session.metadata.fileName}")
+    }
+
+    // =========================================================================
+    // 乐谱播放模式切换
+    // =========================================================================
+
+    /**
+     * 在音频模式下渲染乐谱
+     */
+    private fun renderMusicInAudioMode() {
+        val content = editorText.text.toString()
+        val musicSheets = MusicSheetDetector.detectMusicSheetsFromMarkdown(content)
+
+        if (musicSheets.isEmpty()) {
+            // 没有乐谱，隐藏模式切换器
+            findViewById<View>(R.id.music_mode_switcher).visibility = View.GONE
+            findViewById<ScrollView>(R.id.music_audio_scroll).visibility = View.GONE
+            return
+        }
+
+        // 显示模式切换器
+        findViewById<View>(R.id.music_mode_switcher).visibility = View.VISIBLE
+        findViewById<ScrollView>(R.id.music_audio_scroll).visibility = View.VISIBLE
+
+        // 清空容器
+        val container = findViewById<ViewGroup>(R.id.music_audio_container)
+        container.removeAllViews()
+
+        // 清理之前的音频渲染
+        audioMusicRenderer.cleanupAll()
+
+        // 获取屏幕宽度
+        val screenWidth = resources.displayMetrics.widthPixels
+        val horizontalMarginPx = (20 * resources.displayMetrics.density).toInt()
+        val musicWidth = screenWidth - horizontalMarginPx * 2
+
+        Log.d(TAG, "音频模式渲染: ${musicSheets.size} 个乐谱, width=$musicWidth")
+
+        // 渲染每个乐谱
+        musicSheets.forEach { musicBlock ->
+            val musicData = musicBlock.musicData
+
+            // 创建乐谱容器
+            val musicContainer = FrameLayout(this).apply {
+                layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT
+                )
+                setPadding(0, 40, 0, 40)  // 上下间距
+            }
+
+            container.addView(musicContainer)
+
+            // 使用 AudioMusicRenderer 渲染
+            audioMusicRenderer.renderWithAudio(
+                musicData = musicData,
+                width = musicWidth,
+                container = musicContainer,
+                onComplete = { success ->
+                    Log.d(TAG, "音频乐谱渲染完成: ${musicData.title}, success=$success")
+                }
+            )
+        }
+    }
+
+    /**
+     * 切换乐谱播放模式
+     */
+    private fun switchMusicMode(mode: MusicPlaybackMode) {
+        if (musicPlaybackMode == mode) return
+
+        Log.d(TAG, "切换乐谱模式: $musicPlaybackMode -> $mode")
+        musicPlaybackMode = mode
+
+        // 更新按钮样式
+        updateModeButtonStyles()
+
+        // 停止所有音频播放
+        audioMusicRenderer.stopAllPlayback()
+
+        // 重新渲染
+        when (mode) {
+            MusicPlaybackMode.AUDIO -> {
+                // 切换到音频模式
+                renderMusicInAudioMode()
+                // 隐藏普通预览层（而不是只隐藏 previewText），显示音频容器
+                previewLayer.visibility = View.GONE
+                findViewById<ScrollView>(R.id.music_audio_scroll).visibility = View.VISIBLE
+            }
+            MusicPlaybackMode.STATIC -> {
+                // 切换到静态模式
+                audioMusicRenderer.cleanupAll()
+                // 重新渲染 Markdown
+                updatePreview()
+                // 显示普通预览，隐藏音频容器
+                previewText.visibility = View.VISIBLE
+                findViewById<ScrollView>(R.id.music_audio_scroll).visibility = View.GONE
+            }
+        }
+
+        // 保存用户选择
+        saveMusicPlaybackMode()
+    }
+
+    /**
+     * 更新模式按钮样式
+     */
+    private fun updateModeButtonStyles() {
+        val musicModeStatic = findViewById<TextView>(R.id.music_mode_static)
+        val musicModeAudio = findViewById<TextView>(R.id.music_mode_audio)
+
+        when (musicPlaybackMode) {
+            MusicPlaybackMode.STATIC -> {
+                musicModeStatic?.setBackgroundResource(R.drawable.music_mode_bg_selected)
+                musicModeAudio?.setBackgroundResource(R.drawable.music_mode_bg_normal)
+            }
+            MusicPlaybackMode.AUDIO -> {
+                musicModeStatic?.setBackgroundResource(R.drawable.music_mode_bg_normal)
+                musicModeAudio?.setBackgroundResource(R.drawable.music_mode_bg_selected)
+            }
+        }
+    }
+
+    /**
+     * 保存乐谱播放模式
+     */
+    private fun saveMusicPlaybackMode() {
+        prefs.edit()
+            .putString(PREF_MUSIC_PLAYBACK_MODE, musicPlaybackMode.name)
+            .apply()
+    }
+
+    /**
+     * 加载乐谱播放模式
+     */
+    private fun loadMusicPlaybackMode() {
+        val modeName = prefs.getString(PREF_MUSIC_PLAYBACK_MODE, MusicPlaybackMode.STATIC.name)
+        musicPlaybackMode = try {
+            MusicPlaybackMode.valueOf(modeName ?: MusicPlaybackMode.STATIC.name)
+        } catch (e: Exception) {
+            MusicPlaybackMode.STATIC
+        }
+        Log.d(TAG, "加载乐谱播放模式: $musicPlaybackMode")
     }
 }

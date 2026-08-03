@@ -8,11 +8,9 @@ import android.graphics.Picture
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import android.view.View
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.widget.FrameLayout
 import com.caverock.androidsvg.SVG
 
 /**
@@ -30,9 +28,6 @@ class WebViewMusicRenderer(private val context: Context) {
 
     // 【去重】记录正在渲染的乐谱，防止重复渲染
     private val pendingRenders = mutableSetOf<String>()
-
-    // 用于时间轴分析的 WebView 复用
-    private var analysisWebView: WebView? = null
 
     /**
      * 渲染 ABC 乐谱为 Bitmap
@@ -110,7 +105,7 @@ class WebViewMusicRenderer(private val context: Context) {
 
             handler.postDelayed({
                     captureBitmap(webView, musicData, width, wrappedCallback) {
-                        webView.destroy()   
+                        webView.destroy()
                 }
             }, 10000)
 
@@ -161,9 +156,9 @@ class WebViewMusicRenderer(private val context: Context) {
     }
 
     /**
-     * 生成 abcjs HTML（使用 SVG 输出）
+     * 生成 abcjs HTML（使用 SVG 输出 + 音频播放支持）
      */
-    private fun generateAbcHtml(musicData: MusicData, width: Int): String {
+    private fun generateAbcHtml(musicData: MusicData, width: Int, enableAudio: Boolean = true): String {
         // 【简谱转换】如果是简谱类型，先转换为 ABC 记谱法
         val contentToRender = if (musicData.type == MusicType.JIANPU) {
             Log.d(TAG, "检测到简谱类型，执行转换...")
@@ -204,12 +199,14 @@ class WebViewMusicRenderer(private val context: Context) {
                     background: white;
                     padding: 10px;
                     overflow-x: hidden;
+                    -webkit-tap-highlight-color: transparent;
                 }
                 /* Supernote 容器固定宽度 */
                 #paper {
                     width: 936px;
                     max-width: 100%;
                     overflow-x: auto;
+                    cursor: pointer;
                 }
                 .abcjs-play { display: none !important; }
                 /* 让 abcjs 自己控制标题/作者位置，禁止被外部居中/对齐规则干扰 */
@@ -234,35 +231,259 @@ class WebViewMusicRenderer(private val context: Context) {
                     display: block;
                     margin: 0;
                 }
+
+                /* ==================================================================== */
+                /* Supernote 墨水屏专用高亮样式 */
+                /* ==================================================================== */
+
+                /* 禁止所有过渡动画，墨水屏刷新会残影 */
+                #paper svg path,
+                #paper svg g,
+                #paper svg rect {
+                    transition: none !important;
+                    animation: none !important;
+                }
+
+                /* 当前音符反色高亮：白底黑边，在灰底五线谱上清晰跳脱 */
+                #paper svg path.abcjs-note.abcjs-highlight,
+                #paper svg path.abcjs-rest.abcjs-highlight {
+                    fill: #ffffff !important;   /* 白填，灰底上挖空 */
+                    stroke: #000000 !important; /* 黑描边，保留符头轮廓 */
+                    stroke-width: 1.2 !important;
+                }
+
+                /* 高亮时符干也反色，避免灰干配白头看不清 */
+                #paper svg path.abcjs-stem.abcjs-highlight,
+                #paper svg .abcjs-beam.abcjs-highlight path {
+                    stroke: #000000 !important;
+                }
+
+                /* 高亮时的和弦符号 */
+                #paper svg text.abcjs-chord.abcjs-highlight {
+                    fill: #000000 !important;
+                }
+
+                /* 播放状态指示器 */
+                .abc-audio-status {
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    background: rgba(0, 0, 0, 0.7);
+                    color: white;
+                    padding: 8px 12px;
+                    border-radius: 4px;
+                    font-size: 14px;
+                    z-index: 1000;
+                    display: none;
+                }
+                .abc-audio-status.playing {
+                    display: block;
+                }
+
+                /* 隐藏的 controls 容器（abcjs synth 要求但不需要显示） */
+                .abcjs-controls {
+                    display: none !important;
+                }
             </style>
             <script src="file:///android_asset/abcjs/abcjs-basic-min.js"></script>
         </head>
         <body>
             <div id="paper"></div>
+            <div id="audio-status" class="abc-audio-status">♪ 播放中...</div>
+
             <script>
+            (function() {
+                // ====================================================================
+                // NoteHighlighter - 实现 CursorControl 接口用于视觉高亮
+                // ====================================================================
+                class NoteHighlighter {
+                    constructor(container) {
+                        this.container = container;
+                        this.currentElements = [];
+                    }
+
+                    onStart() {
+                        this.clearHighlights();
+                    }
+
+                    onEvent(ev) {
+                        // 跳过跨小节延音（Obsidian 插件同款逻辑）
+                        if (ev.measureStart && ev.left === null) return;
+
+                        this.clearHighlights();
+
+                        // abcjs 会给当前音符添加 .abcjs-highlight 类
+                        const highlighted = this.container.querySelectorAll('.abcjs-highlight');
+                        highlighted.forEach(el => {
+                            if (el instanceof SVGElement) {
+                                this.currentElements.push(el);
+                            }
+                        });
+                    }
+
+                    onFinished() {
+                        this.clearHighlights();
+                        document.getElementById('audio-status').classList.remove('playing');
+                    }
+
+                    clearHighlights() {
+                        this.currentElements.forEach(el => {
+                            el.classList.remove('abcjs-highlight');
+                        });
+                        this.currentElements = [];
+                    }
+                }
+
+                // ====================================================================
+                // 音频播放初始化
+                // ====================================================================
+                const abcCode = "$escapedContent";
+                const enableAudio = ${if (enableAudio) "true" else "false"};
+
+                let visualObj = null;
+                let midiBuffer = null;
+                let synthCtrl = null;
+                let clickCount = 0;
+                let clickTimer = null;
+
+                function getSoundFontUrl() {
+                    // 优先本地音色包（Supernote 离线场景），兜底在线
+                    const localPath = 'file:///android_asset/soundfonts/FluidR3_GM/';
+                    const onlinePath = 'https://paulrosen.github.io/midi-js-soundfonts/FluidR3_GM/';
+                    // 默认使用本地，如果加载失败会自动回退
+                    return localPath;
+                }
+
+                function initAudio() {
+                    if (!enableAudio || !ABCJS.synth) {
+                        console.log('[ABC-AUDIO] Audio not enabled or synth not available');
+                        return;
+                    }
+
+                    if (midiBuffer || synthCtrl) {
+                        console.log('[ABC-AUDIO] Already initialized');
+                        return;
+                    }
+
+                    try {
+                        const synth = ABCJS.synth;
+                        if (!synth.supportsAudio()) {
+                            console.warn('[ABC-AUDIO] Audio not supported');
+                            return;
+                        }
+
+                        midiBuffer = new synth.CreateSynth();
+                        synthCtrl = new synth.SynthController();
+
+                        // 创建隐藏的 controls 容器
+                        let controlsEl = document.getElementById('abcjs-controls');
+                        if (!controlsEl) {
+                            controlsEl = document.createElement('div');
+                            controlsEl.id = 'abcjs-controls';
+                            controlsEl.className = 'abcjs-controls';
+                            document.body.appendChild(controlsEl);
+                        }
+
+                        // 加载 SynthController，绑定 NoteHighlighter
+                        const noteHighlighter = new NoteHighlighter(document.getElementById('paper'));
+                        synthCtrl.load(controlsEl, noteHighlighter, {
+                            displayLoop: false,
+                            displayPlay: false,
+                            displayProgress: false,
+                            displayWarp: false
+                        });
+
+                        // 初始化音频
+                        const audioOptions = {
+                            soundFontUrl: getSoundFontUrl(),
+                            soundFontVolumeMultiplier: 3.0,
+                            fadeLength: 200,
+                            startTime: 0,
+                            endTime: 0,
+                            transposition: 0,
+                            program: 0
+                        };
+
+                        midiBuffer.init({
+                            visualObj: visualObj,
+                            options: audioOptions,
+                            audioContext: null
+                        }).then(() => {
+                            console.log('[ABC-AUDIO] Audio initialized successfully');
+                            synthCtrl.setTune(visualObj, false, {
+                                audioContext: null
+                            });
+                        }).catch(err => {
+                            console.warn('[ABC-AUDIO] Init failed:', err);
+                            // 清理失败的初始化
+                            midiBuffer = null;
+                            synthCtrl = null;
+                        });
+
+                    } catch (e) {
+                        console.error('[ABC-AUDIO] Init error:', e);
+                    }
+                }
+
+                function togglePlayback() {
+                    if (!midiBuffer || !synthCtrl) {
+                        console.log('[ABC-AUDIO] Not initialized, initializing...');
+                        initAudio();
+                        return;
+                    }
+
+                    try {
+                        const isRunning = midiBuffer.isRunning();
+                        if (isRunning) {
+                            synthCtrl.pause();
+                            console.log('[ABC-AUDIO] Paused');
+                        } else {
+                            synthCtrl.play();
+                            console.log('[ABC-AUDIO] Playing');
+                            document.getElementById('audio-status').classList.add('playing');
+                        }
+                    } catch (e) {
+                        console.error('[ABC-AUDIO] Play/Pause error:', e);
+                    }
+                }
+
+                function restartPlayback() {
+                    if (!synthCtrl) {
+                        initAudio();
+                        return;
+                    }
+
+                    try {
+                        synthCtrl.restart();
+                        console.log('[ABC-AUDIO] Restarted');
+                        document.getElementById('audio-status').classList.add('playing');
+                    } catch (e) {
+                        console.error('[ABC-AUDIO] Restart error:', e);
+                    }
+                }
+
+                function stopPlayback() {
+                    if (synthCtrl) {
+                        try {
+                            synthCtrl.pause();
+                            console.log('[ABC-AUDIO] Stopped');
+                        } catch (e) {
+                            console.error('[ABC-AUDIO] Stop error:', e);
+                        }
+                    }
+                }
+
+                // ====================================================================
+                // 渲染乐谱
+                // ====================================================================
                 if (typeof ABCJS === 'undefined') {
                     console.error('ABCJS not loaded');
                     document.body.innerHTML = '<div style="color:red;padding:20px;">ABCJS library failed to load</div>';
                 } else {
                     try {
-                        // 【调试】拦截 ABCJS.renderAbc 调用
-                        const origRenderAbc = ABCJS.renderAbc;
-                        ABCJS.renderAbc = function(container, source, options) {
-                            const lines = source.split('\\n').length;
-                            console.log('[ABC-RENDER-DEBUG] renderAbc called:');
-                            console.log('  - source length:', source.length);
-                            console.log('  - lines:', lines);
-                            console.log('  - first 100 chars:', source.substring(0, 100));
-                            console.log('  - container:', container);
-                            return origRenderAbc.call(this, container, source, options);
-                        };
+                        console.log('[ABC-RENDER] About to render ABC code');
 
-                        const abcCode = "$escapedContent";
-                        console.log('[ABC-RENDER-DEBUG] About to render ABC code:');
-                        console.log('  - abcCode length:', abcCode.length);
-                        console.log('  - abcCode lines:', abcCode.split('\\n').length);
-
-                        ABCJS.renderAbc("paper", abcCode, {
+                        const renderOutput = ABCJS.renderAbc("paper", abcCode, {
                             responsive: "resize",
                             staffwidth: $staffWidth,
                             paddingtop: 10,
@@ -279,34 +500,37 @@ class WebViewMusicRenderer(private val context: Context) {
                                 infofont: "Times New Roman 14 italic"
                             }
                         });
-                        console.log('[ABC-RENDER-DEBUG] renderAbc options: staffwidth=$staffWidth, scale=1.0 (native), wrap enabled');
 
-                        // 获取所有 SVG 内容并合并
+                        visualObj = renderOutput[0];
+                        console.log('[ABC-RENDER] Render complete, visualObj obtained');
+
+                        // 延迟初始化音频（不阻塞渲染）
+                        if (enableAudio && ABCJS.synth) {
+                            setTimeout(() => {
+                                console.log('[ABC-RENDER] Delayed audio init starting...');
+                                initAudio();
+                            }, 500);
+                        }
+
+                        // 获取所有 SVG 内容并合并（用于 Bitmap 渲染）
                         setTimeout(function() {
                             var svgs = document.querySelectorAll('#paper svg');
-                            console.log('[ABC-RENDER-DEBUG] Found', svgs.length, 'SVG elements');
+                            console.log('[ABC-RENDER] Found', svgs.length, 'SVG elements');
 
                             if (svgs.length === 0) {
-                                console.error('[ABC-RENDER-DEBUG] No SVG found');
+                                console.error('[ABC-RENDER] No SVG found');
                                 window.SVG_ERROR = 'No SVG element found';
                                 window.ABCJS_SVG_RESULT = '';
                             } else if (svgs.length === 1) {
-                                // 单个 SVG，直接序列化
-                                var svg = svgs[0];
-                                var viewBox = svg.getAttribute('viewBox');
-                                var width = svg.getAttribute('width');
-                                var height = svg.getAttribute('height');
-                                console.log('[ABC-RENDER-DEBUG] Single SVG - viewBox:', viewBox, 'width:', width, 'height:', height);
-                                var svgString = new XMLSerializer().serializeToString(svg);
+                                var svgString = new XMLSerializer().serializeToString(svgs[0]);
                                 window.ABCJS_SVG_RESULT = svgString;
-                                console.log('[ABC-RENDER-DEBUG] Single SVG extracted, length:', svgString.length);
+                                console.log('[ABC-RENDER] Single SVG extracted, length:', svgString.length);
                             } else {
-                                // 多个 SVG，需要合并
+                                // 合并多个 SVG
                                 var totalHeight = 0;
                                 var maxWidth = 0;
                                 var svgStrings = [];
 
-                                // 计算总高度和最大宽度
                                 for (var i = 0; i < svgs.length; i++) {
                                     var svg = svgs[i];
                                     var viewBox = svg.getAttribute('viewBox');
@@ -319,27 +543,19 @@ class WebViewMusicRenderer(private val context: Context) {
                                             h = parseFloat(parts[3]) || 0;
                                         }
                                     }
-
-                                    // 如果 viewBox 解析失败，尝试从属性获取
                                     if (w === 0) w = parseFloat(svg.getAttribute('width')) || 0;
                                     if (h === 0) h = parseFloat(svg.getAttribute('height')) || 0;
-
-                                    // 如果还是失败，尝试从 BBox 获取
                                     if (w === 0 || h === 0) {
                                         var bbox = svg.getBBox();
                                         w = bbox.width || 0;
                                         h = bbox.height || 0;
                                     }
 
-                                    console.log('[ABC-RENDER-DEBUG] SVG', i, 'dimensions:', w, 'x', h);
                                     totalHeight += h;
                                     if (w > maxWidth) maxWidth = w;
                                     svgStrings.push(new XMLSerializer().serializeToString(svg));
                                 }
 
-                                console.log('[ABC-RENDER-DEBUG] Merging', svgs.length, 'SVGs, totalHeight:', totalHeight, ', maxWidth:', maxWidth);
-
-                                // 创建合并后的 SVG
                                 var mergedSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + maxWidth + ' ' + totalHeight + '" width="' + maxWidth + '" height="' + totalHeight + '">';
                                 var currentY = 0;
 
@@ -357,7 +573,6 @@ class WebViewMusicRenderer(private val context: Context) {
                                         h = bbox.height || 0;
                                     }
 
-                                    // 提取原始 SVG 的内容（去掉 <svg> 标签）
                                     var contentMatch = svgStr.match(/<svg[^>]*>([\s\S]*)<\/svg>/);
                                     if (contentMatch) {
                                         var content = contentMatch[1];
@@ -365,25 +580,68 @@ class WebViewMusicRenderer(private val context: Context) {
                                         mergedSvg += content;
                                         mergedSvg += '</g>';
                                         currentY += h;
-                                        console.log('[ABC-RENDER-DEBUG] Merged SVG', i, 'at Y:', currentY - h, 'height:', h);
-                                    } else {
-                                        console.error('[ABC-RENDER-DEBUG] Failed to extract SVG content for index', i);
                                     }
                                 }
                                 mergedSvg += '</svg>';
 
                                 window.ABCJS_SVG_RESULT = mergedSvg;
-                                console.log('[ABC-RENDER-DEBUG] Merged SVG created, length:', mergedSvg.length);
+                                console.log('[ABC-RENDER] Merged SVG created, length:', mergedSvg.length);
                             }
+
+                            window.renderComplete = true;
                         }, 300);
 
-                        window.renderComplete = true;
+                        // ====================================================================
+                        // 交互绑定：单击播放/暂停，双击重播
+                        // ====================================================================
+                        const paperEl = document.getElementById('paper');
+                        let lastClickTime = 0;
+                        const DOUBLE_CLICK_DELAY = 300;
+
+                        paperEl.addEventListener('click', function(e) {
+                            const now = Date.now();
+                            const timeSinceLastClick = now - lastClickTime;
+
+                            if (timeSinceLastClick < DOUBLE_CLICK_DELAY) {
+                                // 双击：重播
+                                clickCount = 2;
+                                clearTimeout(clickTimer);
+                                console.log('[ABC-AUDIO] Double click detected, restarting');
+                                restartPlayback();
+                            } else {
+                                // 单击：等待延迟确认不是双击
+                                clickCount = 1;
+                                clickTimer = setTimeout(function() {
+                                    if (clickCount === 1) {
+                                        console.log('[ABC-AUDIO] Single click detected, toggling playback');
+                                        togglePlayback();
+                                    }
+                                }, DOUBLE_CLICK_DELAY);
+                            }
+
+                            lastClickTime = now;
+                        });
+
+                        // 生命周期清理：页面卸载时停止播放
+                        window.addEventListener('beforeunload', function() {
+                            stopPlayback();
+                        });
+
+                        // 暴露给外部调用的接口
+                        window.abcAudioControl = {
+                            play: () => synthCtrl && synthCtrl.play(),
+                            pause: () => synthCtrl && synthCtrl.pause(),
+                            restart: () => restartPlayback(),
+                            stop: () => stopPlayback()
+                        };
+
                     } catch(e) {
-                        console.error('[ABC-RENDER-DEBUG] ABC rendering error:', e);
+                        console.error('[ABC-RENDER] Rendering error:', e);
                         document.body.innerHTML = '<div style="color:red;padding:20px;">Error: ' + e.message + '</div>';
                         window.renderError = e.message;
                     }
                 }
+            })();
             </script>
         </body>
         </html>
@@ -615,13 +873,13 @@ class WebViewMusicRenderer(private val context: Context) {
             // 强制 WebView 重新测量和布局
             webView.forceLayout()
 
-            val specWidth = View.MeasureSpec.makeMeasureSpec(
+            val specWidth = android.view.View.MeasureSpec.makeMeasureSpec(
                 width,
-                View.MeasureSpec.EXACTLY
+                android.view.View.MeasureSpec.EXACTLY
             )
-            val specHeight = View.MeasureSpec.makeMeasureSpec(
+            val specHeight = android.view.View.MeasureSpec.makeMeasureSpec(
                 0,
-                View.MeasureSpec.UNSPECIFIED
+                android.view.View.MeasureSpec.UNSPECIFIED
             )
 
             // 测量 WebView
@@ -722,486 +980,5 @@ class WebViewMusicRenderer(private val context: Context) {
             Log.e(TAG, "截取 Bitmap 失败", e)
             callback(null)
         }
-    }
-
-    // =========================================================================
-    // 音符时间轴分析（用于视觉播放）
-    // =========================================================================
-
-    /**
-     * 分析乐谱获取音符时间轴
-     *
-     * 使用 abcjs 的 MIDI 分析功能获取每个音符的时间位置和元素 ID
-     *
-     * @param musicData 乐谱数据
-     * @param callback 回调函数，返回音符事件列表
-     */
-    fun analyzeNoteTimeline(musicData: MusicData, callback: (List<NoteEvent>) -> Unit) {
-        Log.d(TAG, "开始分析音符时间轴: ${musicData.title ?: musicData.id}")
-
-        // 复用或创建 WebView
-        if (analysisWebView == null) {
-            analysisWebView = WebView(context).apply {
-                settings.javaScriptEnabled = true
-            }
-        }
-        val webView = analysisWebView!!
-
-        try {
-            // 生成用于分析的 HTML
-            val html = generateAnalysisHtml(musicData)
-
-            webView.webViewClient = object : WebViewClient() {
-                override fun onPageFinished(view: WebView, url: String) {
-                    // 页面加载完成后获取音符时间轴
-                    handler.postDelayed({
-                        extractNoteTimeline(webView, callback)
-                    }, 800)
-                }
-            }
-
-            webView.loadDataWithBaseURL(
-                "file:///android_asset/",
-                html,
-                "text/html",
-                "UTF-8",
-                null
-            )
-
-        } catch (e: Exception) {
-            Log.e(TAG, "分析音符时间轴失败", e)
-            callback(emptyList())
-        }
-    }
-
-    /**
-     * 生成用于音符时间轴分析的 HTML
-     */
-    private fun generateAnalysisHtml(musicData: MusicData): String {
-        // 【简谱转换】如果是简谱类型，先转换为 ABC 记谱法
-        val contentToRender = if (musicData.type == MusicType.JIANPU) {
-            val conversionResult = JianpuConverter.convert(musicData.content, musicData.id)
-            conversionResult.abc
-        } else {
-            musicData.content
-        }
-
-        // 转义内容中的特殊字符
-        val escapedContent = contentToRender
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\n", "\\n")
-            .replace("\r", "")
-            .replace("'", "\\'")
-
-        return """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <script src="file:///android_asset/abcjs/abcjs-basic-min.js"></script>
-        </head>
-        <body>
-            <div id="paper" style="position:absolute;left:-9999px;visibility:hidden;"></div>
-            <script>
-                try {
-                    const abcCode = "$escapedContent";
-                    ABCJS.renderAbc("paper", abcCode, {
-                        staffwidth: 800,
-                        paddingtop: 15,
-                        paddingbottom: 15,
-                        paddingright: 30,
-                        paddingleft: 30
-                    });
-
-                    // 提取音符时间轴和位置信息
-                    function extractNoteTimeline() {
-                        const noteEvents = [];
-                        let currentTime = 0;
-                        let noteIndex = 0;
-
-                        // 遍历所有 SVG 中的音符元素
-                        const svg = document.querySelector('#paper svg');
-                        if (!svg) {
-                            console.error('[NOTE-TIMELINE] 找不到 SVG 元素');
-                            return '[]';
-                        }
-
-                        // 使用 getBoundingClientRect 获取实际渲染尺寸
-                        const svgRect = svg.getBoundingClientRect();
-                        const svgWidth = svgRect.width || 800;
-                        const svgHeight = svgRect.height || 400;
-
-                        console.log('[NOTE-TIMELINE] SVG 尺寸:', svgWidth, 'x', svgHeight);
-
-                        // 获取所有音符路径（abcjs 生成的音符类名）
-                        let notes = svg.querySelectorAll('[class*="abcjs-note"]');
-                        console.log('[NOTE-TIMELINE] 找到音符元素:', notes.length);
-
-                        if (notes.length === 0) {
-                            notes = svg.querySelectorAll('.abcjs-midi-note');
-                            console.log('[NOTE-TIMELINE] 使用备用选择器找到:', notes.length);
-                        }
-
-                        // 计算每个音符的时值
-                        const tempo = ${musicData.tempo};
-                        const msPerBeat = 60000 / tempo; // 每拍的毫秒数
-
-                        notes.forEach(function(note, index) {
-                            // 获取元素的唯一 ID
-                            let elementId = note.id;
-                            if (!elementId) {
-                                const parent = note.closest('.abcjs-midi-note');
-                                if (parent && parent.id) {
-                                    elementId = parent.id;
-                                } else {
-                                    elementId = 'note-' + index;
-                                }
-                            }
-
-                            // 获取音符位置（归一化到 0-1）
-                            let noteX = 0, noteY = 0, noteW = 0.05, noteH = 0.05;
-                            try {
-                                const bbox = note.getBBox();
-                                const svgBox = svg.getBoundingClientRect();
-
-                                // 归一化坐标
-                                noteX = bbox.x / svgWidth;
-                                noteY = bbox.y / svgHeight;
-                                noteW = bbox.width / svgWidth;
-                                noteH = bbox.height / svgHeight;
-
-                                console.log('[NOTE-POS] Note', index, 'bbox:', bbox.x, bbox.y, bbox.width, bbox.height, 'normalized:', noteX.toFixed(3), noteY.toFixed(3), noteW.toFixed(3), noteH.toFixed(3));
-                            } catch(e) {
-                                console.warn('[NOTE-POS] 无法获取音符位置:', e);
-                            }
-
-                            // 简单估算时间（基于顺序）
-                            noteEvents.push({
-                                time: Math.round(currentTime),
-                                id: elementId,
-                                index: noteIndex++,
-                                x: parseFloat(noteX.toFixed(3)),
-                                y: parseFloat(noteY.toFixed(3)),
-                                w: parseFloat(noteW.toFixed(3)),
-                                h: parseFloat(noteH.toFixed(3))
-                            });
-
-                            // 简单的时间递增（每拍约 500ms）
-                            currentTime += msPerBeat / 2; // 假设八分音符
-                        });
-
-                        console.log('[NOTE-TIMELINE] 提取完成，共', noteEvents.length, '个音符事件');
-
-                        return JSON.stringify(noteEvents);
-                    }
-
-                    window.noteTimelineResult = extractNoteTimeline();
-                } catch(e) {
-                    console.error('音符时间轴分析失败:', e);
-                    window.noteTimelineError = e.message;
-                }
-            </script>
-        </body>
-        </html>
-        """.trimIndent()
-    }
-
-    /**
-     * 从 WebView 中提取音符时间轴数据
-     */
-    private fun extractNoteTimeline(webView: WebView, callback: (List<NoteEvent>) -> Unit) {
-        webView.evaluateJavascript(
-            "(function() { return window.noteTimelineResult || '[]'; })();"
-        ) { result ->
-            try {
-                // evaluateJavascript 返回 JSON 编码的字符串，需要解码
-                val decoded = if (result.length > 2 && result.startsWith("\"") && result.endsWith("\"")) {
-                    result.substring(1, result.length - 1)
-                        .replace("\\\"", "\"")
-                        .replace("\\\\", "\\")
-                } else {
-                    result
-                }
-
-                Log.d(TAG, "音符时间轴原始数据: ${decoded.take(200)}")
-
-                val noteEvents = NoteEvent.fromJsonArray(decoded)
-                Log.d(TAG, "解析到 ${noteEvents.size} 个音符事件")
-                callback(noteEvents)
-
-            } catch (e: Exception) {
-                Log.e(TAG, "解析音符时间轴失败", e)
-                callback(emptyList())
-            }
-        }
-    }
-
-    // =========================================================================
-    // 带高亮的渲染
-    // =========================================================================
-
-    /**
-     * 渲染带高亮的乐谱 Bitmap
-     *
-     * @param musicData 乐谱数据
-     * @param width 渲染宽度
-     * @param highlightElementId 要高亮的音符元素 ID（可选）
-     * @param callback 回调函数
-     */
-    fun renderWithHighlight(
-        musicData: MusicData,
-        width: Int,
-        highlightElementId: String?,
-        callback: (Bitmap?) -> Unit
-    ) {
-        val renderKey = "${musicData.getCacheKey(width)}_highlight_${highlightElementId ?: "none"}"
-
-        // 检查缓存（高亮版本单独缓存）
-        val cached = MusicSheetCache.get(renderKey)
-        if (cached != null) {
-            Log.d(TAG, "使用缓存的高亮乐谱图片: $highlightElementId")
-            callback(cached)
-            return
-        }
-
-        Log.d(TAG, "渲染高亮乐谱: highlightId=$highlightElementId")
-
-        // 每次创建新的 WebView
-        val webView = WebView(context)
-
-        try {
-            configureWebView(webView, width)
-
-            // 生成带高亮的 HTML
-            val html = generateAbcHtmlWithHighlight(musicData, width, highlightElementId)
-
-            webView.webViewClient = object : WebViewClient() {
-                override fun onPageFinished(view: WebView, url: String) {
-                    handler.postDelayed({
-                        captureBitmap(webView, musicData, width, callback = { bitmap ->
-                            // 缓存高亮版本
-                            if (bitmap != null) {
-                                MusicSheetCache.put(renderKey, bitmap)
-                            }
-                            callback(bitmap)
-                        }, onDestroy = {
-                            webView.destroy()
-                        })
-                    }, 1200)
-                }
-            }
-
-            webView.loadDataWithBaseURL(
-                "file:///android_asset/",
-                html,
-                "text/html",
-                "UTF-8",
-                null
-            )
-
-        } catch (e: Exception) {
-            Log.e(TAG, "渲染高亮乐谱失败", e)
-            callback(null)
-            webView.destroy()
-        }
-    }
-
-    /**
-     * 生成带高亮的 abcjs HTML
-     */
-    private fun generateAbcHtmlWithHighlight(
-        musicData: MusicData,
-        width: Int,
-        highlightElementId: String?
-    ): String {
-        // 【简谱转换】
-        val contentToRender = if (musicData.type == MusicType.JIANPU) {
-            val conversionResult = JianpuConverter.convert(musicData.content, musicData.id)
-            conversionResult.abc
-        } else {
-            musicData.content
-        }
-
-        // 【Supernote 优化】添加 %% 指令
-        val contentWithDirectives = "%%staffwidth 900\n%%scale 0.82\n%%wrap\n%%staffsep 24\n" + contentToRender
-
-        // 转义内容中的特殊字符
-        val escapedContent = contentWithDirectives
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\n", "\\n")
-            .replace("\r", "")
-            .replace("'", "\\'")
-
-        // Supernote 优化：锁死 900 宽度
-        val staffWidth = 900
-        val highlightScript = if (highlightElementId != null) {
-            """
-            // 高亮指定音符（发光效果）
-            setTimeout(function() {
-                var elements = document.querySelectorAll('#$highlightElementId, [id*="$highlightElementId"]');
-                elements.forEach(function(el) {
-                    el.style.fill = '#4169E1'; // 矢车菊蓝
-                    el.style.filter = 'drop-shadow(0 0 8px rgba(65, 105, 225, 0.8)) brightness(1.3)';
-                    el.style.transition = 'all 0.2s ease';
-                });
-                console.log('[HIGHLIGHT] Applied highlight to: $highlightElementId, elements:', elements.length);
-            }, 300);
-            """.trimIndent()
-        } else {
-            ""
-        }
-
-        return """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-            <style>
-                * { margin: 0; padding: 0; box-sizing: border-box; }
-                body {
-                    background: white;
-                    padding: 10px;
-                    overflow-x: hidden;
-                }
-                /* Supernote 容器固定宽度 */
-                #paper {
-                    width: 936px;
-                    max-width: 100%;
-                    overflow-x: auto;
-                }
-                .abcjs-play { display: none !important; }
-                /* 让 abcjs 自己控制标题/作者位置，禁止被外部居中/对齐规则干扰 */
-                .abcjs-title, .abcjs-composer, .abcjs-tempo {
-                    text-anchor: initial;
-                }
-                .abcjs-title {
-                    text-anchor: middle;
-                    font-weight: bold;
-                }
-                .abcjs-composer {
-                    text-anchor: end;
-                }
-                /* 增加乐谱各部分之间的间距 */
-                .abcjs-row {
-                    margin-bottom: 20px;
-                }
-                /* 让 SVG 自然撑满容器宽度 */
-                #paper svg {
-                    width: 100% !important;
-                    height: auto;
-                    display: block;
-                    margin: 0;
-                }
-            </style>
-            <script src="file:///android_asset/abcjs/abcjs-basic-min.js"></script>
-        </head>
-        <body>
-            <div id="paper"></div>
-            <script>
-                if (typeof ABCJS === 'undefined') {
-                    console.error('ABCJS not loaded');
-                    document.body.innerHTML = '<div style="color:red;padding:20px;">ABCJS library failed to load</div>';
-                } else {
-                    try {
-                        const abcCode = "$escapedContent";
-                        ABCJS.renderAbc("paper", abcCode, {
-                            responsive: "resize",
-                            staffwidth: $staffWidth,
-                            paddingtop: 10,
-                            paddingbottom: 10,
-                            paddingleft: 15,
-                            paddingright: 15,
-                            showDecorations: true,
-                            add_classes: true,
-                            format: {
-                                titlefont: "Times New Roman 16 bold",
-                                composerfont: "Times New Roman 14",
-                                tempofont: "Times New Roman 14",
-                                titlemargin: 8,
-                                infofont: "Times New Roman 14 italic"
-                            }
-                        });
-
-                        // 获取所有 SVG 内容
-                        setTimeout(function() {
-                            var svgs = document.querySelectorAll('#paper svg');
-                            if (svgs.length === 0) {
-                                window.ABCJS_SVG_RESULT = '';
-                            } else if (svgs.length === 1) {
-                                var svgString = new XMLSerializer().serializeToString(svgs[0]);
-                                window.ABCJS_SVG_RESULT = svgString;
-                            } else {
-                                // 合并多个 SVG
-                                var totalHeight = 0;
-                                var maxWidth = 0;
-                                var svgStrings = [];
-
-                                for (var i = 0; i < svgs.length; i++) {
-                                    var svg = svgs[i];
-                                    var viewBox = svg.getAttribute('viewBox');
-                                    var w = 0, h = 0;
-                                    if (viewBox) {
-                                        var parts = viewBox.trim().split(/\s+/);
-                                        if (parts.length >= 4) {
-                                            w = parseFloat(parts[2]) || 0;
-                                            h = parseFloat(parts[3]) || 0;
-                                        }
-                                    }
-                                    if (w === 0) w = parseFloat(svg.getAttribute('width')) || 0;
-                                    if (h === 0) h = parseFloat(svg.getAttribute('height')) || 0;
-                                    if (w === 0 || h === 0) {
-                                        var bbox = svg.getBBox();
-                                        w = bbox.width || 0;
-                                        h = bbox.height || 0;
-                                    }
-                                    totalHeight += h;
-                                    if (w > maxWidth) maxWidth = w;
-                                    svgStrings.push(new XMLSerializer().serializeToString(svg));
-                                }
-
-                                var mergedSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + maxWidth + ' ' + totalHeight + '" width="' + maxWidth + '" height="' + totalHeight + '">';
-                                var currentY = 0;
-
-                                for (var i = 0; i < svgStrings.length; i++) {
-                                    var svgStr = svgStrings[i];
-                                    var h = 0;
-                                    var viewBox = svgs[i].getAttribute('viewBox');
-                                    if (viewBox) {
-                                        var parts = viewBox.trim().split(/\s+/);
-                                        if (parts.length >= 4) h = parseFloat(parts[3]) || 0;
-                                    }
-                                    if (h === 0) h = parseFloat(svgs[i].getAttribute('height')) || 0;
-                                    if (h === 0) {
-                                        var bbox = svgs[i].getBBox();
-                                        h = bbox.height || 0;
-                                    }
-
-                                    var contentMatch = svgStr.match(/<svg[^>]*>([\s\S]*)<\/svg>/);
-                                    if (contentMatch) {
-                                        var content = contentMatch[1];
-                                        mergedSvg += '<g transform="translate(0, ' + currentY + ')">';
-                                        mergedSvg += content;
-                                        mergedSvg += '</g>';
-                                        currentY += h;
-                                    }
-                                }
-                                mergedSvg += '</svg>';
-                                window.ABCJS_SVG_RESULT = mergedSvg;
-                            }
-
-                            // 应用高亮效果
-                            $highlightScript
-                        }, 300);
-                    } catch(e) {
-                        console.error('ABC rendering error:', e);
-                    }
-                }
-            </script>
-        </body>
-        </html>
-        """.trimIndent()
     }
 }
