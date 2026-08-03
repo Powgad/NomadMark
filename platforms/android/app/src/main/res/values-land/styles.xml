@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 工具栏按钮样式 -->
+    <!-- 横屏工具栏按钮样式：支持 layout_weight 铺满宽度 -->
     <style name="ToolbarButton">
         <item name="android:layout_width">0dp</item>
         <item name="android:layout_height">wrap_content</item>

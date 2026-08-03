@@ -166,7 +166,7 @@ class MarkdownEditorActivity : android.app.Activity() {
     private lateinit var gestureEditor: GestureEditor
 
     // 底部快捷栏
-    private lateinit var toolbarBottom: HorizontalScrollView
+    private lateinit var toolbarBottom: LinearLayout
     private lateinit var btnBold: Button
     private lateinit var btnItalic: Button
     private lateinit var btnHeadingUp: Button
