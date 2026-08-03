@@ -172,8 +172,8 @@ class WebViewMusicRenderer(private val context: Context) {
         }
 
         // 【Supernote 优化】添加 %% 指令
-        // 移除 %%scale 指令，避免与 renderAbc 参数冲突
-        val contentWithDirectives = "%%wrap\n%%staffsep 24\n" + contentToRender
+        // 移除 %%wrap 指令，使用 renderAbc 的 wrap 参数代替（更可控）
+        val contentWithDirectives = "%%staffsep 24\n" + contentToRender
 
         // 转义内容中的特殊字符
         val escapedContent = contentWithDirectives
@@ -201,9 +201,9 @@ class WebViewMusicRenderer(private val context: Context) {
                     overflow-x: hidden;
                     -webkit-tap-highlight-color: transparent;
                 }
-                /* Supernote 容器固定宽度 */
+                /* 动态宽度容器，匹配传入的 width 参数 */
                 #paper {
-                    width: 936px;
+                    width: 100%;
                     max-width: 100%;
                     overflow-x: auto;
                     cursor: pointer;
@@ -485,20 +485,7 @@ class WebViewMusicRenderer(private val context: Context) {
 
                         const renderOutput = ABCJS.renderAbc("paper", abcCode, {
                             responsive: "resize",
-                            staffwidth: $staffWidth,
-                            paddingtop: 10,
-                            paddingbottom: 10,
-                            paddingleft: 15,
-                            paddingright: 15,
-                            showDecorations: true,
-                            add_classes: true,
-                            format: {
-                                titlefont: "Times New Roman 16 bold",
-                                composerfont: "Times New Roman 14",
-                                tempofont: "Times New Roman 14",
-                                titlemargin: 8,
-                                infofont: "Times New Roman 14 italic"
-                            }
+                            viewportHorizontal: true
                         });
 
                         visualObj = renderOutput[0];
@@ -522,9 +509,31 @@ class WebViewMusicRenderer(private val context: Context) {
                                 window.SVG_ERROR = 'No SVG element found';
                                 window.ABCJS_SVG_RESULT = '';
                             } else if (svgs.length === 1) {
-                                var svgString = new XMLSerializer().serializeToString(svgs[0]);
+                                // 即使是单个 SVG，也要确保有明确的像素高度
+                                var svg = svgs[0];
+                                var w = 0, h = 0;
+                                var viewBox = svg.getAttribute('viewBox');
+                                if (viewBox) {
+                                    var parts = viewBox.trim().split(/\s+/);
+                                    if (parts.length >= 4) {
+                                        w = parseFloat(parts[2]) || 0;
+                                        h = parseFloat(parts[3]) || 0;
+                                    }
+                                }
+                                if (w === 0) w = parseFloat(svg.getAttribute('width')) || 0;
+                                if (h === 0) h = parseFloat(svg.getAttribute('height')) || 0;
+                                if (w === 0 || h === 0) {
+                                    var bbox = svg.getBBox();
+                                    w = bbox.width || 0;
+                                    h = bbox.height || 0;
+                                }
+                                // 序列化并添加明确的 width/height 属性
+                                var svgString = new XMLSerializer().serializeToString(svg);
+                                // 移除现有的 width/height 属性，添加像素值
+                                svgString = svgString.replace(/<svg/, '<svg').replace(/\s*width\s*=\s*["'][^"']*["']/g, '').replace(/\s*height\s*=\s*["'][^"']*["']/g, '');
+                                svgString = svgString.replace('<svg', '<svg width=\"' + w + '\" height=\"' + h + '\"');
                                 window.ABCJS_SVG_RESULT = svgString;
-                                console.log('[ABC-RENDER] Single SVG extracted, length:', svgString.length);
+                                console.log('[ABC-RENDER] Single SVG extracted, size:', w, 'x', h, ', length:', svgString.length);
                             } else {
                                 // 合并多个 SVG
                                 var totalHeight = 0;
