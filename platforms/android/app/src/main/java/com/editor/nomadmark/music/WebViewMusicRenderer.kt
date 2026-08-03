@@ -158,6 +158,7 @@ class WebViewMusicRenderer(private val context: Context) {
     /**
      * 生成 abcjs HTML（使用 SVG 输出 + 音频播放支持）
      */
+    @Suppress("UNUSED_PARAMETER")
     private fun generateAbcHtml(musicData: MusicData, width: Int, enableAudio: Boolean = true): String {
         // 【简谱转换】如果是简谱类型，先转换为 ABC 记谱法
         val contentToRender = if (musicData.type == MusicType.JIANPU) {
@@ -171,8 +172,7 @@ class WebViewMusicRenderer(private val context: Context) {
             musicData.content
         }
 
-        // 【Supernote 优化】添加 %% 指令
-        // 移除 %%wrap 指令，使用 renderAbc 的 wrap 参数代替（更可控）
+        // 添加 %% 指令（控制五线谱间距）
         val contentWithDirectives = "%%staffsep 24\n" + contentToRender
 
         // 转义内容中的特殊字符
@@ -182,10 +182,6 @@ class WebViewMusicRenderer(private val context: Context) {
             .replace("\n", "\\n")
             .replace("\r", "")
             .replace("'", "\\'")
-
-        // 动态计算 staffwidth，充分利用容器宽度
-        val horizontalPadding = 30  // 左右各 15px padding
-        val staffWidth = (width - horizontalPadding).toInt().coerceAtLeast(850)
 
         return """
         <!DOCTYPE html>
