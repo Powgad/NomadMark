@@ -17,7 +17,9 @@ import com.editor.nomadmark.music.WebViewMusicRenderer
 class MusicSheetSpan(
     private val context: Context,
     private val musicData: MusicData,
-    private val screenWidth: Int
+    private val screenWidth: Int,
+    /** 传给 WebViewMusicRenderer 的逻辑宽度（未乘 HORIZONTAL_SCALE） */
+    val logicWidth: Int = screenWidth
 ) : ReplacementSpan() {
 
     companion object {
@@ -74,6 +76,65 @@ class MusicSheetSpan(
         bitmap = null
     }
 
+    /**
+     * 获取 Bitmap 在 TextView 坐标系中的实际边界（含 padding）。
+     * 可直接与 MotionEvent 坐标比较，或配合 getLocationOnScreen 得到屏幕坐标。
+     */
+    fun getActualBounds(textView: android.widget.TextView): android.graphics.RectF? {
+        val bmp = bitmap ?: return null
+
+        val text = textView.text as? android.text.Spanned ?: return null
+        val spanStart = text.getSpanStart(this)
+        if (spanStart < 0) return null
+
+        val layout = textView.layout ?: return null
+        val line = layout.getLineForOffset(spanStart)
+        if (line < 0) return null
+
+        val lineTop = layout.getLineTop(line).toFloat()
+        val lineBottom = layout.getLineBottom(line).toFloat()
+        val lineLeft = layout.getLineLeft(line).toFloat()
+
+        val bitmapWidth = bmp.width.toFloat()
+        val bitmapHeight = bmp.height.toFloat()
+
+        // layout 坐标（与 draw() 一致）
+        val verticalPadding = 80f
+        val totalHeight = lineBottom - lineTop
+        val topMargin = ((totalHeight - bitmapHeight) / 2).coerceAtLeast(verticalPadding / 2)
+        val layoutLeft = lineLeft
+        val layoutTop = lineTop + topMargin
+
+        // 转为 TextView 坐标：draw 时 canvas 已 translate(padding)，需加回 padding
+        val padL = textView.totalPaddingLeft.toFloat()
+        val padT = textView.totalPaddingTop.toFloat()
+        return android.graphics.RectF(
+            layoutLeft + padL,
+            layoutTop + padT,
+            layoutLeft + padL + bitmapWidth,
+            layoutTop + padT + bitmapHeight
+        )
+    }
+
+    /**
+     * 将 draw() 记录的 layout 坐标边界转为 TextView 坐标。
+     */
+    fun getViewBounds(textView: android.widget.TextView): android.graphics.RectF? {
+        // 优先用 layout 实测（更稳），其次用最近一次 draw 记录
+        getActualBounds(textView)?.let { return it }
+
+        val layoutBounds = screenBounds ?: return null
+        val bmp = bitmap ?: return null
+        val padL = textView.totalPaddingLeft.toFloat()
+        val padT = textView.totalPaddingTop.toFloat()
+        return android.graphics.RectF(
+            layoutBounds.left + padL,
+            layoutBounds.top + padT,
+            layoutBounds.left + padL + bmp.width,
+            layoutBounds.top + padT + bmp.height
+        )
+    }
+
     // =========================================================================
     // ReplacementSpan 实现
     // =========================================================================
@@ -114,6 +175,22 @@ class MusicSheetSpan(
         paint: Paint
     ) {
         android.util.Log.d("MusicSheetSpan", "draw: title=${musicData.title}, bitmap=${if (bitmap != null) "${bitmap!!.width}x${bitmap!!.height}" else "null"}, x=$x, top=$top, bottom=$bottom")
+
+        // 记录屏幕边界（用于点击检测）
+        val totalHeight = bottom - top
+        val bitmapHeight = bitmap?.height ?: 200
+        val verticalPadding = 80
+        val topMargin = (totalHeight - bitmapHeight) / 2
+        val bitmapTop = top + topMargin.coerceAtLeast(verticalPadding / 2)
+        val bitmapBottom = bitmapTop + (bitmap?.height ?: 200)
+
+        screenBounds = android.graphics.RectF(
+            x,
+            bitmapTop.toFloat(),
+            x + (bitmap?.width ?: screenWidth).toFloat(),
+            bitmapBottom.toFloat()
+        )
+
         bitmap?.let {
             // 检查多个位置的像素内容
             val samplePoints = listOf(
@@ -129,13 +206,6 @@ class MusicSheetSpan(
             android.util.Log.d("MusicSheetSpan", "Bitmap pixels: $pixelColors, isRecycled=${it.isRecycled}")
 
             // 绘制 Bitmap，使用独立的 Paint 避免受原始 paint 影响
-            // 计算垂直居中位置：总高度减去 bitmap 高度后除以 2，得到上边距
-            val totalHeight = bottom - top
-            val bitmapHeight = it.height
-            val verticalPadding = 80  // 与 getSize() 中保持一致
-            val topMargin = (totalHeight - bitmapHeight) / 2
-            val bitmapTop = top + topMargin.coerceAtLeast(verticalPadding / 2)
-
             val bitmapPaint = Paint()
             canvas.drawBitmap(it, x, bitmapTop.toFloat(), bitmapPaint)
 

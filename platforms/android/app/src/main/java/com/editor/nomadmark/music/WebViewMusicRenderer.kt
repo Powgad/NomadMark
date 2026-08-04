@@ -158,7 +158,6 @@ class WebViewMusicRenderer(private val context: Context) {
     /**
      * 生成 abcjs HTML（使用 SVG 输出 + 音频播放支持）
      */
-    @Suppress("UNUSED_PARAMETER")
     private fun generateAbcHtml(musicData: MusicData, width: Int, enableAudio: Boolean = true): String {
         // 【简谱转换】如果是简谱类型，先转换为 ABC 记谱法
         val contentToRender = if (musicData.type == MusicType.JIANPU) {
@@ -183,25 +182,31 @@ class WebViewMusicRenderer(private val context: Context) {
             .replace("\r", "")
             .replace("'", "\\'")
 
+        // 与 AudioMusicRenderer 共用 staffwidth / padding，保证谱面排版一致
+        val staffwidth = MusicRenderConfig.staffWidth(width)
+        val abcPadding = MusicRenderConfig.ABC_PADDING
+        val abcScale = MusicRenderConfig.ABC_SCALE
+        val bodyPadding = MusicRenderConfig.BODY_PADDING_PX
+
         return """
         <!DOCTYPE html>
         <html>
         <head>
             <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+            <meta name="viewport" content="width=$width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, target-densitydpi=device-dpi">
             <style>
                 * { margin: 0; padding: 0; box-sizing: border-box; }
                 body {
                     background: white;
-                    padding: 10px;
+                    padding: ${bodyPadding}px;
                     overflow-x: hidden;
                     -webkit-tap-highlight-color: transparent;
                 }
-                /* 动态宽度容器，匹配传入的 width 参数 */
+                /* 固定逻辑宽度，与音频覆盖层同一 staffwidth 排版 */
                 #paper {
                     width: 100%;
                     max-width: 100%;
-                    overflow-x: auto;
+                    overflow-x: hidden;
                     cursor: pointer;
                 }
                 .abcjs-play { display: none !important; }
@@ -220,12 +225,11 @@ class WebViewMusicRenderer(private val context: Context) {
                 .abcjs-row {
                     margin-bottom: 20px;
                 }
-                /* 让 SVG 自然撑满容器宽度 */
+                /* 保持 SVG 像素尺寸，与提取/AndroidSVG 路径一致，勿强制 100% */
                 #paper svg {
-                    width: 100% !important;
-                    height: auto;
                     display: block;
                     margin: 0;
+                    max-width: none !important;
                 }
 
                 /* ==================================================================== */
@@ -479,9 +483,15 @@ class WebViewMusicRenderer(private val context: Context) {
                     try {
                         console.log('[ABC-RENDER] About to render ABC code');
 
+                        // 与 AudioMusicRenderer 共用 staffwidth / padding，保证静态图与播放器一致
                         const renderOutput = ABCJS.renderAbc("paper", abcCode, {
-                            responsive: "resize",
-                            viewportHorizontal: true
+                            staffwidth: $staffwidth,
+                            responsive: false,
+                            scale: $abcScale,
+                            paddingtop: $abcPadding,
+                            paddingbottom: $abcPadding,
+                            paddingleft: $abcPadding,
+                            paddingright: $abcPadding
                         });
 
                         visualObj = renderOutput[0];
@@ -701,20 +711,8 @@ class WebViewMusicRenderer(private val context: Context) {
                         "(function() { return window.ABCJS_SVG_RESULT || ''; })();"
                     ) { svgResult ->
                         try {
-                            // evaluateJavascript 返回的是 JSON 编码的字符串
-                            // 例如: "\"<svg>...</svg>\"" 需要正确解析
-                            val svgString = if (svgResult.length > 2 && svgResult.startsWith("\"") && svgResult.endsWith("\"")) {
-                                // 移除外层引号
-                                val inner = svgResult.substring(1, svgResult.length - 1)
-                                // 处理转义字符
-                                inner.replace("\\\"", "\"")
-                                    .replace("\\\\", "\\")
-                                    .replace("\\n", "\n")
-                                    .replace("\\r", "\r")
-                                    .replace("\\t", "\t")
-                            } else {
-                                svgResult
-                            }
+                            // Chromium 会对 < 等做 \u003C 编码；必须用 JSON 解码，否则 AndroidSVG 解析失败
+                            val svgString = decodeEvaluateJavascriptString(svgResult)
 
                             Log.d(TAG, "获取到 SVG，长度: ${svgString.length}")
                             Log.d(TAG, "SVG 开头: ${svgString.take(100)}")
@@ -728,8 +726,8 @@ class WebViewMusicRenderer(private val context: Context) {
 
                             Log.d(TAG, "清理后 SVG 长度: ${cleanedSvg.length}")
 
-                            if (cleanedSvg.isEmpty()) {
-                                Log.w(TAG, "SVG 字符串为空，使用备用方法")
+                            if (cleanedSvg.isEmpty() || !cleanedSvg.contains("<svg")) {
+                                Log.w(TAG, "SVG 字符串无效（空或未解码），使用备用方法")
                                 captureBitmapFallback(webView, musicData, width, callback) {
                                     onDestroy()
                                 }
@@ -796,6 +794,57 @@ class WebViewMusicRenderer(private val context: Context) {
     }
 
     /**
+     * 解码 WebView.evaluateJavascript 返回的字符串结果。
+     *
+     * Chromium 会把返回值编成 JSON，并把 `<` 写成 `\u003C` 以防 XSS。
+     * 若只剥外层引号而不解 `\uXXXX`，AndroidSVG 会报 Unexpected token。
+     */
+    private fun decodeEvaluateJavascriptString(result: String?): String {
+        if (result.isNullOrBlank() || result == "null") return ""
+        return try {
+            when (val value = org.json.JSONTokener(result).nextValue()) {
+                is String -> value
+                else -> value?.toString() ?: ""
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "JSONTokener 解码失败，回退手动 \\u 解码", e)
+            decodeJsonStringEscapesManually(result)
+        }
+    }
+
+    private fun decodeJsonStringEscapesManually(raw: String): String {
+        var input = raw
+        if (input.length >= 2 && input.startsWith("\"") && input.endsWith("\"")) {
+            input = input.substring(1, input.length - 1)
+        }
+        val sb = StringBuilder(input.length)
+        var i = 0
+        while (i < input.length) {
+            val c = input[i]
+            if (c == '\\' && i + 1 < input.length) {
+                when (val next = input[i + 1]) {
+                    'u' -> if (i + 5 < input.length) {
+                        val hex = input.substring(i + 2, i + 6)
+                        val code = hex.toIntOrNull(16)
+                        if (code != null) {
+                            sb.append(code.toChar())
+                            i += 6
+                            continue
+                        }
+                    }
+                    'n' -> { sb.append('\n'); i += 2; continue }
+                    'r' -> { sb.append('\r'); i += 2; continue }
+                    't' -> { sb.append('\t'); i += 2; continue }
+                    '"', '\\', '/' -> { sb.append(next); i += 2; continue }
+                }
+            }
+            sb.append(c)
+            i++
+        }
+        return sb.toString()
+    }
+
+    /**
      * 从 SVG 字符串解析像素尺寸
      *
      * AndroidSVG 的 documentWidth/Height 在 SVG 使用百分比宽度（如 width="100%"）时返回 -1，
@@ -838,25 +887,34 @@ class WebViewMusicRenderer(private val context: Context) {
             svg.setDocumentWidth(size.width)
             if (size.height > 0) svg.setDocumentHeight(size.height)
 
-            val picWidth = size.width.toInt().coerceAtLeast(width)
+            // 使用 SVG 真实像素尺寸
+            val picWidth = size.width.toInt().coerceAtLeast(1)
             val picHeight = if (size.height > 0) size.height.toInt() else 400
 
-            // 【非等比缩放】横向 1.2 倍，纵向 1.8 倍
-            val horizontalScale = 1.1f
-            val verticalScale = 1.8f
-            val scaledPicWidth = (picWidth * horizontalScale).toInt()
-            val scaledPicHeight = (picHeight * verticalScale).toInt()
+            // 【非等比缩放】目标：最终宽不超过 logicWidth(=width)，避免预览右侧被裁切
+            val horizontalScale = MusicRenderConfig.HORIZONTAL_SCALE
+            val verticalScale = MusicRenderConfig.VERTICAL_SCALE
+            var drawHScale = horizontalScale
+            var drawVScale = verticalScale
+            var scaledPicWidth = (picWidth * drawHScale).toInt()
+            var scaledPicHeight = (picHeight * drawVScale).toInt()
+
+            // 安全钳制：staffwidth 已按 HORIZONTAL_SCALE 反算，仍超出则压到可用宽度
+            if (width > 0 && scaledPicWidth > width && picWidth > 0) {
+                drawHScale = width.toFloat() / picWidth
+                scaledPicWidth = width
+                Log.w(TAG, "静态乐谱超宽，横向缩放钳制为 $drawHScale (targetWidth=$width, svgW=$picWidth)")
+            }
 
             val picture = Picture()
             val canvas = picture.beginRecording(scaledPicWidth, scaledPicHeight)
             canvas.drawColor(Color.WHITE)
-            // 非等比缩放绘制
-            canvas.scale(horizontalScale, verticalScale)
+            canvas.scale(drawHScale, drawVScale)
             svg.renderToCanvas(canvas)
             picture.endRecording()
 
             val svgCount = svgString.split("<svg").size - 1
-            Log.d(TAG, "SVG 渲染成功: parsed=${size.width}x${size.height}, androidSvg=(${svg.documentWidth}x${svg.documentHeight}), pic=${picWidth}x${picHeight}, scaled=${scaledPicWidth}x${scaledPicHeight}, horizontalScale=$horizontalScale, verticalScale=$verticalScale, svgCount=$svgCount, len=${svgString.length}")
+            Log.d(TAG, "SVG 渲染成功: parsed=${size.width}x${size.height}, androidSvg=(${svg.documentWidth}x${svg.documentHeight}), pic=${picWidth}x${picHeight}, scaled=${scaledPicWidth}x${scaledPicHeight}, drawScale=${drawHScale}x${drawVScale}, svgCount=$svgCount, len=${svgString.length}")
             picture
         } catch (e: Exception) {
             Log.e(TAG, "SVG 解析失败", e)
@@ -921,11 +979,19 @@ class WebViewMusicRenderer(private val context: Context) {
                 val finalHeight = maxOf(measuredHeight, svgHeight, 400)
                 Log.d(TAG, "SVG 计算高度: $svgHeight, 最终使用高度: $finalHeight")
 
-                // 【非等比缩放】横向 1.2 倍，纵向 1.8 倍
-                val horizontalScale = 1.1f
-                val verticalScale = 1.8f
-                val scaledFinalWidth = (webView.measuredWidth * horizontalScale).toInt()
-                val scaledFinalHeight = (finalHeight * verticalScale).toInt()
+                // 【非等比缩放】最终宽不超过 logicWidth(=width)，避免预览右侧被裁切
+                val horizontalScale = MusicRenderConfig.HORIZONTAL_SCALE
+                val verticalScale = MusicRenderConfig.VERTICAL_SCALE
+                val baseW = webView.measuredWidth.coerceAtLeast(1)
+                var drawHScale = horizontalScale
+                val drawVScale = verticalScale
+                var scaledFinalWidth = (baseW * drawHScale).toInt()
+                val scaledFinalHeight = (finalHeight * drawVScale).toInt()
+                if (width > 0 && scaledFinalWidth > width) {
+                    drawHScale = width.toFloat() / baseW
+                    scaledFinalWidth = width
+                    Log.w(TAG, "备用路径超宽，横向缩放钳制为 $drawHScale")
+                }
 
                 // 创建 Bitmap，使用拉伸后的尺寸
                 val bitmap = Bitmap.createBitmap(
@@ -938,7 +1004,7 @@ class WebViewMusicRenderer(private val context: Context) {
                 canvas.drawColor(Color.WHITE)
 
                 // 非等比缩放绘制
-                canvas.scale(horizontalScale, verticalScale)
+                canvas.scale(drawHScale, drawVScale)
 
                 // 使用软件层绘制
                 webView.setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, null)

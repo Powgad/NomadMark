@@ -14,7 +14,7 @@
 | **rust-core-rendering-troubleshooting** | [.claude/skills/rust-core-rendering-troubleshooting.md](rust-core-rendering-troubleshooting.md) | Rust Core 渲染异常排查（内存布局、JNI 接口、nativeReadBytes 问题） |
 | **rust-core-review** | [.claude/skills/rust-core-review.md](rust-core-review.md) | Rust Core 代码审查报告（内存安全、设计问题、性能优化、架构建议） |
 | **supernote-device-dev** | [docs/skills.md](../docs/skills.md) | Supernote/Ratta 墨水屏设备开发指南（E-Ink UI、系统签名、手写 SDK、Scoped Storage） |
-| **music-rendering-troubleshooting** | [.claude/skills/music-rendering-troubleshooting.md](music-rendering-troubleshooting.md) | Android 乐谱（ABC 记谱法）渲染排查：wrap 换行截断、ABCJS 未加载、全白、超宽、缓存宽度错乱 |
+| **music-rendering-troubleshooting** | [.claude/skills/music-rendering-troubleshooting.md](music-rendering-troubleshooting.md) | Android 乐谱（ABC 记谱法）渲染排查：wrap 换行截断、ABCJS 未加载、全白、超宽、缓存宽度错乱、播放器裁切对齐 |
 
 ---
 

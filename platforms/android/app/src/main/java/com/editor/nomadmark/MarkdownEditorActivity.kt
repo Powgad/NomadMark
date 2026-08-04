@@ -18,6 +18,8 @@ import android.os.Looper
 import android.provider.DocumentsContract
 import android.provider.Settings
 import android.net.Uri
+import android.webkit.WebView
+import android.widget.FrameLayout
 import android.view.MotionEvent
 import android.text.Editable
 import android.text.Spannable
@@ -225,6 +227,23 @@ class MarkdownEditorActivity : android.app.Activity() {
     /** 当前活动的 MusicSheetSpan 列表 */
     private val activeMusicSheetSpans = mutableListOf<MusicSheetSpan>()
 
+    /** 当前播放音频的覆盖层 (WebView + 容器) */
+    private var activeMusicOverlay: Pair<android.webkit.WebView, android.widget.FrameLayout>? = null
+
+    /** 当前播放的乐谱 ID */
+    private var currentPlayingMusicId: String? = null
+
+    /** 覆盖层锚定的预览 TextView（用于滚动时同步位置） */
+    private var musicOverlayHost: android.widget.TextView? = null
+
+    /** 覆盖层在 TextView 坐标系中的边界 */
+    private var musicOverlayViewBounds: android.graphics.RectF? = null
+
+    /** 滚动时同步覆盖层屏幕位置 */
+    private val musicOverlayScrollListener = android.view.ViewTreeObserver.OnScrollChangedListener {
+        syncMusicOverlayPosition()
+    }
+
     /** 乐谱播放模式 */
     private var musicPlaybackMode: MusicPlaybackMode = MusicPlaybackMode.STATIC
 
@@ -426,6 +445,8 @@ class MarkdownEditorActivity : android.app.Activity() {
         super.onPause()
         // 隐藏软键盘，防止退出到桌面时软键盘仍然显示
         hideSoftKeyboardFromAll()
+        // 移除乐谱播放覆盖层
+        removeMusicOverlay()
         // 停止所有音频播放
         audioMusicRenderer.stopAllPlayback()
         // 自动保存 - 应用进入后台时保存
@@ -439,6 +460,8 @@ class MarkdownEditorActivity : android.app.Activity() {
         super.onDestroy()
         // 确保软键盘被隐藏（双重保险）
         hideSoftKeyboardFromAll()
+        // 移除乐谱播放覆盖层
+        removeMusicOverlay()
         // 清理音频渲染器
         audioMusicRenderer.cleanupAll()
         // 清理自动保存 Handler
@@ -795,11 +818,15 @@ class MarkdownEditorActivity : android.app.Activity() {
                     }
                 }
 
+                // 触发异步渲染，使用考虑边距后的宽度（覆盖层必须用同一逻辑宽）
+                val musicSheetWidth = screenWidth - horizontalMarginPx * 2
+
                 // 创建 MusicSheetSpan 并挂在占位符上
                 val musicSpan = MusicSheetSpan(
                     this,
                     musicSheet.musicData,
-                    screenWidth
+                    screenWidth,
+                    logicWidth = musicSheetWidth
                 )
 
                 // 设置渲染器和回调
@@ -839,8 +866,6 @@ class MarkdownEditorActivity : android.app.Activity() {
                 // 添加到活动列表
                 activeMusicSheetSpans.add(musicSpan)
 
-                // 触发异步渲染，使用考虑边距后的宽度
-                val musicSheetWidth = screenWidth - horizontalMarginPx * 2
                 musicSheetRenderer.renderToBitmap(musicSheet.musicData, musicSheetWidth) { bitmap ->
                     Log.d(TAG, "渲染回调: title=${musicSheet.musicData.title}, bitmap=${if (bitmap != null) "${bitmap.width}x${bitmap.height}" else "null"}")
                     val heightChanged = musicSpan.updateBitmap(bitmap)
@@ -1210,25 +1235,8 @@ class MarkdownEditorActivity : android.app.Activity() {
         gestureLayer = findViewById(R.id.gesture_layer)
 
         // =========================================================================
-        // 乐谱播放模式 UI 组件
+        // 乐谱播放模式 UI 组件（已移除手动模式切换，改为点击图片直接播放）
         // =========================================================================
-
-        // 模式切换器
-        val musicModeSwitcher = findViewById<LinearLayout>(R.id.music_mode_switcher)
-        val musicModeStatic = findViewById<TextView>(R.id.music_mode_static)
-        val musicModeAudio = findViewById<TextView>(R.id.music_mode_audio)
-
-        // 音频乐谱容器
-        val musicAudioScroll = findViewById<ScrollView>(R.id.music_audio_scroll)
-        val musicAudioContainer = findViewById<FrameLayout>(R.id.music_audio_container)
-
-        // 设置模式切换点击监听
-        musicModeStatic?.setOnClickListener {
-            switchMusicMode(MusicPlaybackMode.STATIC)
-        }
-        musicModeAudio?.setOnClickListener {
-            switchMusicMode(MusicPlaybackMode.AUDIO)
-        }
 
         // 底部快捷栏
         toolbarBottom = findViewById(R.id.toolbar_bottom)
@@ -1551,13 +1559,234 @@ class MarkdownEditorActivity : android.app.Activity() {
     private fun setupMusicSheetTouchListeners() {
         // 预览模式
         previewText.setOnTouchListener { _, event ->
+            if (event.action == android.view.MotionEvent.ACTION_UP) {
+                handleMusicSheetClick(previewText, event.x, event.y)
+            }
             false
         }
 
         // 分屏模式
         splitPreviewText?.setOnTouchListener { _, event ->
+            if (event.action == android.view.MotionEvent.ACTION_UP) {
+                handleMusicSheetClick(splitPreviewText, event.x, event.y)
+            }
             false
         }
+    }
+
+    // =========================================================================
+    // 乐谱点击播放
+    // =========================================================================
+
+    /**
+     * 处理乐谱点击事件
+     */
+    private fun handleMusicSheetClick(textView: android.widget.TextView, x: Float, y: Float) {
+        // 已有覆盖层时：点空白处关闭（点在覆盖层上的事件由 WebView 自己处理）
+        if (activeMusicOverlay != null) {
+            removeMusicOverlay()
+            return
+        }
+
+        val clickedSpan = findMusicSpanAtPosition(textView, x, y)
+        if (clickedSpan != null) {
+            Log.d(TAG, "点击了乐谱: ${clickedSpan.music.title}")
+            startMusicOverlay(clickedSpan, textView)
+        }
+    }
+
+    /**
+     * 在 TextView 本地坐标中查找乐谱 Span（不要混用屏幕坐标和 scrollY）
+     */
+    private fun findMusicSpanAtPosition(
+        textView: android.widget.TextView,
+        x: Float,
+        y: Float
+    ): MusicSheetSpan? {
+        for (span in activeMusicSheetSpans) {
+            val bounds = span.getViewBounds(textView) ?: continue
+            if (x >= bounds.left && x <= bounds.right &&
+                y >= bounds.top && y <= bounds.bottom
+            ) {
+                return span
+            }
+        }
+        return null
+    }
+
+    /**
+     * 启动乐谱播放覆盖层：位置/尺寸严格对齐静态 Bitmap
+     */
+    private fun startMusicOverlay(musicSpan: MusicSheetSpan, textView: android.widget.TextView) {
+        val bmp = musicSpan.bitmap
+        if (bmp == null || bmp.isRecycled) {
+            Log.w(TAG, "乐谱 Bitmap 尚未就绪，无法启动覆盖层")
+            android.widget.Toast.makeText(this, "乐谱仍在加载，请稍后再试", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val viewBounds = musicSpan.getViewBounds(textView) ?: run {
+            Log.w(TAG, "无法获取乐谱实际边界")
+            return
+        }
+
+        removeMusicOverlay()
+
+        val width = bmp.width
+        val height = bmp.height
+        // 用 Bitmap 真实像素尺寸，避免边界浮点误差
+        val alignedBounds = android.graphics.RectF(
+            viewBounds.left,
+            viewBounds.top,
+            viewBounds.left + width,
+            viewBounds.top + height
+        )
+
+        musicOverlayHost = textView
+        musicOverlayViewBounds = alignedBounds
+
+        val location = IntArray(2)
+        textView.getLocationOnScreen(location)
+
+        Log.d(
+            TAG,
+            "覆盖层: viewBounds=$alignedBounds, textScreen=(${location[0]},${location[1]}), " +
+                "size=${width}x${height}, padding=(${textView.totalPaddingLeft},${textView.totalPaddingTop})"
+        )
+
+        // 先占位，createMusicOverlay 内会挂到 content 并 sync 位置
+        val overlay = createMusicOverlay(musicSpan.music, width, height, musicSpan.logicWidth)
+        val webView = overlay.getChildAt(0) as? android.webkit.WebView
+        if (webView != null) {
+            activeMusicOverlay = webView to overlay
+            currentPlayingMusicId = musicSpan.music.id
+            registerMusicOverlayScrollSync(textView)
+            syncMusicOverlayPosition()
+        }
+    }
+
+    /**
+     * 创建乐谱播放覆盖层（固定为 Bitmap 宽高，白底完全盖住静态图）
+     */
+    private fun createMusicOverlay(
+        musicData: com.editor.nomadmark.music.MusicData,
+        width: Int,
+        height: Int,
+        logicWidth: Int
+    ): FrameLayout {
+        val overlay = FrameLayout(this).apply {
+            layoutParams = FrameLayout.LayoutParams(width, height)
+            setBackgroundColor(android.graphics.Color.WHITE)
+            elevation = 16f
+            setPadding(0, 0, 0, 0)
+            clipChildren = true
+            clipToPadding = true
+        }
+
+        // 挂到 activity content，坐标相对该父容器计算，避免 decorView/状态栏偏移
+        val parent = findViewById<ViewGroup>(android.R.id.content)
+        parent.addView(overlay)
+
+        audioMusicRenderer.renderWithAudio(
+            musicData = musicData,
+            scaledWidth = width,
+            scaledHeight = height,
+            container = overlay,
+            logicWidth = logicWidth,
+            onComplete = { success ->
+                Log.d(TAG, "覆盖层渲染完成: ${musicData.title}, success=$success")
+                if (!success) {
+                    removeMusicOverlay()
+                    android.widget.Toast.makeText(
+                        this,
+                        "乐谱渲染失败",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                } else {
+                    syncMusicOverlayPosition()
+                }
+            },
+            onPlaybackEnded = {
+                Log.d(TAG, "播放结束: ${musicData.title}")
+                runOnUiThread {
+                    removeMusicOverlay()
+                }
+            }
+        )
+
+        return overlay
+    }
+
+    private fun registerMusicOverlayScrollSync(textView: android.widget.TextView) {
+        val scrollView = when (textView.id) {
+            R.id.preview_text -> previewLayer
+            R.id.split_preview_text -> splitPreviewScroll
+            else -> null
+        }
+        scrollView?.viewTreeObserver?.addOnScrollChangedListener(musicOverlayScrollListener)
+        textView.viewTreeObserver.addOnScrollChangedListener(musicOverlayScrollListener)
+        textView.viewTreeObserver.addOnGlobalLayoutListener(musicOverlayLayoutListener)
+    }
+
+    private val musicOverlayLayoutListener =
+        android.view.ViewTreeObserver.OnGlobalLayoutListener {
+            syncMusicOverlayPosition()
+        }
+
+    private fun unregisterMusicOverlayScrollSync() {
+        if (::previewLayer.isInitialized) {
+            previewLayer.viewTreeObserver.takeIf { it.isAlive }
+                ?.removeOnScrollChangedListener(musicOverlayScrollListener)
+        }
+        if (::splitPreviewScroll.isInitialized) {
+            splitPreviewScroll.viewTreeObserver.takeIf { it.isAlive }
+                ?.removeOnScrollChangedListener(musicOverlayScrollListener)
+        }
+        musicOverlayHost?.viewTreeObserver?.takeIf { it.isAlive }?.let { vto ->
+            vto.removeOnScrollChangedListener(musicOverlayScrollListener)
+            vto.removeOnGlobalLayoutListener(musicOverlayLayoutListener)
+        }
+    }
+
+    /**
+     * 按宿主 TextView 与覆盖层父容器的屏幕坐标差，重同步覆盖层位置。
+     */
+    private fun syncMusicOverlayPosition() {
+        val overlay = activeMusicOverlay?.second ?: return
+        val textView = musicOverlayHost ?: return
+        val bounds = musicOverlayViewBounds ?: return
+        val parent = overlay.parent as? android.view.View ?: return
+
+        val textLoc = IntArray(2)
+        val parentLoc = IntArray(2)
+        textView.getLocationOnScreen(textLoc)
+        parent.getLocationOnScreen(parentLoc)
+
+        val x = textLoc[0] - parentLoc[0] + bounds.left
+        val y = textLoc[1] - parentLoc[1] + bounds.top
+        overlay.x = x
+        overlay.y = y
+        Log.d(
+            TAG,
+            "同步覆盖层位置: parentOff=(${parentLoc[0]},${parentLoc[1]}), " +
+                "textOff=(${textLoc[0]},${textLoc[1]}), overlay=($x,$y), size=${overlay.width}x${overlay.height}"
+        )
+    }
+
+    /**
+     * 移除乐谱播放覆盖层
+     */
+    private fun removeMusicOverlay() {
+        unregisterMusicOverlayScrollSync()
+        activeMusicOverlay?.let { (_, overlay) ->
+            Log.d(TAG, "移除乐谱覆盖层")
+            (overlay.parent as? ViewGroup)?.removeView(overlay)
+            audioMusicRenderer.cleanup(currentPlayingMusicId ?: "")
+        }
+        activeMusicOverlay = null
+        currentPlayingMusicId = null
+        musicOverlayHost = null
+        musicOverlayViewBounds = null
     }
 
     // =========================================================================
@@ -3841,6 +4070,9 @@ class MarkdownEditorActivity : android.app.Activity() {
     // =========================================================================
 
     private fun updatePreview() {
+        // 预览刷新时移除播放覆盖层，避免错位残留
+        removeMusicOverlay()
+
         // 先修复不完整的代码块
         val rawContent = getCurrentContent()
         val fixedContent = fixIncompleteCodeBlocks(rawContent)
@@ -3856,30 +4088,11 @@ class MarkdownEditorActivity : android.app.Activity() {
         // 根据乐谱和模式决定渲染方式
         if (musicSheets.isNotEmpty() && (isPreviewMode || isSplitMode)) {
             // 有乐谱且在预览模式或分屏模式
-            Log.d(TAG, "有乐谱且在预览/分屏模式，显示模式切换器")
-
-            if (musicPlaybackMode == MusicPlaybackMode.AUDIO && isPreviewMode) {
-                // 音频模式：渲染音频乐谱（仅在预览模式支持）
-                renderMusicInAudioMode()
-                // 隐藏普通预览
-                previewText.visibility = View.GONE
-                findViewById<ScrollView>(R.id.music_audio_scroll).visibility = View.VISIBLE
-                // 显示模式切换器
-                findViewById<View>(R.id.music_mode_switcher).visibility = View.VISIBLE
-                return
-            } else {
-                // 静态模式或分屏模式：显示模式切换器
-                findViewById<View>(R.id.music_mode_switcher).visibility = View.VISIBLE
-                findViewById<ScrollView>(R.id.music_audio_scroll).visibility = View.GONE
-                previewText.visibility = if (isPreviewMode) View.VISIBLE else View.GONE
-            }
-        } else {
-            // 没有乐谱或不预览/分屏模式，隐藏乐谱相关 UI
-            Log.d(TAG, "没有乐谱或不在预览/分屏模式，隐藏模式切换器")
-            findViewById<View>(R.id.music_mode_switcher).visibility = View.GONE
-            findViewById<ScrollView>(R.id.music_audio_scroll).visibility = View.GONE
-            previewText.visibility = if (isPreviewMode) View.VISIBLE else View.GONE
+            Log.d(TAG, "有乐谱且在预览/分屏模式，点击图片可播放")
         }
+
+        // 确保预览层可见（新模式不再需要手动切换）
+        previewText.visibility = if (isPreviewMode) View.VISIBLE else View.GONE
 
         // 使用 Markwon 渲染 Markdown
         if (isPreviewMode) {
@@ -5206,10 +5419,13 @@ class MarkdownEditorActivity : android.app.Activity() {
             container.addView(musicContainer)
 
             // 使用 AudioMusicRenderer 渲染
+            // 注意：这里高度设为 0 表示自适应（非覆盖层模式）
             audioMusicRenderer.renderWithAudio(
                 musicData = musicData,
-                width = musicWidth,
+                scaledWidth = musicWidth,
+                scaledHeight = 0,  // 0 表示自适应高度
                 container = musicContainer,
+                logicWidth = musicWidth,
                 onComplete = { success ->
                     Log.d(TAG, "音频乐谱渲染完成: ${musicData.title}, success=$success")
                 }

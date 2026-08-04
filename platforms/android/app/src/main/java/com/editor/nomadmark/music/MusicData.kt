@@ -27,7 +27,7 @@ data class MusicData(
      */
     fun getCacheKey(width: Int): String {
         // 添加版本号以在渲染参数变化后使缓存失效
-        val version = "v2"  // 修改此值可强制所有缓存失效
+        val version = "v5"  // v5: 修复 evaluateJavascript \u003C 解码，恢复 SVG→Bitmap 主路径
         return "${type.name}_${content.hashCode()}_${width}_$version"
     }
 }
