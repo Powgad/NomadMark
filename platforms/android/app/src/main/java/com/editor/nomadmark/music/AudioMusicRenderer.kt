@@ -352,9 +352,7 @@ class AudioMusicRenderer(private val context: Context) {
             "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
         }
 
-        val staffwidth = MusicRenderConfig.staffWidth(logicWidth)
-        val abcPadding = MusicRenderConfig.ABC_PADDING
-        val abcScale = MusicRenderConfig.ABC_SCALE
+        // 移除变量定义，改用文档推荐的核心渲染参数
 
         return """
         <!DOCTYPE html>
@@ -417,12 +415,9 @@ class AudioMusicRenderer(private val context: Context) {
             <script>
             (function() {
                 var OVERLAY_MODE = ${if (overlayMode) "true" else "false"};
-                var STAFF_WIDTH = $staffwidth;
                 var LOGIC_WIDTH = $logicWidth;
                 var SCALED_WIDTH = $scaledWidth;
                 var SCALED_HEIGHT = $scaledHeight;
-                var ABC_PADDING = $abcPadding;
-                var ABC_SCALE = $abcScale;
 
                 class NoteHighlighter {
                     constructor(container) {
@@ -661,17 +656,11 @@ class AudioMusicRenderer(private val context: Context) {
                     document.body.innerHTML = '<div style="color:red;padding:20px;">ABCJS library failed to load</div>';
                 } else {
                     try {
-                        // 与 WebViewMusicRenderer 使用相同的 staffwidth / padding，保证谱面排版一致
-                        var renderOpts = {
-                            staffwidth: STAFF_WIDTH,
-                            responsive: false,
-                            scale: ABC_SCALE,
-                            paddingtop: ABC_PADDING,
-                            paddingbottom: ABC_PADDING,
-                            paddingleft: ABC_PADDING,
-                            paddingright: ABC_PADDING
-                        };
-                        var renderOutput = ABCJS.renderAbc("paper", abcCode, renderOpts);
+                        // 使用文档定义的核心渲染参数
+                        var renderOutput = ABCJS.renderAbc("paper", abcCode, {
+                            responsive: "resize",
+                            viewportHorizontal: true
+                        });
                         visualObj = renderOutput[0];
 
                         // 只在覆盖层模式下 fit 到 Bitmap 尺寸

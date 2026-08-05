@@ -182,11 +182,8 @@ class WebViewMusicRenderer(private val context: Context) {
             .replace("\r", "")
             .replace("'", "\\'")
 
-        // 与 AudioMusicRenderer 共用 staffwidth / padding，保证谱面排版一致
-        val staffwidth = MusicRenderConfig.staffWidth(width)
-        val abcPadding = MusicRenderConfig.ABC_PADDING
-        val abcScale = MusicRenderConfig.ABC_SCALE
-        val bodyPadding = MusicRenderConfig.BODY_PADDING_PX
+        // 使用文档定义的 body padding
+        val bodyPadding = 10
 
         return """
         <!DOCTYPE html>
@@ -483,15 +480,10 @@ class WebViewMusicRenderer(private val context: Context) {
                     try {
                         console.log('[ABC-RENDER] About to render ABC code');
 
-                        // 与 AudioMusicRenderer 共用 staffwidth / padding，保证静态图与播放器一致
+                        // 使用文档定义的核心渲染参数
                         const renderOutput = ABCJS.renderAbc("paper", abcCode, {
-                            staffwidth: $staffwidth,
-                            responsive: false,
-                            scale: $abcScale,
-                            paddingtop: $abcPadding,
-                            paddingbottom: $abcPadding,
-                            paddingleft: $abcPadding,
-                            paddingright: $abcPadding
+                            responsive: "resize",
+                            viewportHorizontal: true
                         });
 
                         visualObj = renderOutput[0];

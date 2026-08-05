@@ -6,10 +6,10 @@ package com.editor.nomadmark.music
  */
 object MusicRenderConfig {
     /** 与 WebViewMusicRenderer.createPictureFromSvg 一致的横向缩放 */
-    const val HORIZONTAL_SCALE = 1.1f
+    const val HORIZONTAL_SCALE = 2.5f
 
     /** 与 WebViewMusicRenderer.createPictureFromSvg 一致的纵向缩放 */
-    const val VERTICAL_SCALE = 1.8f
+    const val VERTICAL_SCALE = 2.5f
 
     /** 静态/音频 HTML body 内边距 */
     const val BODY_PADDING_PX = 10
