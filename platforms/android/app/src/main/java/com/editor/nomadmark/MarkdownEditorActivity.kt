@@ -547,7 +547,7 @@ class MarkdownEditorActivity : android.app.Activity() {
     private var screenWidth: Int = 0
 
     /** 代码块边框的水平边距（dp） */
-    private val codeBlockHorizontalMarginDp = 48f  // 增加到 48dp 以防止滑动容器覆盖边框
+    private val codeBlockHorizontalMarginDp = 16f  // 设置为 16dp 以平衡乐谱宽度和边框保护
 
     /** 代码块边框的水平边距（px） */
     private var horizontalMarginPx: Int = 0
