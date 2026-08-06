@@ -379,11 +379,17 @@ class AudioMusicRenderer(private val context: Context) {
                     transition: none !important;
                     animation: none !important;
                 }
-                #paper svg path.abcjs-note.abcjs-highlight,
-                #paper svg path.abcjs-rest.abcjs-highlight {
+                /* 更通用的高亮样式 - 任何有 abcjs-highlight 类的元素 */
+                #paper svg .abcjs-highlight {
                     fill: #ffffff !important;
                     stroke: #000000 !important;
                     stroke-width: 1.2 !important;
+                }
+                #paper svg .abcjs-highlight path,
+                #paper svg .abcjs-highlight ellipse,
+                #paper svg .abcjs-highlight circle {
+                    fill: #ffffff !important;
+                    stroke: #000000 !important;
                 }
                 #paper svg path.abcjs-stem.abcjs-highlight,
                 #paper svg .abcjs-beam.abcjs-highlight path {
@@ -425,23 +431,47 @@ class AudioMusicRenderer(private val context: Context) {
                         this.currentElements = [];
                     }
                     onStart() {
+                        console.log('[ABC-EVENT] Playback started');
                         isPlaying = true;
                         this.clearHighlights();
                     }
                     onEvent(ev) {
-                        if (ev.measureStart && ev.left === null) return;
+                        // 调试：输出事件信息
+                        console.log('[ABC-EVENT] onEvent called:', ev ? JSON.stringify({
+                            type: ev.type,
+                            milliseconds: ev.milliseconds,
+                            elementsCount: ev.elements ? ev.elements.length : 0,
+                            left: ev.left,
+                            top: ev.top,
+                            height: ev.height,
+                            startChar: ev.startChar
+                        }) : 'null');
+
+                        // 官方推荐方式：直接使用 ev.elements 数组
                         this.clearHighlights();
-                        if (ev.startChar !== undefined) {
-                            var svg = this.container.querySelector('svg');
-                            if (svg) {
-                                var elements = svg.querySelectorAll('[data-start-char="' + ev.startChar + '"]');
-                                elements.forEach(function(el) {
-                                    if (el) {
-                                        el.classList.add('abcjs-highlight');
-                                        this.currentElements.push(el);
+
+                        if (ev && ev.elements && ev.elements.length > 0) {
+                            console.log('[ABC-EVENT] Processing', ev.elements.length, 'element groups');
+                            for (var i = 0; i < ev.elements.length; i++) {
+                                var note = ev.elements[i];
+                                // note 可能是数组（多声部）或单个元素
+                                var elements = Array.isArray(note) ? note : [note];
+                                console.log('[ABC-EVENT] Element group', i, 'has', elements.length, 'elements');
+                                for (var j = 0; j < elements.length; j++) {
+                                    if (elements[j] && !elements[j].classList.contains('abcjs-highlight')) {
+                                        // 调试：检查元素类型和类名
+                                        console.log('[ABC-EVENT] Element', j, 'type:', elements[j].tagName, 'classes:', elements[j].className);
+
+                                        elements[j].classList.add('abcjs-highlight');
+                                        this.currentElements.push(elements[j]);
+
+                                        // 验证高亮是否添加成功
+                                        console.log('[ABC-EVENT] After add, classes:', elements[j].className);
                                     }
-                                }.bind(this));
+                                }
                             }
+                        } else {
+                            console.warn('[ABC-EVENT] No elements to highlight! ev.elements:', ev ? ev.elements : 'ev is null/undefined');
                         }
                     }
                     onFinished() {
@@ -465,7 +495,6 @@ class AudioMusicRenderer(private val context: Context) {
                 var visualObj = null;
                 var midiBuffer = null;
                 var synthCtrl = null;
-                var timingCallbacks = null;
                 var lastClickTime = 0;
                 var DOUBLE_CLICK_DELAY = 300;
                 var isPlaying = false;
@@ -545,15 +574,36 @@ class AudioMusicRenderer(private val context: Context) {
                     return 'https://paulrosen.github.io/midi-js-soundfonts/FluidR3_GM/';
                 }
 
+                // 按照 ABCJS 官方示例重构初始化流程
                 function initAudio() {
                     if (!ABCJS.synth) return;
-                    if (midiBuffer || synthCtrl) return;
                     try {
                         var synth = ABCJS.synth;
-                        if (!synth.supportsAudio()) return;
+                        if (!synth.supportsAudio()) {
+                            console.log('[ABC-AUDIO] Audio not supported');
+                            return;
+                        }
 
+                        // 调试：检查 visualObj 状态
+                        console.log('[ABC-AUDIO] initAudio called, visualObj:', visualObj);
+                        console.log('[ABC-AUDIO] visualObj.engraver exists:', !!visualObj.engraver);
+                        if (visualObj.engraver) {
+                            console.log('[ABC-AUDIO] engraver.staffgroups:', visualObj.engraver.staffgroups);
+                            console.log('[ABC-AUDIO] staffgroups length:', visualObj.engraver.staffgroups ? visualObj.engraver.staffgroups.length : 'N/A');
+                        }
+
+                        // 清理旧的实例（如果存在）
+                        if (synthCtrl) {
+                            try { synthCtrl.destroy(); } catch(e) { console.warn('Destroy synthCtrl error:', e); }
+                            synthCtrl = null;
+                        }
+                        if (midiBuffer) {
+                            try { midiBuffer.stop(); } catch(e) { console.warn('Stop midiBuffer error:', e); }
+                            midiBuffer = null;
+                        }
+
+                        // 创建新实例
                         midiBuffer = new synth.CreateSynth();
-                        synthCtrl = new synth.SynthController();
 
                         var controlsEl = document.getElementById('abcjs-controls');
                         if (!controlsEl) {
@@ -563,14 +613,21 @@ class AudioMusicRenderer(private val context: Context) {
                             document.body.appendChild(controlsEl);
                         }
 
-                        var noteHighlighter = new NoteHighlighter(document.getElementById('paper'));
-                        synthCtrl.load(controlsEl, noteHighlighter, {
-                            displayLoop: false,
-                            displayPlay: false,
-                            displayProgress: false,
-                            displayWarp: false
-                        });
+                        // 创建 SynthController（如果还没创建）
+                        if (!synthCtrl) {
+                            synthCtrl = new synth.SynthController();
+                            var noteHighlighter = new NoteHighlighter(document.getElementById('paper'));
+                            synthCtrl.load(controlsEl, noteHighlighter, {
+                                displayLoop: false,
+                                displayPlay: false,
+                                displayProgress: false,
+                                displayWarp: false
+                            });
+                        }
 
+                        console.log('[ABC-AUDIO] Starting audio init for visualObj');
+
+                        // 初始化音频引擎
                         midiBuffer.init({
                             visualObj: visualObj,
                             options: {
@@ -579,24 +636,24 @@ class AudioMusicRenderer(private val context: Context) {
                                 fadeLength: 200
                             },
                             audioContext: null
-                        }).then(function() {
-                            synthCtrl.setTune(visualObj, false, { audioContext: null });
-                            if (ABCJS.TimingCallbacks && !timingCallbacks) {
-                                timingCallbacks = new ABCJS.TimingCallbacks(visualObj, null);
-                                timingCallbacks.registerCallback(function(callbacks) {
-                                    var container = document.getElementById('paper');
-                                    container.querySelectorAll('.abcjs-highlight').forEach(function(el) {
-                                        el.classList.remove('abcjs-highlight');
-                                    });
-                                    callbacks.notes.forEach(function(note) {
-                                        if (note.element) note.element.classList.add('abcjs-highlight');
-                                    });
+                        }).then(function(response) {
+                            console.log('[ABC-AUDIO] CreateSynth init successful:', response);
+                            // 设置曲谱到 SynthController
+                            if (synthCtrl) {
+                                // userAction=true 确保 TimingCallbacks 被创建
+                                synthCtrl.setTune(visualObj, true).then(function(response) {
+                                    console.log('[ABC-AUDIO] setTune successful');
+                                    console.log('[ABC-AUDIO] noteTimings length:',
+                                        visualObj.noteTimings ? visualObj.noteTimings.length : 'null');
+                                    if (visualObj.noteTimings && visualObj.noteTimings.length > 0) {
+                                        console.log('[ABC-AUDIO] First noteTiming:', visualObj.noteTimings[0]);
+                                    }
+                                }).catch(function(err) {
+                                    console.warn('[ABC-AUDIO] setTune failed:', err);
                                 });
                             }
                         }).catch(function(err) {
                             console.warn('[ABC-AUDIO] Init failed:', err);
-                            midiBuffer = null;
-                            synthCtrl = null;
                         });
                     } catch (e) {
                         console.error('[ABC-AUDIO] Init error:', e);
@@ -605,16 +662,22 @@ class AudioMusicRenderer(private val context: Context) {
 
                 function togglePlayback() {
                     if (!midiBuffer || !synthCtrl) {
+                        console.log('[ABC-AUDIO] Need to init audio first');
                         initAudio();
+                        // 延迟后再次尝试播放
+                        setTimeout(function() {
+                            if (synthCtrl) {
+                                synthCtrl.play();
+                                document.getElementById('audio-status').classList.add('playing');
+                            }
+                        }, 800);
                         return;
                     }
                     try {
                         if (typeof midiBuffer.isPlaying === 'function' && midiBuffer.isPlaying()) {
                             synthCtrl.pause();
-                            if (timingCallbacks) timingCallbacks.pause();
                         } else if (typeof synthCtrl.play === 'function') {
                             synthCtrl.play();
-                            if (timingCallbacks) timingCallbacks.start();
                             document.getElementById('audio-status').classList.add('playing');
                         }
                     } catch (e) {
@@ -624,15 +687,19 @@ class AudioMusicRenderer(private val context: Context) {
 
                 function restartPlayback() {
                     if (!synthCtrl) {
+                        console.log('[ABC-AUDIO] Need to init audio first');
                         initAudio();
+                        // 延迟后再次尝试播放
+                        setTimeout(function() {
+                            if (synthCtrl) {
+                                synthCtrl.restart();
+                                document.getElementById('audio-status').classList.add('playing');
+                            }
+                        }, 800);
                         return;
                     }
                     try {
                         synthCtrl.restart();
-                        if (timingCallbacks) {
-                            timingCallbacks.stop();
-                            timingCallbacks.start();
-                        }
                         document.getElementById('audio-status').classList.add('playing');
                     } catch (e) {
                         console.error('[ABC-AUDIO] Restart error:', e);
@@ -643,7 +710,6 @@ class AudioMusicRenderer(private val context: Context) {
                     if (!synthCtrl) return;
                     try {
                         synthCtrl.pause();
-                        if (timingCallbacks) timingCallbacks.stop();
                         document.getElementById('paper')
                             .querySelectorAll('.abcjs-highlight')
                             .forEach(function(el) { el.classList.remove('abcjs-highlight'); });
@@ -656,8 +722,9 @@ class AudioMusicRenderer(private val context: Context) {
                     document.body.innerHTML = '<div style="color:red;padding:20px;">ABCJS library failed to load</div>';
                 } else {
                     try {
-                        // 使用文档定义的核心渲染参数
+                        // 使用文档定义的核心渲染参数 + add_classes（音符跳动需要）
                         var renderOutput = ABCJS.renderAbc("paper", abcCode, {
+                            add_classes: true,
                             responsive: "resize",
                             viewportHorizontal: true
                         });

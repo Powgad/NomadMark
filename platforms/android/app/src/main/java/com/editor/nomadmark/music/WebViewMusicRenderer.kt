@@ -241,12 +241,18 @@ class WebViewMusicRenderer(private val context: Context) {
                     animation: none !important;
                 }
 
-                /* 当前音符反色高亮：白底黑边，在灰底五线谱上清晰跳脱 */
-                #paper svg path.abcjs-note.abcjs-highlight,
-                #paper svg path.abcjs-rest.abcjs-highlight {
-                    fill: #ffffff !important;   /* 白填，灰底上挖空 */
-                    stroke: #000000 !important; /* 黑描边，保留符头轮廓 */
+                /* 更通用的高亮样式 - 任何有 abcjs-highlight 类的元素 */
+                #paper svg .abcjs-highlight {
+                    fill: #ffffff !important;
+                    stroke: #000000 !important;
                     stroke-width: 1.2 !important;
+                }
+
+                #paper svg .abcjs-highlight path,
+                #paper svg .abcjs-highlight ellipse,
+                #paper svg .abcjs-highlight circle {
+                    fill: #ffffff !important;
+                    stroke: #000000 !important;
                 }
 
                 /* 高亮时符干也反色，避免灰干配白头看不清 */
@@ -304,18 +310,38 @@ class WebViewMusicRenderer(private val context: Context) {
                     }
 
                     onEvent(ev) {
-                        // 跳过跨小节延音（Obsidian 插件同款逻辑）
-                        if (ev.measureStart && ev.left === null) return;
+                        // 调试：输出事件信息
+                        console.log('[ABC-EVENT] onEvent called:', ev ? JSON.stringify({
+                            type: ev.type,
+                            milliseconds: ev.milliseconds,
+                            elementsCount: ev.elements ? ev.elements.length : 0,
+                            left: ev.left,
+                            top: ev.top,
+                            height: ev.height,
+                            startChar: ev.startChar
+                        }) : 'null');
 
+                        // 官方推荐方式：直接使用 ev.elements 数组
                         this.clearHighlights();
 
-                        // abcjs 会给当前音符添加 .abcjs-highlight 类
-                        const highlighted = this.container.querySelectorAll('.abcjs-highlight');
-                        highlighted.forEach(el => {
-                            if (el instanceof SVGElement) {
-                                this.currentElements.push(el);
+                        if (ev && ev.elements && ev.elements.length > 0) {
+                            console.log('[ABC-EVENT] Processing', ev.elements.length, 'element groups');
+                            for (var i = 0; i < ev.elements.length; i++) {
+                                var note = ev.elements[i];
+                                // note 可能是数组（多声部）或单个元素
+                                var elements = Array.isArray(note) ? note : [note];
+                                console.log('[ABC-EVENT] Element group', i, 'has', elements.length, 'elements');
+                                for (var j = 0; j < elements.length; j++) {
+                                    if (elements[j] && !elements[j].classList.contains('abcjs-highlight')) {
+                                        elements[j].classList.add('abcjs-highlight');
+                                        this.currentElements.push(elements[j]);
+                                        console.log('[ABC-EVENT] Added highlight to element', j);
+                                    }
+                                }
                             }
-                        });
+                        } else {
+                            console.warn('[ABC-EVENT] No elements to highlight! ev.elements:', ev ? ev.elements : 'ev is null/undefined');
+                        }
                     }
 
                     onFinished() {
@@ -344,21 +370,13 @@ class WebViewMusicRenderer(private val context: Context) {
                 let clickTimer = null;
 
                 function getSoundFontUrl() {
-                    // 优先本地音色包（Supernote 离线场景），兜底在线
-                    const localPath = 'file:///android_asset/soundfonts/FluidR3_GM/';
-                    const onlinePath = 'https://paulrosen.github.io/midi-js-soundfonts/FluidR3_GM/';
-                    // 默认使用本地，如果加载失败会自动回退
-                    return localPath;
+                    // 使用在线音色包（本地 file:// 协议在 WebView 中受 CORS 限制）
+                    return 'https://paulrosen.github.io/midi-js-soundfonts/FluidR3_GM/';
                 }
 
                 function initAudio() {
                     if (!enableAudio || !ABCJS.synth) {
                         console.log('[ABC-AUDIO] Audio not enabled or synth not available');
-                        return;
-                    }
-
-                    if (midiBuffer || synthCtrl) {
-                        console.log('[ABC-AUDIO] Already initialized');
                         return;
                     }
 
@@ -369,8 +387,26 @@ class WebViewMusicRenderer(private val context: Context) {
                             return;
                         }
 
+                        // 调试：检查 visualObj 状态
+                        console.log('[ABC-AUDIO] initAudio called, visualObj:', visualObj);
+                        console.log('[ABC-AUDIO] visualObj.engraver exists:', !!visualObj.engraver);
+                        if (visualObj.engraver) {
+                            console.log('[ABC-AUDIO] engraver.staffgroups:', visualObj.engraver.staffgroups);
+                            console.log('[ABC-AUDIO] staffgroups length:', visualObj.engraver.staffgroups ? visualObj.engraver.staffgroups.length : 'N/A');
+                        }
+
+                        // 清理旧的实例（如果存在）
+                        if (synthCtrl) {
+                            try { synthCtrl.destroy(); } catch(e) { console.warn('Destroy synthCtrl error:', e); }
+                            synthCtrl = null;
+                        }
+                        if (midiBuffer) {
+                            try { midiBuffer.stop(); } catch(e) { console.warn('Stop midiBuffer error:', e); }
+                            midiBuffer = null;
+                        }
+
+                        // 创建新实例
                         midiBuffer = new synth.CreateSynth();
-                        synthCtrl = new synth.SynthController();
 
                         // 创建隐藏的 controls 容器
                         let controlsEl = document.getElementById('abcjs-controls');
@@ -381,14 +417,19 @@ class WebViewMusicRenderer(private val context: Context) {
                             document.body.appendChild(controlsEl);
                         }
 
-                        // 加载 SynthController，绑定 NoteHighlighter
-                        const noteHighlighter = new NoteHighlighter(document.getElementById('paper'));
-                        synthCtrl.load(controlsEl, noteHighlighter, {
-                            displayLoop: false,
-                            displayPlay: false,
-                            displayProgress: false,
-                            displayWarp: false
-                        });
+                        // 创建 SynthController（如果还没创建）
+                        if (!synthCtrl) {
+                            synthCtrl = new synth.SynthController();
+                            const noteHighlighter = new NoteHighlighter(document.getElementById('paper'));
+                            synthCtrl.load(controlsEl, noteHighlighter, {
+                                displayLoop: false,
+                                displayPlay: false,
+                                displayProgress: false,
+                                displayWarp: false
+                            });
+                        }
+
+                        console.log('[ABC-AUDIO] Starting audio init for visualObj');
 
                         // 初始化音频
                         const audioOptions = {
@@ -406,15 +447,23 @@ class WebViewMusicRenderer(private val context: Context) {
                             options: audioOptions,
                             audioContext: null
                         }).then(() => {
-                            console.log('[ABC-AUDIO] Audio initialized successfully');
-                            synthCtrl.setTune(visualObj, false, {
-                                audioContext: null
-                            });
+                            console.log('[ABC-AUDIO] CreateSynth init successful');
+                            // 设置曲谱到 SynthController
+                            if (synthCtrl) {
+                                // userAction=true 确保 TimingCallbacks 被创建
+                                synthCtrl.setTune(visualObj, true).then(function(response) {
+                                    console.log('[ABC-AUDIO] setTune successful');
+                                    console.log('[ABC-AUDIO] noteTimings length:',
+                                        visualObj.noteTimings ? visualObj.noteTimings.length : 'null');
+                                    if (visualObj.noteTimings && visualObj.noteTimings.length > 0) {
+                                        console.log('[ABC-AUDIO] First noteTiming:', visualObj.noteTimings[0]);
+                                    }
+                                }).catch(function(err) {
+                                    console.warn('[ABC-AUDIO] setTune failed:', err);
+                                });
+                            }
                         }).catch(err => {
                             console.warn('[ABC-AUDIO] Init failed:', err);
-                            // 清理失败的初始化
-                            midiBuffer = null;
-                            synthCtrl = null;
                         });
 
                     } catch (e) {
@@ -480,8 +529,9 @@ class WebViewMusicRenderer(private val context: Context) {
                     try {
                         console.log('[ABC-RENDER] About to render ABC code');
 
-                        // 使用文档定义的核心渲染参数
+                        // 使用文档定义的核心渲染参数 + add_classes（音符跳动需要）
                         const renderOutput = ABCJS.renderAbc("paper", abcCode, {
+                            add_classes: true,
                             responsive: "resize",
                             viewportHorizontal: true
                         });
