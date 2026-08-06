@@ -1677,7 +1677,7 @@ class MarkdownEditorActivity : android.app.Activity() {
         val overlay = FrameLayout(this).apply {
             layoutParams = FrameLayout.LayoutParams(width, height)
             setBackgroundColor(android.graphics.Color.WHITE)
-            elevation = 16f
+            elevation = 0f  // 完全融合，消除阴影
             setPadding(0, 0, 0, 0)
             clipChildren = true
             clipToPadding = true
