@@ -1,5 +1,6 @@
 package com.editor.nomadmark.music
 
+import android.content.Context
 import java.io.Serializable
 
 /**
@@ -21,14 +22,18 @@ data class MusicData(
     }
 
     /**
-     * 获取缓存键
+     * 获取缓存键（包含方向信息）
      *
      * @param width 渲染宽度，纳入 key 以区分不同屏宽（预览/分屏）下的渲染结果
+     * @param context Context 用于判断屏幕方向
      */
-    fun getCacheKey(width: Int): String {
+    fun getCacheKey(width: Int, context: Context? = null): String {
         // 添加版本号以在渲染参数变化后使缓存失效
-        val version = "v5"  // v5: 修复 evaluateJavascript \u003C 解码，恢复 SVG→Bitmap 主路径
-        return "${type.name}_${content.hashCode()}_${width}_$version"
+        val version = "v6"  // v6: 支持横竖屏不同缩放比例
+        val orientation = context?.let { MusicRenderConfig.getOrientationSuffix(it) } ?: "default"
+        val key = "${type.name}_${content.hashCode()}_${width}_${orientation}_$version"
+        android.util.Log.d("MusicData", "getCacheKey: width=$width, orientation=$orientation, key=$key")
+        return key
     }
 }
 

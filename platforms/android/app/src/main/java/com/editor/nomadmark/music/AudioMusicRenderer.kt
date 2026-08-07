@@ -79,7 +79,7 @@ class AudioMusicRenderer(private val context: Context) {
 
         val resolvedLogicWidth = when {
             logicWidth > 0 -> logicWidth
-            overlayMode -> MusicRenderConfig.logicWidthFromScaled(scaledWidth)
+            overlayMode -> MusicRenderConfig.logicWidthFromScaled(scaledWidth, context)
             else -> scaledWidth.coerceAtLeast(1)
         }
 

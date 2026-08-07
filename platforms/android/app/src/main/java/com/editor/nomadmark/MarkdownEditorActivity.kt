@@ -227,6 +227,9 @@ class MarkdownEditorActivity : android.app.Activity() {
     /** 当前活动的 MusicSheetSpan 列表 */
     private val activeMusicSheetSpans = mutableListOf<MusicSheetSpan>()
 
+    /** 记录上一次屏幕方向，用于检测横竖屏切换 */
+    private var lastOrientation: Int = Configuration.ORIENTATION_PORTRAIT
+
     /** 当前播放音频的覆盖层 (WebView + 容器) */
     private var activeMusicOverlay: Pair<android.webkit.WebView, android.widget.FrameLayout>? = null
 
@@ -488,6 +491,13 @@ class MarkdownEditorActivity : android.app.Activity() {
         super.onConfigurationChanged(newConfig)
         // 检测键盘状态变化（处理外接键盘插拔）
         detectKeyboardStatus()
+
+        // 横竖屏切换时重新渲染乐谱（缓存键包含方向信息，会自动使用正确缓存）
+        if (newConfig.orientation != lastOrientation) {
+            Log.d(TAG, "方向改变: ${lastOrientation} -> ${newConfig.orientation}, 重新渲染乐谱")
+            lastOrientation = newConfig.orientation
+            renderAllMusicSheets()
+        }
     }
 
     // =========================================================================
@@ -1612,6 +1622,46 @@ class MarkdownEditorActivity : android.app.Activity() {
             }
         }
         return null
+    }
+
+    /**
+     * 重新渲染所有乐谱（用于横竖屏切换）
+     */
+    private fun renderAllMusicSheets() {
+        Log.d(TAG, "renderAllMusicSheets: 开始重新渲染 ${activeMusicSheetSpans.size} 个乐谱")
+        val screenWidth = resources.displayMetrics.widthPixels
+        val horizontalMarginPx = (32 * resources.displayMetrics.density).toInt()
+        val musicSheetWidth = screenWidth - horizontalMarginPx * 2
+
+        activeMusicSheetSpans.forEach { span ->
+            // 先清空旧 bitmap，让 getSize() 使用默认高度，避免布局错乱
+            span.clearBitmap()
+
+            musicSheetRenderer.renderToBitmap(span.music, musicSheetWidth) { bitmap ->
+                Log.d(TAG, "重新渲染回调: title=${span.music.title}, bitmap=${if (bitmap != null) "${bitmap.width}x${bitmap.height}" else "null"}")
+                val heightChanged = span.updateBitmap(bitmap)
+
+                runOnUiThread {
+                    if (heightChanged) {
+                        if (isPreviewMode) {
+                            previewText.requestLayout()
+                            previewText.invalidate()
+                        }
+                        if (isSplitMode) {
+                            splitPreviewText?.requestLayout()
+                            splitPreviewText?.invalidate()
+                        }
+                    } else {
+                        if (isPreviewMode) {
+                            previewText.invalidate()
+                        }
+                        if (isSplitMode) {
+                            splitPreviewText?.invalidate()
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /**

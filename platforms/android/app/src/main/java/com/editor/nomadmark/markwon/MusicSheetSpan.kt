@@ -51,15 +51,26 @@ class MusicSheetSpan(
     }
 
     /**
+     * 清空 Bitmap（用于横竖屏切换时先释放旧 bitmap，使用默认高度）
+     */
+    fun clearBitmap() {
+        bitmap?.recycle()
+        bitmap = null
+        android.util.Log.d(TAG, "clearBitmap: title=${musicData.title}")
+    }
+
+    /**
      * 更新 Bitmap
-     * @return 高度是否变化
+     * @return 尺寸是否变化（宽度或高度变化都需要重新布局）
      */
     fun updateBitmap(newBitmap: android.graphics.Bitmap?): Boolean {
+        val oldWidth = bitmap?.width ?: 0
         val oldHeight = bitmap?.height ?: 0
         bitmap = newBitmap
+        val newWidth = bitmap?.width ?: 0
         val newHeight = bitmap?.height ?: 0
-        android.util.Log.d(TAG, "updateBitmap: oldHeight=$oldHeight, newHeight=$newHeight, bitmap=${if (newBitmap != null) "${newBitmap.width}x${newBitmap.height}" else "null"}")
-        return oldHeight != newHeight
+        android.util.Log.d(TAG, "updateBitmap: old=${oldWidth}x${oldHeight}, new=${newWidth}x${newHeight}, bitmap=${if (newBitmap != null) "${newBitmap.width}x${newBitmap.height}" else "null"}")
+        return oldWidth != newWidth || oldHeight != newHeight
     }
 
     /**
@@ -148,7 +159,13 @@ class MusicSheetSpan(
     ): Int {
         // 上下间距，确保乐谱不与相邻内容重叠
         val verticalPadding = 80  // 上下各预留 40px
-        val height = (bitmap?.height ?: 200) + verticalPadding
+        // 默认高度根据方向设置：横屏时乐谱更大（缩放 3.3f vs 2.5f）
+        val isLandscape = context.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        val defaultHeight = if (isLandscape) 1500 else 600
+        val bitmapHeight = bitmap?.height ?: defaultHeight
+        val height = bitmapHeight + verticalPadding
+
+        android.util.Log.d(TAG, "getSize: title=${musicData.title}, isLandscape=$isLandscape, defaultHeight=$defaultHeight, bitmapHeight=$bitmapHeight, height=$height, bitmap exists=${bitmap != null}")
 
         if (fm != null) {
             // 设置 FontMetricsInt 以正确计算行高
@@ -160,7 +177,12 @@ class MusicSheetSpan(
             fm.top = fm.ascent - verticalPadding / 2
             fm.bottom = fm.descent + verticalPadding / 2
         }
-        return screenWidth
+
+        val width = bitmap?.width ?: screenWidth
+        android.util.Log.d(TAG, "getSize: title=${musicData.title}, bitmap=${bitmap?.width?.toString() + "x" + bitmapHeight}, width=$width, height=$height, verticalPadding=$verticalPadding")
+        // 返回 bitmap 的实际宽度（横竖屏切换后 bitmap 尺寸可能改变）
+        // 如果 bitmap 还没有渲染，返回原始 screenWidth
+        return width
     }
 
     override fun draw(

@@ -37,8 +37,8 @@ class WebViewMusicRenderer(private val context: Context) {
         width: Int,
         callback: (Bitmap?) -> Unit
     ) {
-        // 【去重】生成渲染键
-        val renderKey = "${musicData.getCacheKey(width)}"
+        // 【去重】生成渲染键（包含方向信息）
+        val renderKey = "${musicData.getCacheKey(width, context)}"
 
         // 【去重】检查是否正在渲染中
         if (pendingRenders.contains(renderKey)) {
@@ -171,8 +171,10 @@ class WebViewMusicRenderer(private val context: Context) {
             musicData.content
         }
 
-        // 添加 %% 指令（控制五线谱间距）
-        val contentWithDirectives = "%%staffsep 24\n" + contentToRender
+        // 添加 %% 指令（控制五线谱间距和宽度）
+        val staffWidth = MusicRenderConfig.staffWidth(width, context)
+        Log.d(TAG, "generateAbcHtml: width=$width, orientation=${MusicRenderConfig.getOrientationSuffix(context)}, staffWidth=$staffWidth")
+        val contentWithDirectives = "%%staffsep 24\n%%staffwidth $staffWidth\n" + contentToRender
 
         // 转义内容中的特殊字符
         val escapedContent = contentWithDirectives
@@ -777,7 +779,7 @@ class WebViewMusicRenderer(private val context: Context) {
                             }
 
                             // 第四步：创建 Picture 并绘制 SVG
-                            val picture = createPictureFromSvg(cleanedSvg, width)
+                            val picture = createPictureFromSvg(cleanedSvg, width, context)
                             if (picture != null) {
                                 // 从 Picture 创建 Bitmap
                                 val bitmap = Bitmap.createBitmap(
@@ -920,7 +922,7 @@ class WebViewMusicRenderer(private val context: Context) {
     /**
      * 从 SVG 字符串创建 Picture（使用 AndroidSVG）
      */
-    private fun createPictureFromSvg(svgString: String, width: Int): Picture? {
+    private fun createPictureFromSvg(svgString: String, width: Int, context: Context): Picture? {
         return try {
             val svg = SVG.getFromString(svgString)
 
@@ -934,15 +936,18 @@ class WebViewMusicRenderer(private val context: Context) {
             val picHeight = if (size.height > 0) size.height.toInt() else 400
 
             // 【非等比缩放】目标：最终宽不超过 logicWidth(=width)，避免预览右侧被裁切
-            val horizontalScale = MusicRenderConfig.HORIZONTAL_SCALE
-            val verticalScale = MusicRenderConfig.VERTICAL_SCALE
+            val horizontalScale = MusicRenderConfig.getHorizontalScale(context)
+            val verticalScale = MusicRenderConfig.getVerticalScale(context)
             var drawHScale = horizontalScale
             var drawVScale = verticalScale
             var scaledPicWidth = (picWidth * drawHScale).toInt()
             var scaledPicHeight = (picHeight * drawVScale).toInt()
 
+            Log.d(TAG, "createPictureFromSvg: picWidth=$picWidth, targetWidth=$width, horizontalScale=$horizontalScale, scaledPicWidth=$scaledPicWidth")
+
             // 安全钳制：staffwidth 已按 HORIZONTAL_SCALE 反算，仍超出则压到可用宽度
             if (width > 0 && scaledPicWidth > width && picWidth > 0) {
+                Log.w(TAG, "静态乐谱超宽，需要钳制: scaledPicWidth=$scaledPicWidth > targetWidth=$width, horizontalScale=$horizontalScale, svgW=$picWidth")
                 drawHScale = width.toFloat() / picWidth
                 scaledPicWidth = width
                 Log.w(TAG, "静态乐谱超宽，横向缩放钳制为 $drawHScale (targetWidth=$width, svgW=$picWidth)")
@@ -972,6 +977,7 @@ class WebViewMusicRenderer(private val context: Context) {
         musicData: MusicData,
         width: Int,
         callback: (Bitmap?) -> Unit,
+        context: Context = this.context,
         onComplete: () -> Unit = {}
     ) {
         try {
@@ -1022,8 +1028,8 @@ class WebViewMusicRenderer(private val context: Context) {
                 Log.d(TAG, "SVG 计算高度: $svgHeight, 最终使用高度: $finalHeight")
 
                 // 【非等比缩放】最终宽不超过 logicWidth(=width)，避免预览右侧被裁切
-                val horizontalScale = MusicRenderConfig.HORIZONTAL_SCALE
-                val verticalScale = MusicRenderConfig.VERTICAL_SCALE
+                val horizontalScale = MusicRenderConfig.getHorizontalScale(context)
+                val verticalScale = MusicRenderConfig.getVerticalScale(context)
                 val baseW = webView.measuredWidth.coerceAtLeast(1)
                 var drawHScale = horizontalScale
                 val drawVScale = verticalScale
